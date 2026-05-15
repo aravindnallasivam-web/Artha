@@ -47,16 +47,20 @@ coverage/
 
 # ---------- Capacitor / Mobile ----------
 # Keep config + manifest, ignore generated build artefacts.
-client/ios/App/Pods/
-client/ios/App/App.xcworkspace/xcuserdata/
-client/ios/App/build/
-client/ios/DerivedData/
-client/android/.gradle/
-client/android/build/
-client/android/app/build/
-client/android/local.properties
-client/android/captures/
-client/android/.idea/
+# (ClientApp now lives under server/src/Artha.Api/.)
+**/ClientApp/ios/App/Pods/
+**/ClientApp/ios/App/App.xcworkspace/xcuserdata/
+**/ClientApp/ios/App/build/
+**/ClientApp/ios/DerivedData/
+**/ClientApp/android/.gradle/
+**/ClientApp/android/build/
+**/ClientApp/android/app/build/
+**/ClientApp/android/local.properties
+**/ClientApp/android/captures/
+**/ClientApp/android/.idea/
+
+# Published artefacts the .NET build copies into wwwroot from ClientApp/dist
+server/src/Artha.Api/wwwroot/
 
 # ---------- Misc tool output ----------
 *.pid

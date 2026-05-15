@@ -1,17 +1,19 @@
 # DigitalOcean App Platform spec for Artha.
 #
-# Two components share one hostname (no CORS needed):
-#   /api/*  -> .NET 10 web service (Dockerfile build)
-#   /*      -> Angular SPA (static site, SPA-routed)
+# Single component (consolidated .NET SPA). The .NET 10 process serves both:
+#   /api/*  -> ASP.NET Core Web API
+#   /*      -> Angular SPA static files (copied to wwwroot at publish time)
 #
 # To deploy:
 #   1. Push this repo to GitHub (already done).
-#   2. In DO: Apps -> Create App -> "Edit your app spec" -> paste this file,
-#      OR use `doctl apps create --spec .do/app.yaml`.
-#   3. Set the three secrets below in the Settings -> Components -> api -> Environment Variables UI:
-#        GoogleAuth__ClientId, GoogleAuth__ClientSecret, Jwt__SigningKey
-#   4. After first deploy, copy the app's URL (e.g. artha-xxxx.ondigitalocean.app)
-#      into your Google Cloud Console OAuth client's authorized redirect URIs:
+#   2. Use `doctl apps create --spec .do/app.yaml`
+#      OR in the DO UI: Apps -> Create App -> "Edit your app spec" -> paste this.
+#   3. Set the two encrypted secrets in Settings -> Components -> api ->
+#      Environment Variables:
+#        GoogleAuth__ClientSecret, Jwt__SigningKey
+#      (Client ID is public and lives in this file.)
+#   4. After first deploy, copy the app's URL into your Google Cloud Console
+#      OAuth client's authorized redirect URIs:
 #        https://<app-url>/auth/callback
 
 name: artha
@@ -30,12 +32,11 @@ services:
     instance_size_slug: apps-s-1vcpu-0.5gb
     health_check:
       http_path: /api/health
-      initial_delay_seconds: 10
+      initial_delay_seconds: 30
       period_seconds: 30
       timeout_seconds: 5
       failure_threshold: 3
-    routes:
-      - path: /api
+    # No `routes` block — this service owns the whole hostname (default).
     envs:
       - key: ASPNETCORE_ENVIRONMENT
         scope: RUN_TIME
@@ -43,7 +44,7 @@ services:
       - key: ASPNETCORE_FORWARDEDHEADERS_ENABLED
         scope: RUN_TIME
         value: "true"
-      # Client ID is public (ends up in the SPA bundle). Secret stays encrypted.
+      # Client ID is public (it's embedded in the SPA bundle anyway).
       - key: GoogleAuth__ClientId
         scope: RUN_TIME
         value: 952436597649-j9gosps5n1ukkm1907fu8bl06toptdb6.apps.googleusercontent.com
@@ -61,26 +62,11 @@ services:
       - key: Jwt__Audience
         scope: RUN_TIME
         value: artha-client
-      # Same-origin in production -> empty CORS list is fine, but we keep
-      # the app URL on the allow-list for defense in depth.
+      # CORS is only relevant for the Capacitor mobile app (cross-origin from
+      # capacitor://localhost / ionic://localhost). Web is same-origin.
       - key: Cors__AllowedOrigins__0
         scope: RUN_TIME
-        value: ${APP_URL}
-
-static_sites:
-  - name: web
-    source_dir: client
-    github:
-      repo: aravindnallasivam-web/Artha
-      branch: claude/expense-management-app-nHuZp
-      deploy_on_push: true
-    build_command: npm ci && npm run build -- --configuration=production
-    output_dir: dist/client/browser
-    index_document: index.html
-    catchall_document: index.html
-    routes:
-      - path: /
-    envs:
-      - key: NODE_OPTIONS
-        scope: BUILD_TIME
-        value: --max-old-space-size=4096
+        value: capacitor://localhost
+      - key: Cors__AllowedOrigins__1
+        scope: RUN_TIME
+        value: ionic://localhost

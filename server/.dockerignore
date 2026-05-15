@@ -6,9 +6,13 @@
 **/*.user
 **/*.suo
 TestResults/
-**/node_modules
-**/dist
-**/.angular
+
+# Angular: never copy the local node_modules or build output into the build
+# context — the Dockerfile installs/builds them fresh inside the image.
+src/Artha.Api/ClientApp/node_modules
+src/Artha.Api/ClientApp/dist
+src/Artha.Api/ClientApp/.angular
+
 **/.git
 **/*.md
 Dockerfile

@@ -110,11 +110,22 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+// Serve the Angular SPA from wwwroot (populated at publish time by the
+// PublishSpa target in Artha.Api.csproj). In development the SpaProxy
+// middleware proxies these routes to `ng serve` instead.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors(CorsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Any non-API request that didn't match a static file falls through to
+// index.html so client-side routing (login, callback, dashboard, ...) works
+// on direct navigation and page refresh.
+app.MapFallbackToFile("index.html");
 
 app.Run();
 

@@ -1,19 +1,32 @@
 # syntax=docker/dockerfile:1.7
 
-# ---------- build ----------
+# ---------- build (.NET 10 + Node 22) ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Restore first (cache-friendly layer)
+# Install Node 22 via NodeSource (the .NET SDK image is Debian-based).
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+# 1. Restore .NET (cache-friendly layer — only invalidated when .csproj changes).
 COPY Artha.slnx Directory.Build.props Directory.Packages.props global.json ./
-COPY src/Artha.Api/Artha.Api.csproj         src/Artha.Api/
-COPY src/Artha.Core/Artha.Core.csproj       src/Artha.Core/
-COPY src/Artha.Auth/Artha.Auth.csproj       src/Artha.Auth/
-COPY src/Artha.Drive/Artha.Drive.csproj     src/Artha.Drive/
+COPY src/Artha.Api/Artha.Api.csproj                       src/Artha.Api/
+COPY src/Artha.Core/Artha.Core.csproj                     src/Artha.Core/
+COPY src/Artha.Auth/Artha.Auth.csproj                     src/Artha.Auth/
+COPY src/Artha.Drive/Artha.Drive.csproj                   src/Artha.Drive/
 COPY src/Artha.Infrastructure/Artha.Infrastructure.csproj src/Artha.Infrastructure/
 RUN dotnet restore src/Artha.Api/Artha.Api.csproj
 
-# Build + publish only the API project
+# 2. Restore npm packages separately so SPA dependency churn doesn't
+#    bust the .NET layer cache.
+COPY src/Artha.Api/ClientApp/package.json      src/Artha.Api/ClientApp/
+COPY src/Artha.Api/ClientApp/package-lock.json src/Artha.Api/ClientApp/
+RUN cd src/Artha.Api/ClientApp && npm ci
+
+# 3. Copy the rest of the source and publish. The PublishSpa MSBuild target
+#    in Artha.Api.csproj runs `npm run build` and copies the Angular bundle
+#    into wwwroot during this step.
 COPY src/ ./src/
 RUN dotnet publish src/Artha.Api/Artha.Api.csproj \
         --configuration Release \
@@ -25,7 +38,7 @@ RUN dotnet publish src/Artha.Api/Artha.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# Run as a non-root user (uid 1000 ships in the base image).
+# Run as the non-root 'app' user that ships in the base image.
 USER app
 
 COPY --from=build --chown=app:app /app/publish ./

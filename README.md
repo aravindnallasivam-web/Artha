@@ -14,31 +14,45 @@ A personal expense-management workspace built on the principle of **data soverei
 
 ## Repository layout
 
+Single .NET app — the API and the Angular SPA ship as one process.
+
 ```
-/server          ASP.NET Core 10 solution
-  Artha.sln
+/server                              ASP.NET Core 10 solution
+  Artha.slnx
   global.json
   Directory.Build.props
-  Directory.Packages.props      (Central Package Management)
+  Directory.Packages.props           (Central Package Management)
+  Dockerfile                         multi-stage: Node 22 + .NET 10 -> single image
   /src
-    Artha.Api                   composition root, controllers, DI wiring
-    Artha.Core                  domain models, DTOs, interfaces
-    Artha.Auth                  Google OIDC exchange, JWT issuer, token store
-    Artha.Drive                 (M2) Drive client + appdata repository
-    Artha.Infrastructure        Serilog, caching, options helpers
-  /tests                        xunit + FluentAssertions + NSubstitute
-/client          Angular + Ionic + Capacitor workspace
-  capacitor.config.ts           appId = com.artha.app
-  /src
-    /environments               environment.ts / environment.prod.ts
-    /app
-      app.config.ts             provideRouter, provideHttpClient, interceptors
-      app.routes.ts             lazy-loaded standalone routes
-      /core/auth                pkce, session, google-auth, guard, interceptor
-      /features/auth            login, callback components
-      /features/dashboard       placeholder post-login screen
-/docs
+    Artha.Api                        composition root, controllers, DI wiring
+      /ClientApp                     Angular 21 + Ionic 8 + Capacitor 8
+        capacitor.config.ts          appId = com.artha.app
+        proxy.conf.json              dev: /api/* proxied to .NET on :5239
+        /src
+          /environments              environment.ts / environment.prod.ts
+          /app
+            app.config.ts            provideRouter, provideHttpClient, interceptors
+            app.routes.ts            lazy-loaded standalone routes
+            /core/auth               pkce, session, google-auth, guard, interceptor
+            /features/auth           login, callback components
+            /features/dashboard      placeholder post-login screen
+      /wwwroot                       (populated at publish time from ClientApp/dist)
+    Artha.Core                       domain models, DTOs, interfaces
+    Artha.Auth                       Google OIDC exchange, JWT issuer, token store
+    Artha.Drive                      (M2) Drive client + appdata repository
+    Artha.Infrastructure             Serilog, caching, options helpers
+  /tests                             xunit + FluentAssertions + NSubstitute
+/.do/app.yaml                        DigitalOcean App Platform spec
+/scripts/deploy-do.sh                One-command deploy via doctl + .env
+/.env.example                        Template for local deploy secrets
 /.github/workflows
+```
+
+At runtime the single .NET process serves both:
+
+```
+GET /api/*    -> ASP.NET Core controllers
+GET /*        -> Angular static files (with SPA fallback to /index.html)
 ```
 
 ## Milestones
@@ -59,44 +73,54 @@ A personal expense-management workspace built on the principle of **data soverei
 - Node.js 22 + npm 10
 - A Google Cloud Console project with an **OAuth 2.0 Web client ID** and **Drive API** enabled
 
-### Configure secrets
-
-Edit `server/src/Artha.Api/appsettings.json` (or better, use User Secrets):
+### Configure secrets (one-time)
 
 ```bash
 cd server/src/Artha.Api
-dotnet user-secrets set "GoogleAuth:ClientId" "<your-google-web-client-id>"
 dotnet user-secrets set "GoogleAuth:ClientSecret" "<your-google-web-client-secret>"
-dotnet user-secrets set "Jwt:SigningKey" "<a-long-random-string-of-32+-chars>"
+dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -base64 48)"
 ```
 
-In Google Cloud Console, set the **authorized redirect URI** for the Web client to:
+The **Client ID** is already in `appsettings.json` (it's public). In Google Cloud Console, add this **authorized redirect URI** to your Web OAuth client:
 
 ```
 http://localhost:4200/auth/callback
 ```
 
-Then update `client/src/environments/environment.ts` with the same `google.clientId`.
-
 ### Run
 
-```bash
-# Terminal 1 — API
-cd server
-dotnet run --project src/Artha.Api
+Two terminals, but you only need to remember one command in each:
 
-# Terminal 2 — Web client
-cd client
-npm start
+```bash
+# Terminal 1 — Angular dev server (HMR + dev-mode /api proxy to the .NET port)
+cd server/src/Artha.Api/ClientApp
+npm start                                  # http://localhost:4200
+
+# Terminal 2 — .NET API
+cd server
+dotnet run --project src/Artha.Api          # http://localhost:5239
 ```
 
-Open <http://localhost:4200> → click "Sign in with Google" → after consent you'll land on the placeholder dashboard.
+Open <http://localhost:4200> → "Sign in with Google" → land on the dashboard. The Angular dev server proxies `/api/*` calls to the .NET process automatically (see `ClientApp/proxy.conf.json`).
+
+To preview the **production single-process build** locally:
+
+```bash
+cd server
+dotnet publish src/Artha.Api -c Release -o /tmp/artha-publish
+cd /tmp/artha-publish
+Jwt__SigningKey="$(openssl rand -base64 48)" \
+GoogleAuth__ClientSecret="<your-secret>" \
+ASPNETCORE_URLS=http://localhost:8088 \
+dotnet Artha.Api.dll
+# now everything is at http://localhost:8088 — SPA at /, API at /api/*
+```
 
 ### Tests
 
 ```bash
-cd server && dotnet test
-cd client && npm test
+cd server && dotnet test                                 # xunit (server)
+cd server/src/Artha.Api/ClientApp && npm test            # vitest (SPA)
 ```
 
 ## How the auth flow works
@@ -147,11 +171,7 @@ If you'd rather use the DO web UI:
      (you can update this after step 4 — for now use a placeholder and come back).
    - Copy the **Client ID** and **Client secret**.
 
-2. **Update both env files** with your Web Client ID (do NOT commit the secret — that goes into DO):
-   - `client/src/environments/environment.ts`
-   - `client/src/environments/environment.prod.ts`
-
-   Commit + push.
+2. **The Client ID is already wired in** at `.do/app.yaml`, `server/src/Artha.Api/appsettings.json`, and `server/src/Artha.Api/ClientApp/src/environments/{environment.ts,environment.prod.ts}`. If you create a different OAuth client, update all four — they each contain the same `952436597649-…` Client ID string.
 
 3. **Generate a JWT signing key** — any random string of 32+ characters. Example:
    ```bash
@@ -195,10 +215,10 @@ Once the app is created, every push to `main` triggers a deploy automatically (`
 
 ## Mobile (planned for M4)
 
-Capacitor is already configured in `client/capacitor.config.ts` with `appId = com.artha.app`. To build native projects:
+Capacitor is already configured in `server/src/Artha.Api/ClientApp/capacitor.config.ts` with `appId = com.artha.app`. To build native projects:
 
 ```bash
-cd client
+cd server/src/Artha.Api/ClientApp
 npm run build
 npx cap add ios
 npx cap add android
@@ -206,5 +226,7 @@ npx cap sync
 npx cap open ios     # opens Xcode
 npx cap open android # opens Android Studio
 ```
+
+The mobile bundle ships the Angular static files inside the native package; the app calls back to the deployed .NET API at `https://<your-app>.ondigitalocean.app/api/*` over HTTPS. CORS for `capacitor://localhost` and `ionic://localhost` is already configured in `.do/app.yaml`.
 
 The same PKCE flow will work in mobile via `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs) and a custom URL scheme `com.artha.app://auth/callback`, captured by `@capacitor/app`'s `appUrlOpen` listener.
