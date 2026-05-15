@@ -1,59 +1,155 @@
-import { Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { GoogleAuthService } from '../../core/auth/google-auth.service';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { Component, OnInit, computed, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import {
+  IonButton,
+  IonCard,
+  IonCardContent,
+  IonCardHeader,
+  IonCardSubtitle,
+  IonCardTitle,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonList,
+  IonListHeader,
+  IonNote,
+  IonSpinner,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
+import { CategoriesStore } from '../categories/categories.store';
+import { ExpensesStore } from '../expenses/expenses.store';
+import { SettingsStore } from '../settings/settings.store';
 
 @Component({
   selector: 'artha-dashboard',
   standalone: true,
+  imports: [
+    CurrencyPipe,
+    DatePipe,
+    RouterLink,
+    IonButton,
+    IonCard,
+    IonCardContent,
+    IonCardHeader,
+    IonCardSubtitle,
+    IonCardTitle,
+    IonContent,
+    IonHeader,
+    IonIcon,
+    IonItem,
+    IonLabel,
+    IonList,
+    IonListHeader,
+    IonNote,
+    IonSpinner,
+    IonTitle,
+    IonToolbar,
+  ],
   template: `
-    <header class="topbar">
-      <div class="brand">Artha</div>
-      @if (currentUser(); as user) {
-        <div class="user">
-          @if (user.pictureUrl) {
-            <img [src]="user.pictureUrl" [alt]="user.name" referrerpolicy="no-referrer" />
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>Dashboard</ion-title>
+      </ion-toolbar>
+    </ion-header>
+
+    <ion-content class="ion-padding">
+      @if (loading()) {
+        <ion-spinner></ion-spinner>
+      } @else {
+        @if (currentUser(); as user) {
+          <p class="welcome">Hi {{ firstName(user.name) }} 👋</p>
+        }
+
+        <ion-card>
+          <ion-card-header>
+            <ion-card-subtitle>{{ monthLabel() }}</ion-card-subtitle>
+            <ion-card-title>
+              {{ expensesStore.totalAmount() | currency: settingsStore.currency() }}
+            </ion-card-title>
+          </ion-card-header>
+          <ion-card-content>
+            {{ expensesStore.items().length }} expense(s) this month
+          </ion-card-content>
+        </ion-card>
+
+        <ion-list>
+          <ion-list-header>
+            <ion-label>Recent</ion-label>
+          </ion-list-header>
+          @if (recent().length === 0) {
+            <ion-item lines="none">
+              <ion-label color="medium">No expenses yet.</ion-label>
+            </ion-item>
+          } @else {
+            @for (expense of recent(); track expense.id) {
+              <ion-item>
+                <ion-label>
+                  <h2>{{ categoryName(expense.categoryId) }}</h2>
+                  <p>{{ expense.date | date:'mediumDate' }}</p>
+                </ion-label>
+                <ion-note slot="end">
+                  {{ expense.amount | currency: expense.currency }}
+                </ion-note>
+              </ion-item>
+            }
           }
-          <span>{{ user.name }}</span>
-          <button type="button" (click)="signOut()">Sign out</button>
-        </div>
+        </ion-list>
+
+        <ion-button expand="block" routerLink="/expenses" class="cta">
+          <ion-icon name="wallet-outline" slot="start"></ion-icon>
+          Manage expenses
+        </ion-button>
       }
-    </header>
-    <main class="content">
-      <h1>Welcome to Artha</h1>
-      @if (currentUser(); as user) {
-        <p>Signed in as <strong>{{ user.email }}</strong>.</p>
-      }
-      <p class="placeholder">Expense tracking features land in milestone M2.</p>
-    </main>
+    </ion-content>
   `,
   styles: [`
-    :host { display: block; font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #0f172a; }
-    .topbar {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 24px; border-bottom: 1px solid #e2e8f0; background: #fff;
-    }
-    .brand { font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
-    .user { display: flex; align-items: center; gap: 12px; font-size: 14px; }
-    .user img { width: 32px; height: 32px; border-radius: 50%; }
-    .user button {
-      padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1;
-      background: white; cursor: pointer; font-size: 13px;
-    }
-    .content { padding: 32px 24px; max-width: 720px; margin: 0 auto; }
-    h1 { margin: 0 0 12px; font-size: 28px; letter-spacing: -0.02em; }
-    .placeholder { margin-top: 32px; color: #64748b; font-style: italic; }
+    .welcome { font-size: 18px; margin: 0 0 16px; color: var(--ion-color-medium); }
+    .cta { margin-top: 16px; }
+    ion-card { margin: 0 0 16px; }
   `],
 })
-export class DashboardComponent {
+export class DashboardComponent implements OnInit {
+  protected readonly expensesStore = inject(ExpensesStore);
+  private readonly categoriesStore = inject(CategoriesStore);
+  protected readonly settingsStore = inject(SettingsStore);
   private readonly session = inject(SessionService);
-  private readonly googleAuth = inject(GoogleAuthService);
-  private readonly router = inject(Router);
 
   protected readonly currentUser = this.session.currentUser;
 
-  async signOut(): Promise<void> {
-    await this.googleAuth.logout();
-    await this.router.navigate(['/login']);
+  protected readonly recent = computed(() =>
+    this.expensesStore.items().slice(0, 5),
+  );
+
+  protected readonly loading = computed(() =>
+    this.expensesStore.loading() || this.settingsStore.loading(),
+  );
+
+  ngOnInit(): void {
+    const now = new Date();
+    const yyyyMm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    void this.expensesStore.load(yyyyMm, yyyyMm);
+    if (this.categoriesStore.items().length === 0) {
+      void this.categoriesStore.load(/* includeArchived */ true);
+    }
+    if (!this.settingsStore.settings()) {
+      void this.settingsStore.load();
+    }
+  }
+
+  protected categoryName(id: string): string {
+    return this.categoriesStore.byId()[id]?.name ?? 'Unknown';
+  }
+
+  protected monthLabel(): string {
+    return new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  protected firstName(name: string): string {
+    return name.split(' ')[0] ?? name;
   }
 }

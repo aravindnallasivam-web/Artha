@@ -18,10 +18,42 @@ export const routes: Routes = [
       import('./features/auth/callback.component').then((m) => m.CallbackComponent),
   },
   {
-    path: 'dashboard',
+    path: '',
     canActivate: [authGuard],
     loadComponent: () =>
-      import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
+      import('./features/shell/shell.component').then((m) => m.ShellComponent),
+    children: [
+      {
+        path: 'dashboard',
+        loadComponent: () =>
+          import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
+      },
+      {
+        path: 'expenses',
+        loadComponent: () =>
+          import('./features/expenses/expenses-list.page').then((m) => m.ExpensesListPage),
+      },
+      {
+        path: 'expenses/new',
+        loadComponent: () =>
+          import('./features/expenses/expense-edit.page').then((m) => m.ExpenseEditPage),
+      },
+      {
+        path: 'expenses/:id',
+        loadComponent: () =>
+          import('./features/expenses/expense-edit.page').then((m) => m.ExpenseEditPage),
+      },
+      {
+        path: 'categories',
+        loadComponent: () =>
+          import('./features/categories/categories-list.page').then((m) => m.CategoriesListPage),
+      },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/settings/settings.page').then((m) => m.SettingsPage),
+      },
+    ],
   },
   {
     path: '**',
