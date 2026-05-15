@@ -3,6 +3,7 @@ import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import {
   IonApp,
   IonIcon,
+  IonMenu,
   IonSplitPane,
   IonTabBar,
   IonTabButton,
@@ -64,6 +65,7 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
     RouterLinkActive,
     IonApp,
     IonIcon,
+    IonMenu,
     IonSplitPane,
     IonTabBar,
     IonTabButton,
@@ -72,53 +74,59 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
   template: `
     <ion-app>
       <ion-split-pane contentId="main-content" when="md">
-        <aside class="side-nav" id="artha-side-nav">
-          <div class="brand">
-            <span class="brand-mark" aria-hidden="true">
-              <ion-icon name="layers"></ion-icon>
-            </span>
-            <span class="brand-name">Artha</span>
-          </div>
+        <!-- ion-split-pane locates its side pane by tag name (ion-menu).
+             Plain elements get rendered as content and the side pane
+             disappears. So we keep ion-menu as the wrapper and put our
+             custom layout inside it. -->
+        <ion-menu contentId="main-content" type="overlay" class="artha-menu">
+          <aside class="side-nav">
+            <div class="brand">
+              <span class="brand-mark" aria-hidden="true">
+                <ion-icon name="layers"></ion-icon>
+              </span>
+              <span class="brand-name">Artha</span>
+            </div>
 
-          <nav class="nav" aria-label="Main">
-            @for (group of nav; track group.label) {
-              <div class="nav-group">
-                <p class="nav-group-label">{{ group.label }}</p>
-                @for (item of group.items; track item.path) {
-                  <a
-                    [routerLink]="item.path"
-                    routerLinkActive="active"
-                    #rla="routerLinkActive"
-                    class="nav-link"
-                  >
-                    <ion-icon
-                      [name]="rla.isActive ? (item.iconActive ?? item.icon) : item.icon"
-                      aria-hidden="true"
-                    ></ion-icon>
-                    <span>{{ item.label }}</span>
-                  </a>
+            <nav class="nav" aria-label="Main">
+              @for (group of nav; track group.label) {
+                <div class="nav-group">
+                  <p class="nav-group-label">{{ group.label }}</p>
+                  @for (item of group.items; track item.path) {
+                    <a
+                      [routerLink]="item.path"
+                      routerLinkActive="active"
+                      #rla="routerLinkActive"
+                      class="nav-link"
+                    >
+                      <ion-icon
+                        [name]="rla.isActive ? (item.iconActive ?? item.icon) : item.icon"
+                        aria-hidden="true"
+                      ></ion-icon>
+                      <span>{{ item.label }}</span>
+                    </a>
+                  }
+                </div>
+              }
+            </nav>
+
+            @if (user(); as u) {
+              <div class="user-card">
+                @if (u.pictureUrl) {
+                  <img class="avatar" [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
+                } @else {
+                  <span class="avatar avatar--initial" aria-hidden="true">{{ initial(u.name) }}</span>
                 }
+                <div class="user-text">
+                  <p class="user-name">{{ u.name }}</p>
+                  <p class="user-email">{{ u.email }}</p>
+                </div>
+                <button class="logout-btn" type="button" (click)="logout()" aria-label="Sign out">
+                  <ion-icon name="log-out-outline"></ion-icon>
+                </button>
               </div>
             }
-          </nav>
-
-          @if (user(); as u) {
-            <div class="user-card">
-              @if (u.pictureUrl) {
-                <img class="avatar" [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
-              } @else {
-                <span class="avatar avatar--initial" aria-hidden="true">{{ initial(u.name) }}</span>
-              }
-              <div class="user-text">
-                <p class="user-name">{{ u.name }}</p>
-                <p class="user-email">{{ u.email }}</p>
-              </div>
-              <button class="logout-btn" type="button" (click)="logout()" aria-label="Sign out">
-                <ion-icon name="log-out-outline"></ion-icon>
-              </button>
-            </div>
-          }
-        </aside>
+          </aside>
+        </ion-menu>
 
         <ion-tabs id="main-content">
           <ion-tab-bar slot="bottom" class="mobile-tabs">
@@ -136,19 +144,31 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
   styles: [`
     :host { display: contents; }
 
-    /* ====== Side nav ====== */
-    .side-nav {
-      --side-width: 260px;
-      width: var(--side-width);
-      min-width: var(--side-width);
-      max-width: var(--side-width);
+    /* ====== ion-menu host ======
+       Strip the default Ionic menu chrome (background, border) so the
+       custom aside inside controls every pixel. The split-pane keeps
+       managing show/hide based on the when="md" breakpoint. */
+    .artha-menu {
+      --width: 260px;
+      --min-width: 260px;
+      --max-width: 260px;
+      --background: var(--artha-surface);
+      --border: 0;
+    }
+    .artha-menu::part(container) {
       background: var(--artha-surface);
       border-right: 1px solid var(--artha-border);
+      box-shadow: none;
+    }
+
+    /* ====== Side nav (inside ion-menu) ====== */
+    .side-nav {
       display: flex;
       flex-direction: column;
       padding: 20px 14px 14px;
       box-sizing: border-box;
       height: 100%;
+      width: 100%;
     }
 
     .brand {
@@ -315,9 +335,11 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
       .mobile-tabs { display: none !important; }
     }
 
-    /* Mobile: hide the side nav (we only render bottom tabs there). */
+    /* Mobile: ion-split-pane already collapses the menu off-canvas below
+       the breakpoint, but hide it outright too so swipe-from-edge
+       doesn't reveal a sidebar we never advertise. */
     @media (max-width: 767.98px) {
-      .side-nav { display: none; }
+      .artha-menu { display: none; }
     }
   `],
 })
