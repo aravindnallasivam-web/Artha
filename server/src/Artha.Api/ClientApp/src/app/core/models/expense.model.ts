@@ -4,6 +4,7 @@ export interface Expense {
   amount: number;
   currency: string;
   categoryId: string;
+  accountId: string;
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -13,6 +14,7 @@ export interface ExpenseCreateRequest {
   date: string;
   amount: number;
   categoryId: string;
+  accountId: string;
   note: string | null;
 }
 

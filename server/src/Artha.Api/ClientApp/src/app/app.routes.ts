@@ -49,6 +49,21 @@ export const routes: Routes = [
           import('./features/reports/reports.page').then((m) => m.ReportsPage),
       },
       {
+        path: 'accounts',
+        loadComponent: () =>
+          import('./features/accounts/accounts-list.page').then((m) => m.AccountsListPage),
+      },
+      {
+        path: 'accounts/new',
+        loadComponent: () =>
+          import('./features/accounts/account-edit.page').then((m) => m.AccountEditPage),
+      },
+      {
+        path: 'accounts/:id',
+        loadComponent: () =>
+          import('./features/accounts/account-edit.page').then((m) => m.AccountEditPage),
+      },
+      {
         path: 'categories',
         loadComponent: () =>
           import('./features/categories/categories-list.page').then((m) => m.CategoriesListPage),

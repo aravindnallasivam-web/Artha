@@ -25,13 +25,21 @@ interface NavItem {
   iconActive?: string;
 }
 
+// Side-nav (desktop) shows everything.
 const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Home', icon: 'home-outline', iconActive: 'home' },
   { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
+  { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
   { path: '/reports', label: 'Reports', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
   { path: '/categories', label: 'Categories', icon: 'pricetag-outline', iconActive: 'pricetag' },
   { path: '/settings', label: 'Settings', icon: 'settings-outline', iconActive: 'settings' },
 ];
+
+// Bottom-tab (mobile) keeps the 5 most-used destinations so the bar
+// doesn't crowd on small phones. Categories management is infrequent —
+// reachable via the sidebar on desktop and through Settings on mobile
+// (linked from there in a follow-up).
+const TAB_ITEMS: NavItem[] = NAV_ITEMS.filter((n) => n.path !== '/categories');
 
 @Component({
   selector: 'artha-shell',
@@ -92,7 +100,7 @@ const NAV_ITEMS: NavItem[] = [
 
         <ion-tabs id="main-content">
           <ion-tab-bar slot="bottom" class="mobile-tabs">
-            @for (item of nav; track item.path) {
+            @for (item of tabs; track item.path) {
               <ion-tab-button [tab]="item.path.slice(1)" [href]="item.path">
                 <ion-icon [name]="item.icon" aria-hidden="true"></ion-icon>
                 <ion-label>{{ item.label }}</ion-label>
@@ -157,4 +165,5 @@ const NAV_ITEMS: NavItem[] = [
 })
 export class ShellComponent {
   protected readonly nav = NAV_ITEMS;
+  protected readonly tabs = TAB_ITEMS;
 }

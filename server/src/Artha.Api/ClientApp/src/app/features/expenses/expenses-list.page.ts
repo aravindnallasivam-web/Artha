@@ -21,6 +21,7 @@ import {
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
+import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from './expenses.store';
 
@@ -73,9 +74,13 @@ import { ExpensesStore } from './expenses.store';
                 <ion-item button (click)="edit(expense.id)">
                   <ion-label>
                     <h2>{{ categoryName(expense.categoryId) }}</h2>
-                    @if (expense.note) {
-                      <p>{{ expense.note }}</p>
-                    }
+                    <p>
+                      <ion-icon name="wallet-outline" class="row-icon"></ion-icon>
+                      {{ accountName(expense.accountId) }}
+                      @if (expense.note) {
+                        <span class="dot">·</span> {{ expense.note }}
+                      }
+                    </p>
                   </ion-label>
                   <ion-note slot="end">
                     {{ expense.amount | currency:expense.currency }}
@@ -106,11 +111,17 @@ import { ExpensesStore } from './expenses.store';
       padding: 64px 32px; color: var(--ion-color-medium); text-align: center;
     }
     .empty p { margin: 4px 0; }
+    .row-icon {
+      vertical-align: -2px; margin-inline-end: 2px;
+      font-size: 14px; color: var(--ion-color-medium);
+    }
+    .dot { margin: 0 4px; color: var(--ion-color-medium); }
   `],
 })
 export class ExpensesListPage implements OnInit {
   protected readonly expensesStore = inject(ExpensesStore);
   protected readonly categoriesStore = inject(CategoriesStore);
+  protected readonly accountsStore = inject(AccountsStore);
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
 
@@ -132,10 +143,17 @@ export class ExpensesListPage implements OnInit {
     if (this.categoriesStore.items().length === 0) {
       void this.categoriesStore.load(/* includeArchived */ true);
     }
+    if (this.accountsStore.items().length === 0) {
+      void this.accountsStore.load(/* includeArchived */ true);
+    }
   }
 
   protected categoryName(id: string): string {
     return this.categoriesStore.byId()[id]?.name ?? 'Unknown';
+  }
+
+  protected accountName(id: string): string {
+    return this.accountsStore.byId()[id]?.name ?? 'Cash';
   }
 
   add(): void {
