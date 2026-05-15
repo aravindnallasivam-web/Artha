@@ -4,6 +4,8 @@ using Artha.Auth.Google;
 using Artha.Auth.Jwt;
 using Artha.Auth.Storage;
 using Artha.Core.Auth;
+using Artha.Core.Drive;
+using Artha.Drive;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
@@ -37,6 +39,10 @@ builder.Services.Configure<JwtOptions>(
 builder.Services.AddHttpClient<IExternalIdentityProvider, GoogleIdentityProvider>();
 builder.Services.AddSingleton<ArthaJwtIssuer>();
 builder.Services.AddSingleton<IUserTokenStore, InMemoryUserTokenStore>();
+
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IDriveClientFactory, GoogleDriveClientFactory>();
+builder.Services.AddScoped<AppDataBootstrapper>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
