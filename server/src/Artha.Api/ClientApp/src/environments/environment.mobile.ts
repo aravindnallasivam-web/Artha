@@ -13,7 +13,7 @@
 // configured in server/src/Artha.Api/Program.cs.
 export const environment = {
   production: true,
-  apiBaseUrl: 'https://artha.ondigitalocean.app',
+  apiBaseUrl: 'https://arthaexpense-qrts6.ondigitalocean.app',
   google: {
     clientId: '952436597649-j9gosps5n1ukkm1907fu8bl06toptdb6.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
