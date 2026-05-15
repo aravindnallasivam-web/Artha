@@ -62,7 +62,7 @@ GET /*        -> Angular static files (with SPA fallback to /index.html)
 | **M1** | Solution scaffold + Google login end-to-end (web) | ✅ Done |
 | **M2** | Drive integration + Expense CRUD (web) | Planned |
 | **M3** | Categories + monthly reports | Planned |
-| **M4** | Capacitor iOS + Android builds | Planned |
+| **M4** | Capacitor iOS + Android builds | In progress (scaffold landed) |
 | **M5** | Polish: settings, multi-currency, Apple Sign-In, export | Planned |
 
 ## Local development
@@ -213,20 +213,36 @@ You can scale the API up later (`apps-s-1vcpu-1gb`, etc.) without changing anyth
 
 Once the app is created, every push to `main` triggers a deploy automatically (`deploy_on_push: true` in the spec). Build logs show in **Activity → Deployments**.
 
-## Mobile (planned for M4)
+## Mobile (M4 — Capacitor)
 
-Capacitor is already configured in `server/src/Artha.Api/ClientApp/capacitor.config.ts` with `appId = com.artha.app`. To build native projects:
+The Capacitor scaffold is committed: `appId = com.artha.app`, `webDir = dist/client/browser`, both `ios/` and `android/` native projects are present.
+
+### 1. Point the mobile bundle at your deployed API
+
+Edit [`src/environments/environment.mobile.ts`](server/src/Artha.Api/ClientApp/src/environments/environment.mobile.ts) and set `apiBaseUrl` to your deployed DigitalOcean URL (e.g. `https://artha-abc12.ondigitalocean.app`). Same-origin won't work on mobile — the WebView serves from `capacitor://localhost`, so all API calls must be absolute. CORS for `capacitor://localhost` and `ionic://localhost` is already allowed in `Program.cs`.
+
+### 2. Build the mobile web bundle + sync
 
 ```bash
 cd server/src/Artha.Api/ClientApp
-npm run build
-npx cap add ios
-npx cap add android
-npx cap sync
-npx cap open ios     # opens Xcode
-npx cap open android # opens Android Studio
+npm run cap:sync       # = ng build --configuration mobile && cap sync
 ```
 
-The mobile bundle ships the Angular static files inside the native package; the app calls back to the deployed .NET API at `https://<your-app>.ondigitalocean.app/api/*` over HTTPS. CORS for `capacitor://localhost` and `ionic://localhost` is already configured in `.do/app.yaml`.
+This swaps `environment.ts` → `environment.mobile.ts`, writes the Angular output to `dist/client/browser`, and copies it into both native projects.
 
-The same PKCE flow will work in mobile via `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs) and a custom URL scheme `com.artha.app://auth/callback`, captured by `@capacitor/app`'s `appUrlOpen` listener.
+### 3. Open in your native IDE
+
+```bash
+npm run cap:open:ios       # Xcode (macOS only)
+npm run cap:open:android   # Android Studio
+```
+
+From there, run on a simulator or device. Capacitor 8 uses Swift Package Manager for iOS plugins — **no CocoaPods step required**.
+
+### Auth on mobile (M4.3 — pending)
+
+The web build uses cookie auth. Mobile WebViews handle cross-origin cookies awkwardly, so M4.3 will switch the mobile path to:
+
+- Open Google OAuth in an in-app browser via `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs).
+- Capture the redirect via the `com.artha.app://auth/callback` custom URL scheme, picked up by `@capacitor/app`'s `appUrlOpen` listener.
+- Persist the JWT in `@capacitor/preferences` and attach it as a `Bearer` header via the existing `AuthInterceptor`.

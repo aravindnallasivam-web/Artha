@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Artha</string>
+    <string name="title_activity_main">Artha</string>
+    <string name="package_name">com.artha.app</string>
+    <string name="custom_url_scheme">com.artha.app</string>
+</resources>
