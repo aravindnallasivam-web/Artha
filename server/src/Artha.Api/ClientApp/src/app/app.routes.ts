@@ -44,6 +44,11 @@ export const routes: Routes = [
           import('./features/expenses/expense-edit.page').then((m) => m.ExpenseEditPage),
       },
       {
+        path: 'reports',
+        loadComponent: () =>
+          import('./features/reports/reports.page').then((m) => m.ReportsPage),
+      },
+      {
         path: 'categories',
         loadComponent: () =>
           import('./features/categories/categories-list.page').then((m) => m.CategoriesListPage),

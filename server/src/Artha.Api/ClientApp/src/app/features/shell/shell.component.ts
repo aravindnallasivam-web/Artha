@@ -31,6 +31,10 @@ import {
             <ion-icon name="wallet-outline" aria-hidden="true"></ion-icon>
             <ion-label>Expenses</ion-label>
           </ion-tab-button>
+          <ion-tab-button tab="reports" href="/reports">
+            <ion-icon name="stats-chart-outline" aria-hidden="true"></ion-icon>
+            <ion-label>Reports</ion-label>
+          </ion-tab-button>
           <ion-tab-button tab="categories" href="/categories">
             <ion-icon name="pricetag" aria-hidden="true"></ion-icon>
             <ion-label>Categories</ion-label>
