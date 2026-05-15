@@ -4,8 +4,13 @@ using Artha.Core.Drive;
 namespace Artha.Api.Middleware;
 
 /// <summary>
-/// Translates Drive optimistic-concurrency failures into 409 problem+json
-/// so controllers don't need try/catch boilerplate.
+/// Translates Drive errors into clean HTTP responses so controllers don't
+/// need try/catch boilerplate:
+///   - DriveConflictException        -> 409 Conflict + problem+json
+///   - UnauthorizedAccessException   -> 401 Unauthorized + problem+json
+///     (raised by GoogleDriveClientFactory when the in-memory token store
+///     was wiped by a process restart; the client interceptor turns 401
+///     into a redirect to /login so the user can re-auth.)
 /// </summary>
 public sealed class DriveConflictMiddleware
 {
@@ -49,6 +54,31 @@ public sealed class DriveConflictMiddleware
                 detail = ex.Message,
                 fileName = ex.FileName,
                 currentEtag = ex.CurrentHeadRevisionId,
+            };
+
+            await JsonSerializer.SerializeAsync(context.Response.Body, payload, JsonOptions);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogInformation(
+                "Drive auth missing for the current user; returning 401. {Message}",
+                ex.Message);
+
+            if (context.Response.HasStarted)
+            {
+                throw;
+            }
+
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/problem+json";
+
+            var payload = new
+            {
+                type = "https://artha.example/problems/drive-reauth-required",
+                title = "Drive re-authentication required",
+                status = 401,
+                detail = "Server-side Drive tokens are missing — please sign in again.",
             };
 
             await JsonSerializer.SerializeAsync(context.Response.Body, payload, JsonOptions);
