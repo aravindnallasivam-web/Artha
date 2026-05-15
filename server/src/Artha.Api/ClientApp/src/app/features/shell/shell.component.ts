@@ -70,8 +70,10 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
   ],
   template: `
     <ion-app>
-      <ion-split-pane contentId="main-content" when="md">
-        <ion-menu contentId="main-content" type="overlay" class="artha-menu">
+      <!-- when="md" => viewport >= 768px shows the sidebar inline.
+           Below that the bottom tabs handle navigation. -->
+      <ion-split-pane contentId="main-content" when="md" class="artha-split">
+        <ion-menu contentId="main-content" type="overlay" class="artha-menu" menuId="main">
           <ion-content class="artha-menu-content">
             <div class="brand">
               <span class="brand-mark" aria-hidden="true">
@@ -135,19 +137,24 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
     </ion-app>
   `,
   styles: [`
-    :host { display: contents; }
+    /* Sidebar width — Ionic reads --side-* on ion-split-pane in split mode
+       (NOT --width on ion-menu, which only applies to overlay mode). Without
+       these, the menu falls back to the default 270px..28% range. */
+    .artha-split {
+      --side-min-width: 264px;
+      --side-max-width: 264px;
+      --side-width: 264px;
+    }
 
     .artha-menu {
-      --width: 264px;
-      --min-width: 264px;
-      --max-width: 264px;
       --background: var(--artha-surface);
-      --border: 0;
+      /* Use Ionic's --border var with a visible color so the divider between
+         menu and content is clearly perceivable even on low-contrast displays. */
+      --border: 1px solid var(--artha-border-strong);
     }
     .artha-menu::part(container) {
       background: var(--artha-surface);
-      border-right: 1px solid var(--artha-border);
-      box-shadow: none;
+      box-shadow: var(--artha-shadow-sm);
     }
     .artha-menu-content {
       --background: var(--artha-surface);
