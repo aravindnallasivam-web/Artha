@@ -1,22 +1,15 @@
-import { Component } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, inject } from '@angular/core';
+import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import {
   IonApp,
-  IonContent,
-  IonHeader,
   IonIcon,
-  IonItem,
-  IonLabel,
-  IonList,
-  IonMenu,
-  IonNote,
   IonSplitPane,
   IonTabBar,
   IonTabButton,
   IonTabs,
-  IonTitle,
-  IonToolbar,
 } from '@ionic/angular/standalone';
+import { GoogleAuthService } from '../../core/auth/google-auth.service';
+import { SessionService } from '../../core/auth/session.service';
 
 interface NavItem {
   path: string;
@@ -25,21 +18,43 @@ interface NavItem {
   iconActive?: string;
 }
 
-// Side-nav (desktop) shows everything.
-const NAV_ITEMS: NavItem[] = [
-  { path: '/dashboard', label: 'Home', icon: 'home-outline', iconActive: 'home' },
-  { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
-  { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
-  { path: '/reports', label: 'Reports', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
-  { path: '/categories', label: 'Categories', icon: 'pricetag-outline', iconActive: 'pricetag' },
-  { path: '/settings', label: 'Settings', icon: 'settings-outline', iconActive: 'settings' },
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+// Side-nav (desktop) groups destinations so the list reads as a small
+// table of contents instead of a flat run of icons.
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [
+      { path: '/dashboard', label: 'Home', icon: 'home-outline', iconActive: 'home' },
+      { path: '/reports', label: 'Reports', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
+    ],
+  },
+  {
+    label: 'Money',
+    items: [
+      { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
+      { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
+    ],
+  },
+  {
+    label: 'Setup',
+    items: [
+      { path: '/categories', label: 'Categories', icon: 'pricetag-outline', iconActive: 'pricetag' },
+      { path: '/settings', label: 'Settings', icon: 'settings-outline', iconActive: 'settings' },
+    ],
+  },
 ];
 
 // Bottom-tab (mobile) keeps the 5 most-used destinations so the bar
 // doesn't crowd on small phones. Categories management is infrequent —
-// reachable via the sidebar on desktop and through Settings on mobile
-// (linked from there in a follow-up).
-const TAB_ITEMS: NavItem[] = NAV_ITEMS.filter((n) => n.path !== '/categories');
+// reachable via Settings on mobile.
+const TAB_ITEMS: NavItem[] = NAV_GROUPS
+  .flatMap((g) => g.items)
+  .filter((n) => n.path !== '/categories');
 
 @Component({
   selector: 'artha-shell',
@@ -48,62 +63,69 @@ const TAB_ITEMS: NavItem[] = NAV_ITEMS.filter((n) => n.path !== '/categories');
     RouterLink,
     RouterLinkActive,
     IonApp,
-    IonContent,
-    IonHeader,
     IonIcon,
-    IonItem,
-    IonLabel,
-    IonList,
-    IonMenu,
-    IonNote,
     IonSplitPane,
     IonTabBar,
     IonTabButton,
     IonTabs,
-    IonTitle,
-    IonToolbar,
   ],
   template: `
     <ion-app>
       <ion-split-pane contentId="main-content" when="md">
-        <ion-menu contentId="main-content" type="overlay" class="side-nav">
-          <ion-header>
-            <ion-toolbar>
-              <ion-title>Artha</ion-title>
-            </ion-toolbar>
-          </ion-header>
-          <ion-content>
-            <ion-list lines="none" class="nav-list">
-              @for (item of nav; track item.path) {
-                <ion-item
-                  [routerLink]="item.path"
-                  routerLinkActive="active"
-                  #rla="routerLinkActive"
-                  detail="false"
-                  button
-                  class="nav-item"
-                >
-                  <ion-icon
-                    slot="start"
-                    [name]="rla.isActive ? (item.iconActive ?? item.icon) : item.icon"
-                    aria-hidden="true"
-                  ></ion-icon>
-                  <ion-label>{{ item.label }}</ion-label>
-                </ion-item>
+        <aside class="side-nav" id="artha-side-nav">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+              <ion-icon name="layers"></ion-icon>
+            </span>
+            <span class="brand-name">Artha</span>
+          </div>
+
+          <nav class="nav" aria-label="Main">
+            @for (group of nav; track group.label) {
+              <div class="nav-group">
+                <p class="nav-group-label">{{ group.label }}</p>
+                @for (item of group.items; track item.path) {
+                  <a
+                    [routerLink]="item.path"
+                    routerLinkActive="active"
+                    #rla="routerLinkActive"
+                    class="nav-link"
+                  >
+                    <ion-icon
+                      [name]="rla.isActive ? (item.iconActive ?? item.icon) : item.icon"
+                      aria-hidden="true"
+                    ></ion-icon>
+                    <span>{{ item.label }}</span>
+                  </a>
+                }
+              </div>
+            }
+          </nav>
+
+          @if (user(); as u) {
+            <div class="user-card">
+              @if (u.pictureUrl) {
+                <img class="avatar" [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
+              } @else {
+                <span class="avatar avatar--initial" aria-hidden="true">{{ initial(u.name) }}</span>
               }
-            </ion-list>
-            <ion-note class="nav-footer">
-              Your data lives in your Google Drive.
-            </ion-note>
-          </ion-content>
-        </ion-menu>
+              <div class="user-text">
+                <p class="user-name">{{ u.name }}</p>
+                <p class="user-email">{{ u.email }}</p>
+              </div>
+              <button class="logout-btn" type="button" (click)="logout()" aria-label="Sign out">
+                <ion-icon name="log-out-outline"></ion-icon>
+              </button>
+            </div>
+          }
+        </aside>
 
         <ion-tabs id="main-content">
           <ion-tab-bar slot="bottom" class="mobile-tabs">
             @for (item of tabs; track item.path) {
               <ion-tab-button [tab]="item.path.slice(1)" [href]="item.path">
                 <ion-icon [name]="item.icon" aria-hidden="true"></ion-icon>
-                <ion-label>{{ item.label }}</ion-label>
+                <span>{{ item.label }}</span>
               </ion-tab-button>
             }
           </ion-tab-bar>
@@ -112,58 +134,208 @@ const TAB_ITEMS: NavItem[] = NAV_ITEMS.filter((n) => n.path !== '/categories');
     </ion-app>
   `,
   styles: [`
-    /* Side nav (desktop ≥ md) — Ionic's split-pane shows the menu inline. */
+    :host { display: contents; }
+
+    /* ====== Side nav ====== */
     .side-nav {
-      --side-width: 248px;
-      --side-min-width: 248px;
-      --side-max-width: 248px;
+      --side-width: 260px;
+      width: var(--side-width);
+      min-width: var(--side-width);
+      max-width: var(--side-width);
+      background: var(--artha-surface);
+      border-right: 1px solid var(--artha-border);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 14px 14px;
+      box-sizing: border-box;
+      height: 100%;
     }
-    .nav-list {
-      padding: 8px;
-      background: transparent;
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 8px 20px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--artha-border);
     }
-    .nav-item {
-      --padding-start: 12px;
-      --padding-end: 12px;
-      --inner-padding-end: 0;
-      --background: transparent;
-      --background-hover: var(--ion-color-step-100, #f1f5f9);
-      --background-activated: var(--ion-color-step-150, #e2e8f0);
-      --color: var(--ion-color-step-700, #334155);
-      border-radius: 10px;
-      margin: 2px 0;
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .brand-mark ion-icon { font-size: 18px; }
+    .brand-name {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--artha-text);
+      letter-spacing: -0.015em;
+    }
+
+    .nav {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding-top: 8px;
+    }
+    .nav-group { display: flex; flex-direction: column; gap: 2px; }
+    .nav-group-label {
+      margin: 0 0 4px;
+      padding: 0 12px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--artha-text-subtle);
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 12px;
+      border-radius: var(--artha-radius-sm);
+      color: var(--artha-text-muted);
+      font-size: 14px;
       font-weight: 500;
+      text-decoration: none;
+      transition: background 120ms ease, color 120ms ease;
+      position: relative;
     }
-    .nav-item ion-icon {
-      color: var(--ion-color-step-600, #475569);
-      font-size: 22px;
-      margin-inline-end: 4px;
+    .nav-link ion-icon {
+      font-size: 19px;
+      flex-shrink: 0;
+      color: var(--artha-text-subtle);
+      transition: color 120ms ease;
     }
-    .nav-item.active {
-      --background: var(--ion-color-primary-tint);
-      --color: var(--ion-color-primary);
+    .nav-link:hover {
+      background: var(--artha-surface-2);
+      color: var(--artha-text);
+    }
+    .nav-link:hover ion-icon { color: var(--artha-text-muted); }
+    .nav-link.active {
+      background: var(--artha-accent-tint);
+      color: var(--artha-accent);
       font-weight: 600;
     }
-    .nav-item.active ion-icon {
-      color: var(--ion-color-primary);
+    .nav-link.active ion-icon { color: var(--artha-accent); }
+    .nav-link:focus-visible {
+      outline: 2px solid var(--artha-accent);
+      outline-offset: 2px;
     }
-    .nav-footer {
-      display: block;
-      padding: 16px 20px;
-      font-size: 12px;
-      color: var(--ion-color-medium);
-      line-height: 1.4;
+
+    /* ====== User card (footer of side nav) ====== */
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      margin-top: 12px;
+      border-radius: var(--artha-radius);
+      background: var(--artha-surface-2);
+      border: 1px solid var(--artha-border);
+    }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      object-fit: cover;
+    }
+    .avatar--initial {
+      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .user-text { flex: 1; min-width: 0; }
+    .user-name {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--artha-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .user-email {
+      margin: 0;
+      font-size: 11px;
+      color: var(--artha-text-subtle);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .logout-btn {
+      background: transparent;
+      border: 0;
+      padding: 6px;
+      border-radius: 8px;
+      color: var(--artha-text-subtle);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .logout-btn:hover {
+      background: var(--artha-border);
+      color: var(--artha-negative);
+    }
+    .logout-btn ion-icon { font-size: 18px; }
+
+    /* ====== Mobile bottom tabs ====== */
+    .mobile-tabs {
+      --background: var(--artha-surface);
+      --border: 1px solid var(--artha-border);
+    }
+    .mobile-tabs ion-tab-button {
+      --color: var(--artha-text-subtle);
+      --color-selected: var(--artha-accent);
+      font-size: 11px;
+    }
+    .mobile-tabs ion-tab-button span {
+      font-size: 11px;
+      margin-top: 2px;
     }
 
     /* Desktop layout: hide the mobile bottom-tab bar above md (≥768px). */
     @media (min-width: 768px) {
-      .mobile-tabs {
-        display: none !important;
-      }
+      .mobile-tabs { display: none !important; }
+    }
+
+    /* Mobile: hide the side nav (we only render bottom tabs there). */
+    @media (max-width: 767.98px) {
+      .side-nav { display: none; }
     }
   `],
 })
 export class ShellComponent {
-  protected readonly nav = NAV_ITEMS;
+  private readonly session = inject(SessionService);
+  private readonly googleAuth = inject(GoogleAuthService);
+  private readonly router = inject(Router);
+
+  protected readonly nav = NAV_GROUPS;
   protected readonly tabs = TAB_ITEMS;
+  protected readonly user = this.session.currentUser;
+
+  protected initial(name: string): string {
+    return name?.trim().charAt(0).toUpperCase() ?? 'A';
+  }
+
+  protected async logout(): Promise<void> {
+    await this.googleAuth.logout();
+    await this.router.navigate(['/login']);
+  }
 }

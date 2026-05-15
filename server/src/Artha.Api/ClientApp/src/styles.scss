@@ -17,20 +17,140 @@
 /* Follow system preference for dark mode */
 @import '@ionic/angular/css/palettes/dark.system.css';
 
+/* ============================================================
+ *  Artha design tokens — clean fintech palette
+ *  ------------------------------------------------------------
+ *  Slate-grey neutrals + indigo accent. The --artha-* names are
+ *  the source of truth; Ionic's vars are remapped onto them so
+ *  existing ion-* components inherit the theme without bespoke
+ *  overrides per page.
+ * ============================================================ */
+:root {
+  /* Brand */
+  --artha-accent:        #6366f1;  /* indigo-500 */
+  --artha-accent-hover:  #4f46e5;  /* indigo-600 */
+  --artha-accent-tint:   #eef2ff;  /* indigo-50 */
+  --artha-accent-contrast: #ffffff;
+
+  /* Status */
+  --artha-positive:      #10b981;  /* emerald-500 */
+  --artha-positive-tint: #ecfdf5;
+  --artha-negative:      #f43f5e;  /* rose-500 */
+  --artha-negative-tint: #fff1f2;
+  --artha-warning:       #f59e0b;  /* amber-500 */
+
+  /* Surface & text — light */
+  --artha-bg:            #f8fafc;  /* slate-50 — app background */
+  --artha-surface:       #ffffff;  /* cards, sidebar */
+  --artha-surface-2:     #f1f5f9;  /* slate-100 — subtle fills */
+  --artha-border:        #e2e8f0;  /* slate-200 */
+  --artha-border-strong: #cbd5e1;  /* slate-300 */
+  --artha-text:          #0f172a;  /* slate-900 */
+  --artha-text-muted:    #475569;  /* slate-600 */
+  --artha-text-subtle:   #94a3b8;  /* slate-400 */
+
+  /* Elevation — single soft shadow used everywhere for consistency */
+  --artha-shadow-sm:     0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --artha-shadow:        0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --artha-shadow-lg:     0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+
+  /* Radii */
+  --artha-radius-sm:     8px;
+  --artha-radius:        12px;
+  --artha-radius-lg:     16px;
+
+  /* Remap Ionic tokens so existing components pick up the new palette
+     without per-page overrides. */
+  --ion-color-primary:           var(--artha-accent);
+  --ion-color-primary-rgb:       99, 102, 241;
+  --ion-color-primary-contrast:  var(--artha-accent-contrast);
+  --ion-color-primary-shade:     var(--artha-accent-hover);
+  --ion-color-primary-tint:      var(--artha-accent-tint);
+
+  --ion-background-color:        var(--artha-bg);
+  --ion-background-color-rgb:    248, 250, 252;
+  --ion-text-color:              var(--artha-text);
+  --ion-text-color-rgb:          15, 23, 42;
+
+  --ion-item-background:         var(--artha-surface);
+  --ion-card-background:         var(--artha-surface);
+  --ion-toolbar-background:      var(--artha-surface);
+  --ion-tab-bar-background:      var(--artha-surface);
+
+  --ion-color-step-50:  #f8fafc;
+  --ion-color-step-100: #f1f5f9;
+  --ion-color-step-150: #e2e8f0;
+  --ion-color-step-200: #cbd5e1;
+  --ion-color-step-300: #94a3b8;
+  --ion-color-step-400: #64748b;
+  --ion-color-step-500: #475569;
+  --ion-color-step-600: #334155;
+  --ion-color-step-700: #1e293b;
+  --ion-color-step-800: #0f172a;
+}
+
+/* Dark-mode token overrides. Ionic's dark palette flips its own tokens
+   above; we re-flip Artha-specific ones here so cards/text colors land
+   correctly when the system is in dark mode. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --artha-bg:            #0b1220;  /* deeper than slate-900 for less glare */
+    --artha-surface:       #111827;
+    --artha-surface-2:     #1e293b;
+    --artha-border:        #1f2937;
+    --artha-border-strong: #334155;
+    --artha-text:          #f1f5f9;
+    --artha-text-muted:    #cbd5e1;
+    --artha-text-subtle:   #64748b;
+
+    --artha-accent-tint:   rgba(99, 102, 241, 0.18);
+    --artha-positive-tint: rgba(16, 185, 129, 0.16);
+    --artha-negative-tint: rgba(244, 63, 94, 0.16);
+
+    --ion-background-color: var(--artha-bg);
+    --ion-background-color-rgb: 11, 18, 32;
+    --ion-text-color:       var(--artha-text);
+    --ion-text-color-rgb:   241, 245, 249;
+    --ion-item-background:  var(--artha-surface);
+    --ion-card-background:  var(--artha-surface);
+    --ion-toolbar-background: var(--artha-surface);
+    --ion-tab-bar-background: var(--artha-surface);
+  }
+}
+
+/* Typography — tighten the Ionic defaults. */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numerals for any element that displays money or dates — keeps
+   columns aligned and digits stable. Pages opt in by adding .num. */
+.num,
+ion-card-title,
+.amount {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
 /*
  * Desktop content width.
  *
- * Above the md breakpoint the side-nav appears (~248px) and the remaining
- * area can be 1000px+. Without a content cap, list rows and cards stretch
+ * Above the md breakpoint the side-nav appears (~260px) and the remaining
+ * area can be 1200px+. Without a content cap, list rows and cards stretch
  * to uncomfortable widths. Constrain the inner content of each page to
- * 880px and centre it so dense list views stay readable.
+ * 1080px and centre it so dense list views stay readable.
  *
  * Phones and tablets in portrait keep the full-width layout so the small
  * screens are used efficiently.
  */
 @media (min-width: 992px) {
   ion-content::part(scroll) {
-    max-width: 880px;
+    max-width: 1080px;
     margin-inline: auto;
+    padding-inline: 8px;
   }
 }
