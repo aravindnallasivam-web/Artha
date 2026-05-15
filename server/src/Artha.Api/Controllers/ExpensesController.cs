@@ -87,6 +87,9 @@ public sealed class ExpensesController : ControllerBase
         {
             return BadRequest(Problem400("CategoryId is required."));
         }
+        var accountId = string.IsNullOrWhiteSpace(request.AccountId)
+            ? DriveFileNames.DefaultAccountId
+            : request.AccountId;
 
         var ctx = await OpenAsync(cancellationToken);
 
@@ -101,6 +104,14 @@ public sealed class ExpensesController : ControllerBase
             return BadRequest(Problem400($"Category '{request.CategoryId}' does not exist or is archived."));
         }
 
+        // Validate account exists & is not archived.
+        var accounts = await ctx.AccountRepo.ReadAsync(DriveFileNames.Accounts, cancellationToken);
+        var account = accounts?.Document.Items.FirstOrDefault(a => a.Id == accountId);
+        if (account is null || account.Archived)
+        {
+            return BadRequest(Problem400($"Account '{accountId}' does not exist or is archived."));
+        }
+
         var now = DateTimeOffset.UtcNow;
         var expense = new Expense(
             Id: $"exp-{Guid.NewGuid():N}",
@@ -108,6 +119,7 @@ public sealed class ExpensesController : ControllerBase
             Amount: request.Amount,
             Currency: currency,
             CategoryId: request.CategoryId,
+            AccountId: accountId,
             Note: string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             CreatedAt: now,
             UpdatedAt: now);
@@ -141,11 +153,16 @@ public sealed class ExpensesController : ControllerBase
         var oldMonth = YearMonth.From(expense.Date);
         var newMonth = YearMonth.From(request.Date);
 
+        var accountId = string.IsNullOrWhiteSpace(request.AccountId)
+            ? DriveFileNames.DefaultAccountId
+            : request.AccountId;
+
         var updated = expense with
         {
             Date = request.Date,
             Amount = request.Amount,
             CategoryId = request.CategoryId,
+            AccountId = accountId,
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             UpdatedAt = DateTimeOffset.UtcNow,
         };
@@ -281,6 +298,9 @@ public sealed class ExpensesController : ControllerBase
         Amount: e.Amount,
         Currency: e.Currency,
         CategoryId: e.CategoryId,
+        // Legacy expenses written before M5 didn't have AccountId; surface
+        // them as belonging to the well-known default account.
+        AccountId: string.IsNullOrEmpty(e.AccountId) ? DriveFileNames.DefaultAccountId : e.AccountId,
         Note: e.Note,
         CreatedAt: e.CreatedAt,
         UpdatedAt: e.UpdatedAt);
@@ -303,6 +323,7 @@ public sealed class ExpensesController : ControllerBase
             new AppDataRepository<Manifest>(drive),
             new AppDataRepository<ExpenseShard>(drive),
             new AppDataRepository<CategoryList>(drive),
+            new AppDataRepository<AccountList>(drive),
             new AppDataRepository<SettingsDocument>(drive));
     }
 
@@ -311,5 +332,6 @@ public sealed class ExpensesController : ControllerBase
         AppDataRepository<Manifest> ManifestRepo,
         AppDataRepository<ExpenseShard> ExpenseRepo,
         AppDataRepository<CategoryList> CategoryRepo,
+        AppDataRepository<AccountList> AccountRepo,
         AppDataRepository<SettingsDocument> SettingsRepo);
 }

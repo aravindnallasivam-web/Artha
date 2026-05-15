@@ -4,12 +4,14 @@ public sealed record ExpenseCreateRequest(
     DateOnly Date,
     decimal Amount,
     string CategoryId,
+    string AccountId,
     string? Note);
 
 public sealed record ExpenseUpdateRequest(
     DateOnly Date,
     decimal Amount,
     string CategoryId,
+    string AccountId,
     string? Note);
 
 public sealed record ExpenseDto(
@@ -18,6 +20,7 @@ public sealed record ExpenseDto(
     decimal Amount,
     string Currency,
     string CategoryId,
+    string AccountId,
     string? Note,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

@@ -31,6 +31,7 @@ public sealed class ExpensesEndpointTests : IClassFixture<ArthaTestFactory>
             Date: new DateOnly(2026, 5, 15),
             Amount: 12.50m,
             CategoryId: "cat-food",
+            AccountId: "acc-cash",
             Note: "Lunch");
 
         var post = await client.PostAsJsonAsync("/api/expenses", request);
@@ -56,6 +57,7 @@ public sealed class ExpensesEndpointTests : IClassFixture<ArthaTestFactory>
             Date: new DateOnly(2026, 5, 15),
             Amount: 5m,
             CategoryId: "cat-nonexistent",
+            AccountId: "acc-cash",
             Note: null));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -70,6 +72,7 @@ public sealed class ExpensesEndpointTests : IClassFixture<ArthaTestFactory>
             Date: new DateOnly(2026, 5, 15),
             Amount: 0m,
             CategoryId: "cat-food",
+            AccountId: "acc-cash",
             Note: null));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -81,12 +84,12 @@ public sealed class ExpensesEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-alice-update");
 
         var created = await client.PostAsJsonAsync("/api/expenses", new ExpenseCreateRequest(
-            new DateOnly(2026, 5, 1), 10m, "cat-food", "Original"));
+            new DateOnly(2026, 5, 1), 10m, "cat-food", "acc-cash", "Original"));
         var dto = await created.Content.ReadFromJsonAsync<ExpenseDto>();
         dto.Should().NotBeNull();
 
         var put = await client.PutAsJsonAsync($"/api/expenses/{dto!.Id}", new ExpenseUpdateRequest(
-            new DateOnly(2026, 5, 2), 25m, "cat-transport", "Updated"));
+            new DateOnly(2026, 5, 2), 25m, "cat-transport", "acc-cash", "Updated"));
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var list = await client.GetFromJsonAsync<ExpenseListResponse>("/api/expenses?from=2026-05&to=2026-05");
@@ -102,11 +105,11 @@ public sealed class ExpensesEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-alice-move");
 
         var created = await client.PostAsJsonAsync("/api/expenses", new ExpenseCreateRequest(
-            new DateOnly(2026, 5, 15), 10m, "cat-food", null));
+            new DateOnly(2026, 5, 15), 10m, "cat-food", "acc-cash", null));
         var dto = await created.Content.ReadFromJsonAsync<ExpenseDto>();
 
         var put = await client.PutAsJsonAsync($"/api/expenses/{dto!.Id}", new ExpenseUpdateRequest(
-            new DateOnly(2026, 6, 1), 10m, "cat-food", null));
+            new DateOnly(2026, 6, 1), 10m, "cat-food", "acc-cash", null));
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var may = await client.GetFromJsonAsync<ExpenseListResponse>("/api/expenses?from=2026-05&to=2026-05");
@@ -123,7 +126,7 @@ public sealed class ExpensesEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-alice-delete");
 
         var created = await client.PostAsJsonAsync("/api/expenses", new ExpenseCreateRequest(
-            new DateOnly(2026, 5, 15), 10m, "cat-food", null));
+            new DateOnly(2026, 5, 15), 10m, "cat-food", "acc-cash", null));
         var dto = await created.Content.ReadFromJsonAsync<ExpenseDto>();
 
         var delete = await client.DeleteAsync($"/api/expenses/{dto!.Id}");
@@ -189,7 +192,7 @@ public sealed class CategoriesEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-cat-in-use");
 
         await client.PostAsJsonAsync("/api/expenses", new ExpenseCreateRequest(
-            new DateOnly(2026, 5, 15), 10m, "cat-food", null));
+            new DateOnly(2026, 5, 15), 10m, "cat-food", "acc-cash", null));
 
         var response = await client.DeleteAsync("/api/categories/cat-food");
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);

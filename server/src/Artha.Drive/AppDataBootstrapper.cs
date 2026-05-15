@@ -27,8 +27,10 @@ public sealed class AppDataBootstrapper
         UserProfile profile,
         CancellationToken cancellationToken)
     {
-        // Fast path: manifest exists, nothing to do.
-        if (await drive.GetByNameAsync(DriveFileNames.Manifest, cancellationToken) is not null)
+        // Fast path: accounts.json is the newest seeded file (M5). Once it
+        // exists the user has been fully bootstrapped; bail out without a
+        // second Drive call.
+        if (await drive.GetByNameAsync(DriveFileNames.Accounts, cancellationToken) is not null)
         {
             return;
         }
@@ -38,17 +40,36 @@ public sealed class AppDataBootstrapper
         try
         {
             // Re-check under the lock: a concurrent first-request may have done it.
-            if (await drive.GetByNameAsync(DriveFileNames.Manifest, cancellationToken) is not null)
+            if (await drive.GetByNameAsync(DriveFileNames.Accounts, cancellationToken) is not null)
             {
                 return;
             }
 
             _logger.LogInformation("Bootstrapping Drive appdata for user {UserId}", userId);
 
+            var manifestExists = await drive.GetByNameAsync(DriveFileNames.Manifest, cancellationToken) is not null;
+            var defaultCurrency = DefaultCurrencyFor(profile.Locale);
+
+            // accounts.json (always — this is the marker file for "fully bootstrapped")
+            var accounts = BuildDefaultAccounts(defaultCurrency);
+            var accountRepo = new AppDataRepository<AccountList>(drive);
+            await accountRepo.WriteAsync(
+                DriveFileNames.Accounts,
+                new AccountList(SchemaVersions.Current, accounts),
+                cancellationToken);
+
+            if (manifestExists)
+            {
+                // Existing user — they had categories/settings/manifest from
+                // a pre-M5 bootstrap. Seeding accounts is enough; their old
+                // expenses fall back to acc-cash via the API layer.
+                return;
+            }
+
             var categories = BuildDefaultCategories();
             var settings = new SettingsDocument(
                 SchemaVersion: SchemaVersions.Current,
-                Currency: DefaultCurrencyFor(profile.Locale),
+                Currency: defaultCurrency,
                 FirstRunCompleted: false,
                 Locale: profile.Locale);
             var manifest = new Manifest(
@@ -71,6 +92,19 @@ public sealed class AppDataBootstrapper
             gate.Release();
         }
     }
+
+    internal static IReadOnlyList<Account> BuildDefaultAccounts(string currency) =>
+    [
+        new(
+            Id: DriveFileNames.DefaultAccountId,
+            Name: "Cash",
+            Type: AccountTypes.Cash,
+            Currency: currency,
+            OpeningBalance: 0m,
+            Color: "#22c55e",
+            Icon: "cash-outline",
+            Archived: false),
+    ];
 
     internal static IReadOnlyList<Category> BuildDefaultCategories() =>
     [

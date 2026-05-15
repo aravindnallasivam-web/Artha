@@ -43,11 +43,11 @@ public sealed class ReportsEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-reports-monthly");
 
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 5, 1), 10m, "cat-food", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 1), 10m, "cat-food", "acc-cash", null));
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 5, 15), 20m, "cat-food", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 15), 20m, "cat-food", "acc-cash", null));
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 5, 20), 50m, "cat-transport", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 20), 50m, "cat-transport", "acc-cash", null));
 
         var report = await client.GetFromJsonAsync<MonthlyReportDto>(
             "/api/reports/monthly?year=2026&month=5");
@@ -73,9 +73,9 @@ public sealed class ReportsEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-reports-cross-month");
 
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 4, 25), 100m, "cat-food", "april"));
+            new ExpenseCreateRequest(new DateOnly(2026, 4, 25), 100m, "cat-food", "acc-cash", "april"));
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 5, 1), 5m, "cat-food", "may"));
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 1), 5m, "cat-food", "acc-cash", "may"));
 
         var may = await client.GetFromJsonAsync<MonthlyReportDto>(
             "/api/reports/monthly?year=2026&month=5");
@@ -104,13 +104,13 @@ public sealed class ReportsEndpointTests : IClassFixture<ArthaTestFactory>
         var client = AuthedClient("user-reports-yearly");
 
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 1, 5), 10m, "cat-food", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 1, 5), 10m, "cat-food", "acc-cash", null));
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 5, 15), 20m, "cat-food", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 15), 20m, "cat-food", "acc-cash", null));
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 5, 20), 30m, "cat-transport", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 20), 30m, "cat-transport", "acc-cash", null));
         await client.PostAsJsonAsync("/api/expenses",
-            new ExpenseCreateRequest(new DateOnly(2026, 12, 1), 40m, "cat-bills", null));
+            new ExpenseCreateRequest(new DateOnly(2026, 12, 1), 40m, "cat-bills", "acc-cash", null));
 
         var report = await client.GetFromJsonAsync<YearlyReportDto>(
             "/api/reports/yearly?year=2026");

@@ -21,6 +21,7 @@ public sealed class ExpenseTests
             Amount: 12.50m,
             Currency: "USD",
             CategoryId: "cat-food",
+            AccountId: "acc-cash",
             Note: "Lunch",
             CreatedAt: new DateTimeOffset(2026, 5, 15, 12, 0, 0, TimeSpan.Zero),
             UpdatedAt: new DateTimeOffset(2026, 5, 15, 12, 0, 0, TimeSpan.Zero));

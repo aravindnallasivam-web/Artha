@@ -6,7 +6,15 @@ public static partial class DriveFileNames
 {
     public const string Manifest = "manifest.json";
     public const string Categories = "categories.json";
+    public const string Accounts = "accounts.json";
     public const string Settings = "settings.json";
+
+    /// <summary>
+    /// Well-known ID of the default Cash account seeded for every user. Used
+    /// as the implicit account for legacy expenses written before the
+    /// accounts feature shipped (M5).
+    /// </summary>
+    public const string DefaultAccountId = "acc-cash";
 
     public const string ExpenseShardPrefix = "expenses-";
     private const string ExpenseShardSuffix = ".json";
