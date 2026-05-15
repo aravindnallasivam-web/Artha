@@ -185,13 +185,10 @@ If you'd rather use the DO web UI:
    **A. Dashboard** (easiest):
    - Apps → **Create App** → choose **GitHub** as source → pick `aravindnallasivam-web/Artha` → branch `main`.
    - DO will auto-detect `.do/app.yaml`. Click "Edit Plan" if you want to confirm the components.
-   - Attach a **Managed Postgres** database so OAuth tokens persist across redeploys (otherwise everyone gets logged out on every push to `main`). In **Databases → Create Database Cluster**, pick the smallest plan (~$15/mo), region close to your app, name it `artha-tokens`. After it's provisioned, go back to the app → **Resources → Add Resource → Database** and select it.
-     - **Cheaper alternative**: instead of a Managed DB cluster, click **+ Add Resource → Database → Dev Database (Postgres)** inside the app itself. Free, shared instance, 1 GB cap, no backups — fine for this app's needs (the user_tokens table is < 1 KB per user). Trade-off: less reliable, no point-in-time recovery.
    - Before first deploy, go to **Settings → Components → `api` → Environment Variables** and set:
      - `GoogleAuth__ClientId` (encrypted) — your Google Web Client ID
      - `GoogleAuth__ClientSecret` (encrypted) — your Google Web Client secret
      - `Jwt__SigningKey` (encrypted) — the random string from step 3
-     - `ConnectionStrings__Tokens` — set to `${artha-tokens.DATABASE_URL}` for the Managed cluster, or `${db.DATABASE_URL}` (substitute the binding name you gave the dev DB). DO interpolates this at deploy time from the resource binding. The DATABASE_URL includes `sslmode=require` — Npgsql 9 handles this natively.
 
    **B. CLI** (if you have `doctl` installed):
    ```bash
