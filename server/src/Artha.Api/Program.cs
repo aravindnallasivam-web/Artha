@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using Serilog;
 
 const string CorsPolicyName = "ArthaClient";
@@ -39,7 +40,21 @@ builder.Services.Configure<JwtOptions>(
 
 builder.Services.AddHttpClient<IExternalIdentityProvider, GoogleIdentityProvider>();
 builder.Services.AddSingleton<ArthaJwtIssuer>();
-builder.Services.AddSingleton<IUserTokenStore, InMemoryUserTokenStore>();
+
+// IUserTokenStore: Postgres-backed when ConnectionStrings:Tokens is set
+// (production on DO App Platform), in-memory otherwise (local dev, tests).
+// The in-memory fallback means devs don't need Postgres just to run the
+// app locally; it still loses tokens on restart, which is fine for dev.
+var tokensConnectionString = builder.Configuration.GetConnectionString("Tokens");
+if (!string.IsNullOrWhiteSpace(tokensConnectionString))
+{
+    builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(tokensConnectionString));
+    builder.Services.AddSingleton<IUserTokenStore, PostgresUserTokenStore>();
+}
+else
+{
+    builder.Services.AddSingleton<IUserTokenStore, InMemoryUserTokenStore>();
+}
 
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDriveClientFactory, GoogleDriveClientFactory>();

@@ -70,3 +70,16 @@ services:
       - key: Cors__AllowedOrigins__1
         scope: RUN_TIME
         value: ionic://localhost
+      # Postgres connection for the user_tokens table. Without this, the API
+      # falls back to InMemoryUserTokenStore and every redeploy logs users
+      # out. Two ways to populate this:
+      #   (a) Add a Dev Database (free) under "Resources" — DO exposes its
+      #       URL as ${<binding-name>.DATABASE_URL}. Set this env to that.
+      #   (b) Create a Managed Postgres cluster and add it as a database
+      #       resource — same ${<binding-name>.DATABASE_URL} pattern.
+      # Either way, paste the resolved value (or the ${...} expression) into
+      # the dashboard after adding the resource.
+      - key: ConnectionStrings__Tokens
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_IN_DO_DASHBOARD
