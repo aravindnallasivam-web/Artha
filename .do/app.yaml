@@ -23,7 +23,7 @@ services:
     source_dir: server
     github:
       repo: aravindnallasivam-web/Artha
-      branch: main
+      branch: claude/expense-management-app-nHuZp
       deploy_on_push: true
     http_port: 8080
     instance_count: 1
@@ -72,7 +72,7 @@ static_sites:
     source_dir: client
     github:
       repo: aravindnallasivam-web/Artha
-      branch: main
+      branch: claude/expense-management-app-nHuZp
       deploy_on_push: true
     build_command: npm ci && npm run build -- --configuration=production
     output_dir: dist/client/browser
