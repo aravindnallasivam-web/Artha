@@ -16,3 +16,21 @@
 
 /* Follow system preference for dark mode */
 @import '@ionic/angular/css/palettes/dark.system.css';
+
+/*
+ * Desktop content width.
+ *
+ * Above the md breakpoint the side-nav appears (~248px) and the remaining
+ * area can be 1000px+. Without a content cap, list rows and cards stretch
+ * to uncomfortable widths. Constrain the inner content of each page to
+ * 880px and centre it so dense list views stay readable.
+ *
+ * Phones and tablets in portrait keep the full-width layout so the small
+ * screens are used efficiently.
+ */
+@media (min-width: 992px) {
+  ion-content::part(scroll) {
+    max-width: 880px;
+    margin-inline: auto;
+  }
+}
