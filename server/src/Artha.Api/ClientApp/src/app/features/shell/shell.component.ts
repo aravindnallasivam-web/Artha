@@ -151,6 +151,24 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
       /* Use Ionic's --border var with a visible color so the divider between
          menu and content is clearly perceivable even on low-contrast displays. */
       --border: 1px solid var(--artha-border-strong);
+
+      /*
+       * Force the menu above ion-tabs.
+       *
+       * Ionic's menu.md.css contains two competing rules:
+       *   :host(.menu-type-overlay)                  { z-index: 1000; }
+       *   :host(.menu-pane-visible.split-pane-side)  { z-index: 0; }
+       *
+       * The second wins by specificity (0,3,0 vs 0,2,0) when our menu is
+       * both type="overlay" AND in split-pane mode. With the menu at z=0
+       * and <ion-tabs> also at z=0, ion-tabs (later in source order) draws
+       * on top and the sidebar disappears.
+       *
+       * !important is required because the offending rule lives inside
+       * ion-menu's shadow DOM as :host(...), which beats any non-important
+       * light-DOM selector we can write on the host.
+       */
+      z-index: 1 !important;
     }
     .artha-menu::part(container) {
       background: var(--artha-surface);
