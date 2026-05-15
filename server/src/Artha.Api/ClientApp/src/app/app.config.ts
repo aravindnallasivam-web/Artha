@@ -11,6 +11,7 @@ import { provideIonicAngular } from '@ionic/angular/standalone';
 
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { GoogleAuthService } from './core/auth/google-auth.service';
+import { SessionService } from './core/auth/session.service';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -20,10 +21,11 @@ export const appConfig: ApplicationConfig = {
     provideIonicAngular({ mode: 'md' }),
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
-    // Native (Capacitor) only: register the appUrlOpen handler at startup so
-    // the OAuth deep link is caught even if the OS launches the app cold.
-    // No-op on the web build.
-    provideAppInitializer(() => {
+    // Native (Capacitor) only: restore the session from Capacitor Preferences
+    // if localStorage was evicted, then register the appUrlOpen handler so
+    // the OAuth deep link is caught even on cold launch. Both no-op on web.
+    provideAppInitializer(async () => {
+      await inject(SessionService).restoreFromNativeIfNeeded();
       inject(GoogleAuthService).initializeMobileAuthListener();
     }),
   ],

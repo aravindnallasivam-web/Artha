@@ -10,6 +10,7 @@
     "cap:sync": "npm run build:mobile && cap sync",
     "cap:open:ios": "cap open ios",
     "cap:open:android": "cap open android",
+    "cap:assets": "node scripts/generate-mobile-assets.mjs && capacitor-assets generate --ios --android",
     "test": "ng test"
   },
   "private": true,
@@ -40,6 +41,7 @@
     "@angular/build": "^21.2.11",
     "@angular/cli": "^21.2.11",
     "@angular/compiler-cli": "^21.2.0",
+    "@capacitor/assets": "^3.0.5",
     "jsdom": "^28.0.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2",
