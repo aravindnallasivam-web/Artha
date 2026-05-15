@@ -24,7 +24,7 @@ export class GoogleAuthService {
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
-    const redirectUri = environment.google.redirectUri;
+    const redirectUri = `${window.location.origin}${environment.google.redirectPath}`;
 
     const pending: PendingFlow = { codeVerifier, redirectUri, state };
     sessionStorage.setItem(PKCE_STORAGE_KEY, JSON.stringify(pending));

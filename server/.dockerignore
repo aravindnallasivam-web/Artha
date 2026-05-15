@@ -1,0 +1,15 @@
+**/bin
+**/obj
+**/.vs
+**/.vscode
+**/.idea
+**/*.user
+**/*.suo
+TestResults/
+**/node_modules
+**/dist
+**/.angular
+**/.git
+**/*.md
+Dockerfile
+.dockerignore

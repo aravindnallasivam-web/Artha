@@ -1,10 +1,12 @@
 export const environment = {
   production: true,
-  apiBaseUrl: 'https://api.artha.example',
+  // Prod: same-origin deployment behind DO App Platform routes
+  // (SPA at /, API at /api). Empty string => relative URLs.
+  apiBaseUrl: '',
   google: {
     clientId: 'REPLACE_WITH_GOOGLE_OAUTH_WEB_CLIENT_ID',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-    redirectUri: 'https://app.artha.example/auth/callback',
+    redirectPath: '/auth/callback',
     scopes: [
       'openid',
       'email',

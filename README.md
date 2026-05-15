@@ -108,6 +108,70 @@ cd client && npm test
 5. Client stores the JWT in `localStorage` (web) and attaches it as `Authorization: Bearer …` on subsequent API calls.
 6. Drive tokens never leave the server — the server proxies all Drive operations on behalf of the user.
 
+## Hosting on DigitalOcean App Platform
+
+The repo is wired for DO App Platform with both components on **one domain** (no CORS in production). Spec lives at `.do/app.yaml`.
+
+```
+https://<your-app>.ondigitalocean.app
+├── /             →  Angular SPA (static site, free tier)
+└── /api/*        →  .NET 10 API (Basic web service, ~$5/mo)
+```
+
+### One-time setup
+
+1. **Create a Google OAuth Web client** in Google Cloud Console (APIs & Services → Credentials):
+   - Enable the **Google Drive API** on the project.
+   - Add **Authorized redirect URI**: `https://<your-app>.ondigitalocean.app/auth/callback`
+     (you can update this after step 4 — for now use a placeholder and come back).
+   - Copy the **Client ID** and **Client secret**.
+
+2. **Update both env files** with your Web Client ID (do NOT commit the secret — that goes into DO):
+   - `client/src/environments/environment.ts`
+   - `client/src/environments/environment.prod.ts`
+
+   Commit + push.
+
+3. **Generate a JWT signing key** — any random string of 32+ characters. Example:
+   ```bash
+   openssl rand -base64 48
+   ```
+
+4. **Create the app** on DigitalOcean — either path:
+
+   **A. Dashboard** (easiest):
+   - Apps → **Create App** → choose **GitHub** as source → pick `aravindnallasivam-web/Artha` → branch `main`.
+   - DO will auto-detect `.do/app.yaml`. Click "Edit Plan" if you want to confirm the components.
+   - Before first deploy, go to **Settings → Components → `api` → Environment Variables** and set:
+     - `GoogleAuth__ClientId` (encrypted) — your Google Web Client ID
+     - `GoogleAuth__ClientSecret` (encrypted) — your Google Web Client secret
+     - `Jwt__SigningKey` (encrypted) — the random string from step 3
+
+   **B. CLI** (if you have `doctl` installed):
+   ```bash
+   doctl apps create --spec .do/app.yaml
+   doctl apps update <APP_ID> --spec .do/app.yaml
+   # then set secrets in the dashboard, or via `doctl apps update` with --env
+   ```
+
+5. **After first deploy**, copy the app's URL (e.g. `https://artha-abc12.ondigitalocean.app`) and:
+   - Update the Google OAuth client's redirect URI to `https://artha-abc12.ondigitalocean.app/auth/callback`.
+   - (Optional) point a custom domain at the app in **Settings → Domains** — DO will issue a Let's Encrypt cert automatically.
+
+### What gets billed
+
+| Component | Plan | Monthly |
+|---|---|---|
+| `api` web service | `apps-s-1vcpu-0.5gb` | ~$5 |
+| `web` static site | Free tier | $0 |
+| Bandwidth | First 100 GB free | $0 (typical) |
+
+You can scale the API up later (`apps-s-1vcpu-1gb`, etc.) without changing anything in this repo — just edit the plan in the dashboard.
+
+### Pushing changes
+
+Once the app is created, every push to `main` triggers a deploy automatically (`deploy_on_push: true` in the spec). Build logs show in **Activity → Deployments**.
+
 ## Mobile (planned for M4)
 
 Capacitor is already configured in `client/capacitor.config.ts` with `appId = com.artha.app`. To build native projects:

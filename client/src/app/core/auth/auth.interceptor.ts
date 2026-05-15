@@ -9,7 +9,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const session = inject(SessionService);
   const router = inject(Router);
 
-  const targetsApi = req.url.startsWith(environment.apiBaseUrl);
+  const apiPrefix = `${environment.apiBaseUrl}/api`;
+  const targetsApi = req.url.startsWith(apiPrefix);
   const token = session.token();
 
   const handled = targetsApi && token
