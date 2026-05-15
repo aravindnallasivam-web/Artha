@@ -1,0 +1,58 @@
+# ---------- General ----------
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+
+# ---------- .NET ----------
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+[Bb]uilds/
+artifacts/
+
+# Secrets — never commit Development overrides containing real keys
+appsettings.Development.local.json
+appsettings.*.Local.json
+secrets.json
+
+# ---------- Node / Angular / Ionic ----------
+node_modules/
+dist/
+.angular/
+.ionic/
+.sourcemaps/
+www/
+coverage/
+*.tsbuildinfo
+
+# ---------- Capacitor / Mobile ----------
+# Keep config + manifest, ignore generated build artefacts.
+client/ios/App/Pods/
+client/ios/App/App.xcworkspace/xcuserdata/
+client/ios/App/build/
+client/ios/DerivedData/
+client/android/.gradle/
+client/android/build/
+client/android/app/build/
+client/android/local.properties
+client/android/captures/
+client/android/.idea/
+
+# ---------- Misc tool output ----------
+*.pid
+.npm/
+.eslintcache

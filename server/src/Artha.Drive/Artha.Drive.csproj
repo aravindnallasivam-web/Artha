@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Apis.Drive.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Artha.Core\Artha.Core.csproj" />
+    <ProjectReference Include="..\Artha.Infrastructure\Artha.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
