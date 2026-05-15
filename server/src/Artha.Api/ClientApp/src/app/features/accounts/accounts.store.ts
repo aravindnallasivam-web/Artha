@@ -10,6 +10,9 @@ export class AccountsStore {
   private readonly _includeArchived = signal<boolean>(false);
   private readonly _loading = signal<boolean>(false);
   private readonly _error = signal<string | null>(null);
+  // Same freshness pattern as CategoriesStore — accounts rarely change.
+  private _lastLoadedAt = 0;
+  private static readonly FreshnessWindowMs = 5 * 60_000;
 
   readonly items = this._items.asReadonly();
   readonly loading = this._loading.asReadonly();
@@ -23,12 +26,19 @@ export class AccountsStore {
     return map;
   });
 
-  async load(includeArchived = false): Promise<void> {
+  async load(includeArchived = false, force = false): Promise<void> {
+    if (!force
+        && this._lastLoadedAt > 0
+        && Date.now() - this._lastLoadedAt < AccountsStore.FreshnessWindowMs
+        && this._includeArchived() === includeArchived) {
+      return;
+    }
     this._loading.set(true);
     this._error.set(null);
     this._includeArchived.set(includeArchived);
     try {
       this._items.set(await this.api.list(includeArchived));
+      this._lastLoadedAt = Date.now();
     } catch (err) {
       this._error.set('Could not load accounts.');
     } finally {
@@ -50,7 +60,8 @@ export class AccountsStore {
 
   async remove(id: string): Promise<void> {
     await this.api.remove(id);
-    // Server soft-deletes (Archived = true). Reload to reflect.
-    await this.load(this._includeArchived());
+    // Server soft-deletes (Archived = true). Force a reload so the
+    // archived state is reflected (cache check would otherwise short-circuit).
+    await this.load(this._includeArchived(), /* force */ true);
   }
 }

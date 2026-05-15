@@ -10,6 +10,12 @@ export class CategoriesStore {
   private readonly _includeArchived = signal<boolean>(false);
   private readonly _loading = signal<boolean>(false);
   private readonly _error = signal<string | null>(null);
+  // Categories rarely change. After the first load, callers can safely
+  // skip refetching for the rest of the session unless they pass force=true
+  // (used by remove() because the soft-delete needs a fresh fetch to reflect
+  // archived state). 5-min freshness window matches the server's Drive cache.
+  private _lastLoadedAt = 0;
+  private static readonly FreshnessWindowMs = 5 * 60_000;
 
   readonly items = this._items.asReadonly();
   readonly loading = this._loading.asReadonly();
@@ -23,12 +29,19 @@ export class CategoriesStore {
     return map;
   });
 
-  async load(includeArchived = false): Promise<void> {
+  async load(includeArchived = false, force = false): Promise<void> {
+    if (!force
+        && this._lastLoadedAt > 0
+        && Date.now() - this._lastLoadedAt < CategoriesStore.FreshnessWindowMs
+        && this._includeArchived() === includeArchived) {
+      return;
+    }
     this._loading.set(true);
     this._error.set(null);
     this._includeArchived.set(includeArchived);
     try {
       this._items.set(await this.api.list(includeArchived));
+      this._lastLoadedAt = Date.now();
     } catch (err) {
       this._error.set('Could not load categories.');
     } finally {
@@ -50,7 +63,8 @@ export class CategoriesStore {
 
   async remove(id: string): Promise<void> {
     await this.api.remove(id);
-    // Server soft-deletes (Archived = true). Reload to reflect.
-    await this.load(this._includeArchived());
+    // Server soft-deletes (Archived = true). Force a reload so the
+    // archived state is reflected (cache check would otherwise short-circuit).
+    await this.load(this._includeArchived(), /* force */ true);
   }
 }

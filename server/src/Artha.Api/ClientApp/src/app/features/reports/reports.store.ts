@@ -16,11 +16,29 @@ export class ReportsStore {
   readonly loading = this._loading.asReadonly();
   readonly error = this._error.asReadonly();
 
-  async loadMonthly(year: number, month: number): Promise<void> {
+  // Per-key freshness: the last (key, timestamp) pair we successfully
+  // loaded for monthly and yearly reports respectively. Same key + within
+  // the freshness window = skip the API call.
+  private _monthlyKey = '';
+  private _monthlyAt = 0;
+  private _yearlyKey = '';
+  private _yearlyAt = 0;
+  private static readonly FreshnessWindowMs = 60_000;
+
+  async loadMonthly(year: number, month: number, force = false): Promise<void> {
+    const key = `${year}-${month}`;
+    if (!force
+        && this._monthlyKey === key
+        && Date.now() - this._monthlyAt < ReportsStore.FreshnessWindowMs
+        && this._monthly() !== null) {
+      return;
+    }
     this._loading.set(true);
     this._error.set(null);
     try {
       this._monthly.set(await this.api.monthly(year, month));
+      this._monthlyKey = key;
+      this._monthlyAt = Date.now();
     } catch (err) {
       this._error.set('Could not load monthly report.');
     } finally {
@@ -28,11 +46,20 @@ export class ReportsStore {
     }
   }
 
-  async loadYearly(year: number): Promise<void> {
+  async loadYearly(year: number, force = false): Promise<void> {
+    const key = `${year}`;
+    if (!force
+        && this._yearlyKey === key
+        && Date.now() - this._yearlyAt < ReportsStore.FreshnessWindowMs
+        && this._yearly() !== null) {
+      return;
+    }
     this._loading.set(true);
     this._error.set(null);
     try {
       this._yearly.set(await this.api.yearly(year));
+      this._yearlyKey = key;
+      this._yearlyAt = Date.now();
     } catch (err) {
       this._error.set('Could not load yearly report.');
     } finally {

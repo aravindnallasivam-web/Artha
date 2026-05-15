@@ -15,6 +15,12 @@ export class ExpensesStore {
   private readonly _loading = signal<boolean>(false);
   private readonly _error = signal<string | null>(null);
   private readonly _range = signal<{ from: string; to: string } | null>(null);
+  // Wall-clock timestamp of the last successful load. Used to skip redundant
+  // refetches when the user navigates Dashboard -> Expenses -> Dashboard etc.
+  // within a short window — server-side cache absorbs repeat hits anyway, but
+  // this also avoids the loading spinner flash and the round-trip latency.
+  private _lastLoadedAt = 0;
+  private static readonly FreshnessWindowMs = 30_000;
 
   readonly items = this._items.asReadonly();
   readonly currency = this._currency.asReadonly();
@@ -24,7 +30,15 @@ export class ExpensesStore {
     this._items().reduce((sum, e) => sum + e.amount, 0),
   );
 
-  async load(from?: string, to?: string): Promise<void> {
+  async load(from?: string, to?: string, force = false): Promise<void> {
+    // Skip the API call if the same range was loaded recently. Cuts the
+    // visible spinner + Drive round-trip when the user navigates back to
+    // a page they were just on (Dashboard <-> Expenses, etc.). Pass
+    // force=true to bypass — used after writes that need a fresh fetch.
+    if (!force && this.isFresh(from, to)) {
+      return;
+    }
+
     this._loading.set(true);
     this._error.set(null);
     try {
@@ -32,11 +46,21 @@ export class ExpensesStore {
       this._items.set(response.items);
       this._currency.set(response.currency);
       this._range.set(from && to ? { from, to } : null);
+      this._lastLoadedAt = Date.now();
     } catch (err) {
       this._error.set(toMessage(err));
     } finally {
       this._loading.set(false);
     }
+  }
+
+  private isFresh(from?: string, to?: string): boolean {
+    if (this._lastLoadedAt === 0) return false;
+    if (Date.now() - this._lastLoadedAt > ExpensesStore.FreshnessWindowMs) return false;
+    const current = this._range();
+    const requestedKey = from && to ? `${from}|${to}` : 'all';
+    const currentKey = current ? `${current.from}|${current.to}` : 'all';
+    return requestedKey === currentKey;
   }
 
   async add(request: ExpenseCreateRequest): Promise<Expense> {
@@ -54,10 +78,12 @@ export class ExpensesStore {
       return updated;
     } catch (err) {
       // On conflict (409 surfaced by the interceptor's toast), re-fetch to
-      // sync with whatever the other device wrote.
+      // sync with whatever the other device wrote. Force=true bypasses the
+      // freshness check — without it the cache window would short-circuit
+      // exactly when we need the freshest data.
       if (is409(err)) {
         const range = this._range();
-        await this.load(range?.from, range?.to);
+        await this.load(range?.from, range?.to, /* force */ true);
       }
       throw err;
     }

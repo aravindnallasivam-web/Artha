@@ -16,7 +16,14 @@ export class SettingsStore {
   readonly currency = computed(() => this._settings()?.currency ?? 'USD');
   readonly currencySymbol = computed(() => symbolFor(this.currency()));
 
-  async load(): Promise<void> {
+  async load(force = false): Promise<void> {
+    // Settings are loaded once per session — every page calls this on init,
+    // and refetching on every navigation is wasted bandwidth. update() keeps
+    // the in-memory copy in sync after writes, so callers never see stale
+    // data from the same session.
+    if (!force && this._settings() !== null) {
+      return;
+    }
     this._loading.set(true);
     this._error.set(null);
     try {
