@@ -1,4 +1,5 @@
 using System.Text;
+using Artha.Api.Middleware;
 using Artha.Auth.Configuration;
 using Artha.Auth.Google;
 using Artha.Auth.Jwt;
@@ -123,6 +124,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.UseCors(CorsPolicyName);
+app.UseMiddleware<DriveConflictMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
