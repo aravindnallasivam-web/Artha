@@ -118,7 +118,28 @@ https://<your-app>.ondigitalocean.app
 └── /api/*        →  .NET 10 API (Basic web service, ~$5/mo)
 ```
 
-### One-time setup
+### Fast path: one command via `doctl` + `.env`
+
+If you have [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/) installed, the whole deploy is one command:
+
+```bash
+cp .env.example .env
+# edit .env — fill in GOOGLE_CLIENT_SECRET and JWT_SIGNING_KEY
+#   (Client ID is already in .do/app.yaml; it's public and safe to commit.)
+#   Generate JWT_SIGNING_KEY with: openssl rand -base64 48
+
+doctl auth init                  # one-time; paste an API token from
+                                 # https://cloud.digitalocean.com/account/api/tokens
+./scripts/deploy-do.sh           # creates (or updates) the app, waits for it to deploy
+```
+
+The script renders a temp copy of `.do/app.yaml` with your secrets substituted in (file is `chmod 600` and deleted on exit), then runs `doctl apps create --spec` (or `apps update` if the app already exists).
+
+When it finishes it prints the app URL — add `<that-url>/auth/callback` to your Google OAuth client's authorized redirect URIs and you're done.
+
+### Manual path (dashboard clicks)
+
+If you'd rather use the DO web UI:
 
 1. **Create a Google OAuth Web client** in Google Cloud Console (APIs & Services → Credentials):
    - Enable the **Google Drive API** on the project.

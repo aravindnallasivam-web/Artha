@@ -10,6 +10,12 @@ Thumbs.db
 !.vscode/tasks.json
 .idea/
 
+# Local secrets — NEVER commit .env files. Use .env.example as a template.
+.env
+.env.local
+.env.*.local
+*.env
+
 # ---------- .NET ----------
 bin/
 obj/
