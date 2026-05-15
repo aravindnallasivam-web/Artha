@@ -18,6 +18,15 @@ export const routes: Routes = [
       import('./features/auth/callback.component').then((m) => m.CallbackComponent),
   },
   {
+    // Bridge page used by the Capacitor mobile flow. The Web OAuth client
+    // can only redirect to HTTPS, so mobile uses this URL as redirect_uri
+    // and the page bounces to com.artha.app:// which the OS routes back
+    // to the Artha app via @capacitor/app's appUrlOpen event.
+    path: 'auth/callback/mobile',
+    loadComponent: () =>
+      import('./features/auth/mobile-callback.component').then((m) => m.MobileCallbackComponent),
+  },
+  {
     path: '',
     canActivate: [authGuard],
     loadComponent: () =>

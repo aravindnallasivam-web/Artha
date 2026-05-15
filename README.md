@@ -62,7 +62,9 @@ GET /*        -> Angular static files (with SPA fallback to /index.html)
 | **M1** | Solution scaffold + Google login end-to-end (web) | ✅ Done |
 | **M2** | Drive integration + Expense CRUD (web) | Planned |
 | **M3** | Categories + monthly reports | Planned |
-| **M4** | Capacitor iOS + Android builds | In progress (scaffold landed) |
+| **M4** | Capacitor iOS + Android builds | Done (scaffold + auth deep link) |
+| **M5** | Financial accounts + expense linkage | Done |
+| **M6** | Responsive desktop layout (side nav above 768px) | Done |
 | **M5** | Polish: settings, multi-currency, Apple Sign-In, export | Planned |
 
 ## Local development
@@ -239,10 +241,19 @@ npm run cap:open:android   # Android Studio
 
 From there, run on a simulator or device. Capacitor 8 uses Swift Package Manager for iOS plugins — **no CocoaPods step required**.
 
-### Auth on mobile (M4.3 — pending)
+### Auth on mobile (M4.3 — done)
 
-The web build uses cookie auth. Mobile WebViews handle cross-origin cookies awkwardly, so M4.3 will switch the mobile path to:
+The web flow uses a same-origin redirect to `/auth/callback`. The mobile flow can't, because the WebView serves from `capacitor://localhost` and Google's Web OAuth client only accepts HTTPS redirect URIs. Mobile reuses the same Web OAuth client + same backend, with one extra hop:
 
-- Open Google OAuth in an in-app browser via `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs).
-- Capture the redirect via the `com.artha.app://auth/callback` custom URL scheme, picked up by `@capacitor/app`'s `appUrlOpen` listener.
-- Persist the JWT in `@capacitor/preferences` and attach it as a `Bearer` header via the existing `AuthInterceptor`.
+1. App generates PKCE + state, calls `@capacitor/browser`'s `Browser.open(...)` with the Google authorize URL — redirect_uri set to `https://<your-app>/auth/callback/mobile`.
+2. User completes Google sign-in in SFSafariViewController (iOS) / Chrome Custom Tabs (Android).
+3. Google redirects to the bridge page (`/auth/callback/mobile`) which runs `window.location.replace('com.artha.app://auth/callback?code=…&state=…')`.
+4. The OS routes that custom URL back into the Artha app via the registered URL scheme (iOS: `CFBundleURLTypes` in `Info.plist`; Android: `<intent-filter>` with `android:scheme="com.artha.app"` in `AndroidManifest.xml`).
+5. `@capacitor/app`'s `appUrlOpen` listener (registered at app startup via `provideAppInitializer`) catches the deep link, calls the existing `POST /api/auth/google` endpoint with the code, persists the JWT via the existing `SessionService` (localStorage), dismisses the system browser, and navigates to `/dashboard`.
+
+**One-time setup** before the mobile build can complete sign-in:
+
+1. In **Google Cloud Console → APIs & Services → Credentials**, edit your existing Web OAuth client and add `https://<your-deployed-app>/auth/callback/mobile` to **Authorized redirect URIs**.
+2. Edit [`src/environments/environment.mobile.ts`](server/src/Artha.Api/ClientApp/src/environments/environment.mobile.ts) and set `apiBaseUrl` to your deployed URL — that's what the redirect URI in step 1 is built from.
+
+The `com.artha.app://` URL scheme is already registered in both native manifests; no additional Google client config is needed.

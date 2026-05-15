@@ -22,6 +22,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+                OAuth deep link: the bridge page at
+                https://<deployed-app>/auth/callback/mobile bounces to
+                com.artha.app://auth/callback?code=...&state=... which
+                this filter routes back into the app.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.artha.app" />
+            </intent-filter>
+
         </activity>
 
         <provider

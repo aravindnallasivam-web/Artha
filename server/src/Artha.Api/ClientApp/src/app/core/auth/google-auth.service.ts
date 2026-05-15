@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
@@ -22,6 +23,7 @@ interface PendingFlow {
 export class GoogleAuthService {
   private readonly http = inject(HttpClient);
   private readonly session = inject(SessionService);
+  private readonly router = inject(Router);
   private mobileListenerAttached = false;
 
   async beginLogin(): Promise<void> {
@@ -57,12 +59,42 @@ export class GoogleAuthService {
     const authUrl = `${environment.google.authEndpoint}?${params.toString()}`;
 
     if (isNative) {
-      this.attachMobileListenerOnce();
+      this.initializeMobileAuthListener();
       await Browser.open({ url: authUrl, presentationStyle: 'popover' });
       // Browser dismissal happens in the appUrlOpen handler.
     } else {
       window.location.assign(authUrl);
     }
+  }
+
+  /**
+   * Native-only: registers the appUrlOpen listener that catches the OAuth
+   * deep link. Idempotent. Wired from APP_INITIALIZER so the listener is
+   * in place even if the OS launches the app cold via the deep link.
+   */
+  initializeMobileAuthListener(): void {
+    if (this.mobileListenerAttached || !Capacitor.isNativePlatform()) return;
+    this.mobileListenerAttached = true;
+
+    void App.addListener('appUrlOpen', async (event) => {
+      try {
+        const url = new URL(event.url);
+        if (url.protocol !== 'com.artha.app:') return;
+        if (!url.pathname.endsWith('/auth/callback')) return;
+
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        if (!code || !state) return;
+
+        await this.completeLogin(code, state);
+        await this.router.navigate(['/dashboard']);
+      } catch {
+        // Surfacing is handled by the login UI's error path; keep the
+        // listener silent so a malformed deep link doesn't crash the app.
+      } finally {
+        try { await Browser.close(); } catch { /* already dismissed */ }
+      }
+    });
   }
 
   async completeLogin(code: string, returnedState: string): Promise<LoginResponse> {
@@ -106,32 +138,4 @@ export class GoogleAuthService {
     }
   }
 
-  /**
-   * Native-only: catches the com.artha.app://auth/callback?code=...&state=...
-   * deep link emitted by the bridge page, completes login, and dismisses
-   * the system browser. Handler is idempotent — safe to call repeatedly.
-   */
-  private attachMobileListenerOnce(): void {
-    if (this.mobileListenerAttached || !Capacitor.isNativePlatform()) return;
-    this.mobileListenerAttached = true;
-
-    void App.addListener('appUrlOpen', async (event) => {
-      try {
-        const url = new URL(event.url);
-        if (url.protocol !== 'com.artha.app:') return;
-        if (!url.pathname.endsWith('/auth/callback')) return;
-
-        const code = url.searchParams.get('code');
-        const state = url.searchParams.get('state');
-        if (!code || !state) return;
-
-        await this.completeLogin(code, state);
-      } catch {
-        // Surfacing is handled by the login UI's error path; keep the
-        // listener silent so a malformed deep link doesn't crash the app.
-      } finally {
-        try { await Browser.close(); } catch { /* already dismissed */ }
-      }
-    });
-  }
 }
