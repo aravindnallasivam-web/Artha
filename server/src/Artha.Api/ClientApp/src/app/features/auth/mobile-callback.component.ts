@@ -1,6 +1,21 @@
 import { Component, OnInit, signal } from '@angular/core';
 
 const MOBILE_SCHEME = 'com.artha.app://auth/callback';
+const ANDROID_PACKAGE = 'com.artha.app';
+
+function buildAndroidIntentUrl(search: string): string {
+  // Chrome Custom Tabs reliably honors intent:// URLs that name the target
+  // package; plain custom-scheme JS redirects are blocked without a user
+  // gesture. The S.browser_fallback_url keeps the page sensible if the app
+  // isn't installed.
+  const query = search.startsWith('?') ? search.slice(1) : search;
+  const fallback = encodeURIComponent('https://arthaexpense-qrts6.ondigitalocean.app/login');
+  return `intent://auth/callback?${query}#Intent;scheme=com.artha.app;package=${ANDROID_PACKAGE};S.browser_fallback_url=${fallback};end`;
+}
+
+function isAndroid(): boolean {
+  return /android/i.test(navigator.userAgent);
+}
 
 /**
  * Bridge page used by the Capacitor mobile flow. The Google OAuth client
@@ -20,7 +35,7 @@ const MOBILE_SCHEME = 'com.artha.app://auth/callback';
       <section>
         <h2>Returning to Artha&hellip;</h2>
         @if (manualLink()) {
-          <p>If the app didn't reopen automatically, tap the button below.</p>
+          <p>If Artha didn't reopen automatically, tap the button below.</p>
           <a class="btn" [href]="manualLink()!">Open Artha</a>
         } @else {
           <p>Just a moment.</p>
@@ -48,8 +63,13 @@ export class MobileCallbackComponent implements OnInit {
 
   ngOnInit(): void {
     const search = window.location.search;
-    const target = `${MOBILE_SCHEME}${search}`;
+    const target = isAndroid()
+      ? buildAndroidIntentUrl(search)
+      : `${MOBILE_SCHEME}${search}`;
     this.manualLink.set(target);
+    // Try the immediate JS redirect — it may be blocked without a user
+    // gesture, in which case the visible "Open Artha" button is the
+    // fallback. The intent:// form succeeds most of the time on Android.
     window.location.replace(target);
   }
 }
