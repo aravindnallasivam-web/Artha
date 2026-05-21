@@ -66,3 +66,4 @@ server/src/Artha.Api/wwwroot/
 *.pid
 .npm/
 .eslintcache
+/server/.vs
