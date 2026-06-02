@@ -1,5 +1,6 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import {
   IonCard,
   IonCardContent,
@@ -106,7 +107,7 @@ type ViewMode = 'monthly' | 'yearly';
             <ion-list>
               <ion-list-header><ion-label>By category</ion-label></ion-list-header>
               @for (row of report.byCategory; track row.categoryId) {
-                <ion-item lines="full">
+                <ion-item lines="full" button="true" detail="true" (click)="openCategory(row.categoryId)">
                   <ion-label>
                     <h2>{{ row.categoryName }}</h2>
                     <p>{{ row.count }} expense(s)</p>
@@ -152,7 +153,7 @@ type ViewMode = 'monthly' | 'yearly';
             <ion-list>
               <ion-list-header><ion-label>By category</ion-label></ion-list-header>
               @for (row of report.byCategory; track row.categoryId) {
-                <ion-item lines="full">
+                <ion-item lines="full" button="true" detail="true" (click)="openCategory(row.categoryId)">
                   <ion-label>
                     <h2>{{ row.categoryName }}</h2>
                     <p>{{ row.count }} expense(s)</p>
@@ -268,6 +269,7 @@ type ViewMode = 'monthly' | 'yearly';
 })
 export class ReportsPage implements OnInit {
   protected readonly store = inject(ReportsStore);
+  private readonly router = inject(Router);
 
   protected readonly view = signal<ViewMode>('monthly');
   protected readonly year = signal<number>(new Date().getFullYear());
@@ -328,6 +330,17 @@ export class ReportsPage implements OnInit {
       this.year.update((y) => y + 1);
     }
     await this.refresh();
+  }
+
+  /** Drill into the Expenses list filtered by this category. In monthly view
+      we also carry the year+month so the list opens on the same period. */
+  protected openCategory(categoryId: string): void {
+    const queryParams: Record<string, string | number> = { category: categoryId };
+    if (this.view() === 'monthly') {
+      queryParams['year'] = this.year();
+      queryParams['month'] = this.month();
+    }
+    void this.router.navigate(['/expenses'], { queryParams });
   }
 
   protected percentage(value: number, total: number): number {

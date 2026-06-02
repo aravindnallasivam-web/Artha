@@ -1,6 +1,6 @@
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonContent,
   IonIcon,
@@ -831,6 +831,7 @@ export class ExpensesListPage implements OnInit {
   protected readonly categoriesStore = inject(CategoriesStore);
   protected readonly accountsStore = inject(AccountsStore);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
 
@@ -977,6 +978,24 @@ export class ExpensesListPage implements OnInit {
   }
 
   ngOnInit(): void {
+    // Deep-link support, e.g. from the Reports "by category" drill-down:
+    // /expenses?category=<id>&year=YYYY&month=M
+    const qp = this.route.snapshot.queryParamMap;
+    const year = Number(qp.get('year'));
+    const month = Number(qp.get('month'));
+    if (year >= 2000 && month >= 1 && month <= 12) {
+      this.viewYear.set(year);
+      this.viewMonth.set(month);
+    }
+    const category = qp.get('category');
+    if (category) {
+      this.filterCategoryId.set(category);
+    }
+    const account = qp.get('account');
+    if (account) {
+      this.filterAccountId.set(account);
+    }
+
     void this.loadMonth();
     if (this.categoriesStore.items().length === 0) {
       void this.categoriesStore.load(/* includeArchived */ true);
