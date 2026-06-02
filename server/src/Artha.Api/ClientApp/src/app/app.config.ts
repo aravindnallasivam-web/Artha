@@ -12,6 +12,7 @@ import { provideIonicAngular } from '@ionic/angular/standalone';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { GoogleAuthService } from './core/auth/google-auth.service';
 import { SessionService } from './core/auth/session.service';
+import { NativeUiService } from './core/native/native-ui.service';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -22,8 +23,9 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
     // Native (Capacitor) only: restore the session from Capacitor Preferences
-    // if localStorage was evicted, then register the appUrlOpen handler so
-    // the OAuth deep link is caught even on cold launch. Both no-op on web.
+    // if localStorage was evicted, register the appUrlOpen handler so the OAuth
+    // deep link is caught even on cold launch, and theme the native status bar
+    // + dismiss the splash once the app has painted. All no-op on web.
     provideAppInitializer(async () => {
       // Resolve all dependencies synchronously, before the first `await`.
       // After an `await` the injection context is gone, so calling inject()
@@ -31,8 +33,10 @@ export const appConfig: ApplicationConfig = {
       // context").
       const session = inject(SessionService);
       const googleAuth = inject(GoogleAuthService);
+      const nativeUi = inject(NativeUiService);
       await session.restoreFromNativeIfNeeded();
       googleAuth.initializeMobileAuthListener();
+      await nativeUi.initialize();
     }),
   ],
 };

@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 
 @Component({
@@ -69,6 +69,20 @@ export class LoginComponent {
 
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
+
+  constructor() {
+    // The native OAuth deep link completes inside GoogleAuthService, outside
+    // this component. Mirror any failure it publishes into the local state so
+    // the user sees the cause and the button leaves its "Redirecting…" state
+    // instead of hanging silently.
+    effect(() => {
+      const err = this.googleAuth.authError();
+      if (err) {
+        this.error.set(err);
+        this.loading.set(false);
+      }
+    });
+  }
 
   async signIn(): Promise<void> {
     this.error.set(null);
