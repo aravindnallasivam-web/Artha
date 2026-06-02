@@ -124,7 +124,8 @@ public sealed class ExpensesController : ControllerBase
             AccountId: accountId,
             Note: string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             CreatedAt: now,
-            UpdatedAt: now);
+            UpdatedAt: now,
+            Excluded: request.Excluded);
 
         await AppendToShardAsync(ctx, expense, cancellationToken);
 
@@ -167,6 +168,7 @@ public sealed class ExpensesController : ControllerBase
             AccountId = accountId,
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             UpdatedAt = DateTimeOffset.UtcNow,
+            Excluded = request.Excluded,
         };
 
         if (oldMonth.Equals(newMonth))
@@ -595,7 +597,8 @@ public sealed class ExpensesController : ControllerBase
         AccountId: string.IsNullOrEmpty(e.AccountId) ? DriveFileNames.DefaultAccountId : e.AccountId,
         Note: e.Note,
         CreatedAt: e.CreatedAt,
-        UpdatedAt: e.UpdatedAt);
+        UpdatedAt: e.UpdatedAt,
+        Excluded: e.Excluded);
 
     private static ProblemDetails Problem400(string detail) => new()
     {

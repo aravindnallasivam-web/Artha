@@ -60,7 +60,11 @@ public sealed class ReportsController : ControllerBase
             }
         }
 
-        var byCategory = allItems
+        // Excluded transactions (refunds/transfers/settlements) don't count
+        // toward spending totals or breakdowns.
+        var counted = allItems.Where(e => !e.Excluded).ToList();
+
+        var byCategory = counted
             .GroupBy(e => e.CategoryId)
             .Select(g => new CategoryBreakdownDto(
                 CategoryId: g.Key,
@@ -74,8 +78,8 @@ public sealed class ReportsController : ControllerBase
             Year: y,
             Month: m,
             Currency: currency,
-            Total: allItems.Sum(e => e.Amount),
-            Count: allItems.Count,
+            Total: counted.Sum(e => e.Amount),
+            Count: counted.Count,
             ByCategory: byCategory));
     }
 
@@ -107,6 +111,7 @@ public sealed class ReportsController : ControllerBase
             if (shard is null) continue;
             foreach (var expense in shard.Document.Items)
             {
+                if (expense.Excluded) continue;
                 var prevMonth = monthSummaries.GetValueOrDefault(expense.Date.Month);
                 monthSummaries[expense.Date.Month] = (prevMonth.Total + expense.Amount, prevMonth.Count + 1);
 

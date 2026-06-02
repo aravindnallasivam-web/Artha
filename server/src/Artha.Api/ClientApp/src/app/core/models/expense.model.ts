@@ -6,6 +6,7 @@ export interface Expense {
   categoryId: string;
   accountId: string;
   note: string | null;
+  excluded: boolean; // true => not counted in spending totals/counts
   createdAt: string;
   updatedAt: string;
 }
@@ -16,6 +17,7 @@ export interface ExpenseCreateRequest {
   categoryId: string;
   accountId: string;
   note: string | null;
+  excluded: boolean;
 }
 
 export interface ExpenseUpdateRequest extends ExpenseCreateRequest {}
