@@ -82,6 +82,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/settings/settings.page').then((m) => m.SettingsPage),
       },
+      {
+        path: 'more',
+        loadComponent: () =>
+          import('./features/more/more.page').then((m) => m.MorePage),
+      },
     ],
   },
   {

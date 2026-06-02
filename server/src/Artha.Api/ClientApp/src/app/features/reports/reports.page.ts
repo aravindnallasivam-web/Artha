@@ -1,7 +1,14 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
+import {
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonSpinner,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
 import { MONTH_LABELS, MonthSummary } from '../../core/models/report.model';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -33,13 +40,22 @@ interface CatRow {
   imports: [
     CurrencyPipe,
     IonContent,
+    IonHeader,
     IonIcon,
     IonSpinner,
+    IonTitle,
+    IonToolbar,
     DonutChartComponent,
     LineChartComponent,
     YearBarChartComponent,
   ],
   template: `
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>Reports</ion-title>
+      </ion-toolbar>
+    </ion-header>
+
     <ion-content class="ion-padding">
       <div class="page">
         <!-- Header -->

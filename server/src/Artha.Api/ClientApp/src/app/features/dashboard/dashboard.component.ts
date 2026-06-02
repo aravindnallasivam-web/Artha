@@ -2,9 +2,14 @@ import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import {
+  IonButton,
+  IonButtons,
   IonContent,
+  IonHeader,
   IonIcon,
   IonSpinner,
+  IonTitle,
+  IonToolbar,
 } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -27,11 +32,33 @@ interface CategorySlice {
     DatePipe,
     DecimalPipe,
     RouterLink,
+    IonButton,
+    IonButtons,
     IonContent,
+    IonHeader,
     IonIcon,
     IonSpinner,
+    IonTitle,
+    IonToolbar,
   ],
   template: `
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>Home</ion-title>
+        <ion-buttons slot="end">
+          <ion-button routerLink="/more" aria-label="Profile and more">
+            @if (currentUser(); as u) {
+              @if (u.pictureUrl) {
+                <img class="topbar-avatar" [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
+              } @else {
+                <span class="topbar-avatar topbar-avatar--initial">{{ firstName(u.name).charAt(0) }}</span>
+              }
+            }
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+
     <ion-content>
       <div class="page">
         @if (loading()) {
@@ -116,7 +143,17 @@ interface CategorySlice {
                 <ul class="activity">
                   @for (expense of recent(); track expense.id) {
                     <li class="activity-row">
-                      <span class="activity-dot" [style.background]="categoryColor(expense.categoryId)"></span>
+                      <span
+                        class="activity-icon"
+                        [style.background]="categoryTint(expense.categoryId)"
+                        [style.color]="categoryColor(expense.categoryId)"
+                      >
+                        @if (categoryIcon(expense.categoryId); as ic) {
+                          <ion-icon [name]="ic" aria-hidden="true"></ion-icon>
+                        } @else {
+                          {{ categoryName(expense.categoryId).charAt(0) }}
+                        }
+                      </span>
                       <div class="activity-text">
                         <p class="activity-name">{{ categoryName(expense.categoryId) }}</p>
                         <p class="activity-meta">
@@ -179,6 +216,18 @@ interface CategorySlice {
   styles: [`
     :host { display: contents; }
     ion-content { --background: var(--artha-bg); }
+
+    .topbar-avatar {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .topbar-avatar--initial {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
+      color: white;
+      font-size: 13px; font-weight: 700;
+    }
 
     .page {
       padding: 32px 28px 64px;
@@ -353,19 +402,24 @@ interface CategorySlice {
     }
     .activity-row {
       display: grid;
-      grid-template-columns: 10px 1fr auto;
+      grid-template-columns: 38px 1fr auto;
       align-items: center;
-      gap: 14px;
-      padding: 12px 18px;
+      gap: 12px;
+      padding: 10px 18px;
       border-top: 1px solid var(--artha-border);
     }
     .activity-row:first-child { border-top: none; }
-    .activity-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--artha-accent);
+    .activity-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
     }
+    .activity-icon ion-icon { font-size: 19px; }
     .activity-text { min-width: 0; }
     .activity-name {
       margin: 0;
@@ -560,9 +614,11 @@ export class DashboardComponent implements OnInit {
   }
 
   protected categoryColor(id: string): string {
-    // Deterministic colour per category from a curated palette so the
-    // dashboard's activity dots, breakdown bars, and pills stay visually
-    // consistent across reloads.
+    // Prefer the category's own colour; fall back to a deterministic colour
+    // from a curated palette so uncoloured categories still stay consistent
+    // across reloads.
+    const real = this.categoriesStore.byId()[id]?.color;
+    if (real) return real;
     const palette = [
       '#6366f1', '#10b981', '#f59e0b', '#f43f5e',
       '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16',
@@ -573,6 +629,15 @@ export class DashboardComponent implements OnInit {
       hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
     }
     return palette[hash % palette.length];
+  }
+
+  protected categoryIcon(id: string): string | null {
+    return this.categoriesStore.byId()[id]?.icon ?? null;
+  }
+
+  /** Translucent fill (12% alpha) of the category colour for the icon chip. */
+  protected categoryTint(id: string): string {
+    return `${this.categoryColor(id)}1f`;
   }
 
   protected monthLabel(): string {

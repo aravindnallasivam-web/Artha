@@ -112,6 +112,16 @@ ion-content {
   --padding-bottom: var(--ion-safe-area-bottom);
 }
 
+/* On mobile the routed pages sit above the fixed bottom tab bar (~62px), so
+   pad their scroll area to keep the last row reachable. The tab bar carries
+   its own safe-area inset, so we only add its height here. Desktop (>=768px)
+   uses the side pane and needs no offset. */
+@media (max-width: 767px) {
+  [id="main-content"] ion-content {
+    --padding-bottom: 62px;
+  }
+}
+
 /* Dark-mode token overrides. Ionic's dark palette flips its own tokens
    above; we re-flip Artha-specific ones here so cards/text colors land
    correctly when the system is in dark mode. */
