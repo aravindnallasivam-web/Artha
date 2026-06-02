@@ -132,16 +132,68 @@ const TODAY_ISO = toIsoDate(new Date());
           </div>
         </section>
 
+        <!-- Filters -->
+        <section class="filters">
+          <select
+            class="filter-select"
+            aria-label="Filter by category"
+            [value]="filterCategoryId() ?? ''"
+            (change)="onCategoryFilter($event)"
+          >
+            <option value="">All categories</option>
+            @for (c of filterableCategories(); track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
+            }
+          </select>
+
+          <select
+            class="filter-select"
+            aria-label="Filter by account"
+            [value]="filterAccountId() ?? ''"
+            (change)="onAccountFilter($event)"
+          >
+            <option value="">All accounts</option>
+            @for (a of filterableAccounts(); track a.id) {
+              <option [value]="a.id">{{ a.name }}</option>
+            }
+          </select>
+
+          <input
+            class="filter-search"
+            type="search"
+            placeholder="Search notes…"
+            [value]="search()"
+            (input)="onSearch($event)"
+          />
+
+          @if (hasActiveFilters()) {
+            <button type="button" class="filter-clear" (click)="clearFilters()">
+              <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+              <span>Clear</span>
+            </button>
+          }
+        </section>
+
         @if (expensesStore.loading()) {
           <div class="state"><ion-spinner></ion-spinner></div>
         } @else if (monthCount() === 0) {
-          <div class="empty">
-            <ion-icon name="receipt-outline"></ion-icon>
-            <p>No expenses in {{ monthLabel() }}.</p>
-            <button type="button" class="empty-cta" (click)="add()">
-              Add your first one
-            </button>
-          </div>
+          @if (hasActiveFilters()) {
+            <div class="empty">
+              <ion-icon name="receipt-outline"></ion-icon>
+              <p>No expenses match your filters in {{ monthLabel() }}.</p>
+              <button type="button" class="empty-cta" (click)="clearFilters()">
+                Clear filters
+              </button>
+            </div>
+          } @else {
+            <div class="empty">
+              <ion-icon name="receipt-outline"></ion-icon>
+              <p>No expenses in {{ monthLabel() }}.</p>
+              <button type="button" class="empty-cta" (click)="add()">
+                Add your first one
+              </button>
+            </div>
+          }
         } @else {
           <!-- View body -->
           @switch (view()) {
@@ -427,6 +479,40 @@ const TODAY_ISO = toIsoDate(new Date());
     .add-cta:hover { background: var(--artha-accent-hover); }
     .add-cta:active { transform: translateY(1px); }
     .add-cta ion-icon { font-size: 16px; }
+
+    /* ====== Filters ====== */
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 16px 0 4px;
+    }
+    .filter-select, .filter-search {
+      padding: 8px 11px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface);
+      color: var(--artha-text);
+      font-size: 13px;
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .filter-select { cursor: pointer; min-width: 150px; }
+    .filter-search { flex: 1; min-width: 160px; }
+    .filter-select:focus, .filter-search:focus {
+      outline: 2px solid var(--artha-accent); outline-offset: -1px;
+    }
+    .filter-clear {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 8px 12px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface);
+      color: var(--artha-text-muted);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .filter-clear:hover { background: var(--artha-surface-2); color: var(--artha-text); }
+    .filter-clear ion-icon { font-size: 15px; }
 
     /* ====== Summary strip ====== */
     .summary {
@@ -763,10 +849,41 @@ export class ExpensesListPage implements OnInit {
   protected readonly viewMonth = signal<number>(new Date().getMonth() + 1);
   protected readonly selectedDay = signal<string>(TODAY_ISO);
 
-  // --- Derived: filter the store's items to the visible month ---
+  // --- Filters ---
+  protected readonly filterCategoryId = signal<string | null>(null);
+  protected readonly filterAccountId = signal<string | null>(null);
+  protected readonly search = signal<string>('');
+
+  protected readonly hasActiveFilters = computed(() =>
+    this.filterCategoryId() !== null
+    || this.filterAccountId() !== null
+    || this.search().trim() !== '',
+  );
+
+  protected readonly filterableCategories = computed(() =>
+    [...this.categoriesStore.items()].sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  protected readonly filterableAccounts = computed(() =>
+    [...this.accountsStore.items()].sort((a, b) => a.name.localeCompare(b.name)),
+  );
+
+  // --- Derived: filter the store's items to the visible month + active filters ---
   protected readonly monthExpenses = computed<Expense[]>(() => {
     const prefix = monthPrefix(this.viewYear(), this.viewMonth());
-    return this.expensesStore.items().filter((e) => e.date.startsWith(prefix));
+    const cat = this.filterCategoryId();
+    const acc = this.filterAccountId();
+    const q = this.search().trim().toLowerCase();
+    return this.expensesStore.items().filter((e) => {
+      if (!e.date.startsWith(prefix)) return false;
+      if (cat && e.categoryId !== cat) return false;
+      if (acc && e.accountId !== acc) return false;
+      if (q) {
+        const hay = `${e.note ?? ''} ${this.categoryName(e.categoryId)} ${this.accountName(e.accountId)}`
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
   });
 
   protected readonly currency = computed(() =>
@@ -950,6 +1067,24 @@ export class ExpensesListPage implements OnInit {
     const ratio = Math.min(1, cell.total / maxToday);
     const alpha = 0.08 + ratio * 0.32; // 0.08 .. 0.40
     return `rgba(99, 102, 241, ${alpha.toFixed(2)})`;
+  }
+
+  protected onCategoryFilter(event: Event): void {
+    this.filterCategoryId.set((event.target as HTMLSelectElement).value || null);
+  }
+
+  protected onAccountFilter(event: Event): void {
+    this.filterAccountId.set((event.target as HTMLSelectElement).value || null);
+  }
+
+  protected onSearch(event: Event): void {
+    this.search.set((event.target as HTMLInputElement).value);
+  }
+
+  protected clearFilters(): void {
+    this.filterCategoryId.set(null);
+    this.filterAccountId.set(null);
+    this.search.set('');
   }
 
   protected add(): void {
