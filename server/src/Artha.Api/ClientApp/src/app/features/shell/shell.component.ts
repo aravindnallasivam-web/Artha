@@ -5,10 +5,10 @@ import {
   IonContent,
   IonIcon,
   IonMenu,
+  IonMenuButton,
+  IonRouterOutlet,
   IonSplitPane,
-  IonTabBar,
-  IonTabButton,
-  IonTabs,
+  MenuController,
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
@@ -49,10 +49,6 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const TAB_ITEMS: NavItem[] = NAV_GROUPS
-  .flatMap((g) => g.items)
-  .filter((n) => n.path !== '/categories');
-
 @Component({
   selector: 'artha-shell',
   standalone: true,
@@ -63,17 +59,22 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
     IonContent,
     IonIcon,
     IonMenu,
+    IonMenuButton,
+    IonRouterOutlet,
     IonSplitPane,
-    IonTabBar,
-    IonTabButton,
-    IonTabs,
   ],
   template: `
     <ion-app>
-      <!-- when="md" => viewport >= 768px shows the sidebar inline.
-           Below that the bottom tabs handle navigation. -->
+      <!--
+        Canonical Ionic split-pane shell.
+        - when="md" (>=768px): the menu renders as a fixed side pane.
+        - below md: the menu becomes a swipe/tap slide-over, opened via the
+          floating menu button (hidden on desktop by CSS).
+        The routed pages live in <ion-router-outlet id="main-content"> — the
+        split-pane's content target.
+      -->
       <ion-split-pane contentId="main-content" when="md" class="artha-split">
-        <ion-menu contentId="main-content" type="overlay" class="artha-menu" menuId="main">
+        <ion-menu contentId="main-content" menuId="main" class="artha-menu">
           <ion-content class="artha-menu-content">
             <div class="brand">
               <span class="brand-mark" aria-hidden="true">
@@ -92,6 +93,7 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
                       routerLinkActive="active"
                       #rla="routerLinkActive"
                       class="nav-link"
+                      (click)="closeMenu()"
                     >
                       <ion-icon
                         [name]="rla.isActive ? (item.iconActive ?? item.icon) : item.icon"
@@ -123,24 +125,19 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
           </ion-content>
         </ion-menu>
 
-        <ion-tabs id="main-content">
-          <ion-tab-bar slot="bottom" class="mobile-tabs">
-            @for (item of tabs; track item.path) {
-              <ion-tab-button [tab]="item.path.slice(1)" [href]="item.path">
-                <ion-icon [name]="item.icon" aria-hidden="true"></ion-icon>
-                <span>{{ item.label }}</span>
-              </ion-tab-button>
-            }
-          </ion-tab-bar>
-        </ion-tabs>
+        <ion-router-outlet id="main-content"></ion-router-outlet>
       </ion-split-pane>
+
+      <!-- Mobile-only: opens the slide-over menu. Hidden once the side pane
+           is visible (>=768px). -->
+      <div class="menu-fab">
+        <ion-menu-button menu="main" aria-label="Open menu"></ion-menu-button>
+      </div>
     </ion-app>
   `,
   styles: [`
-    /* Sidebar width — Ionic reads --side-* on ion-split-pane in split mode
-       (NOT --width on ion-menu, which only applies to overlay mode). Without
-       these, the menu falls back to the default 270px..28% range. */
     .artha-split {
+      /* Sidebar width — Ionic reads --side-* on ion-split-pane in split mode. */
       --side-min-width: 264px;
       --side-max-width: 264px;
       --side-width: 264px;
@@ -148,27 +145,7 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
 
     .artha-menu {
       --background: var(--artha-surface);
-      /* Use Ionic's --border var with a visible color so the divider between
-         menu and content is clearly perceivable even on low-contrast displays. */
       --border: 1px solid var(--artha-border-strong);
-
-      /*
-       * Force the menu above ion-tabs.
-       *
-       * Ionic's menu.md.css contains two competing rules:
-       *   :host(.menu-type-overlay)                  { z-index: 1000; }
-       *   :host(.menu-pane-visible.split-pane-side)  { z-index: 0; }
-       *
-       * The second wins by specificity (0,3,0 vs 0,2,0) when our menu is
-       * both type="overlay" AND in split-pane mode. With the menu at z=0
-       * and <ion-tabs> also at z=0, ion-tabs (later in source order) draws
-       * on top and the sidebar disappears.
-       *
-       * !important is required because the offending rule lives inside
-       * ion-menu's shadow DOM as :host(...), which beats any non-important
-       * light-DOM selector we can write on the host.
-       */
-      z-index: 1 !important;
     }
     .artha-menu::part(container) {
       background: var(--artha-surface);
@@ -256,8 +233,6 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
       border-radius: var(--artha-radius);
       background: var(--artha-surface-2);
       border: 1px solid var(--artha-border);
-      position: sticky;
-      bottom: 0;
     }
     .avatar {
       width: 34px; height: 34px;
@@ -297,21 +272,22 @@ const TAB_ITEMS: NavItem[] = NAV_GROUPS
     }
     .logout-btn ion-icon { font-size: 18px; }
 
-    .mobile-tabs {
-      --background: var(--artha-surface);
-      --border: 1px solid var(--artha-border);
+    /* Floating menu toggle — mobile only. */
+    .menu-fab {
+      position: fixed;
+      top: max(8px, env(safe-area-inset-top));
+      left: 8px;
+      z-index: 20;
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: 10px;
+      box-shadow: var(--artha-shadow-sm);
     }
-    .mobile-tabs ion-tab-button {
-      --color: var(--artha-text-subtle);
-      --color-selected: var(--artha-accent);
+    .menu-fab ion-menu-button {
+      --color: var(--artha-text);
     }
-    .mobile-tabs ion-tab-button span {
-      font-size: 11px;
-      margin-top: 2px;
-    }
-
     @media (min-width: 768px) {
-      .mobile-tabs { display: none !important; }
+      .menu-fab { display: none; }
     }
   `],
 })
@@ -319,16 +295,23 @@ export class ShellComponent {
   private readonly session = inject(SessionService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
+  private readonly menuCtrl = inject(MenuController);
 
   protected readonly nav = NAV_GROUPS;
-  protected readonly tabs = TAB_ITEMS;
   protected readonly user = this.session.currentUser;
 
   protected initial(name: string): string {
     return name?.trim().charAt(0).toUpperCase() ?? 'A';
   }
 
+  /** Close the slide-over after navigating on mobile. No-op when the menu is
+      a fixed side pane (desktop), so it's safe to call unconditionally. */
+  protected closeMenu(): void {
+    void this.menuCtrl.close('main');
+  }
+
   protected async logout(): Promise<void> {
+    this.closeMenu();
     await this.googleAuth.logout();
     await this.router.navigate(['/login']);
   }

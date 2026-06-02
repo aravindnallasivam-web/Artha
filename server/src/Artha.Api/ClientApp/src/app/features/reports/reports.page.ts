@@ -1,26 +1,19 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import {
-  IonButton,
-  IonButtons,
   IonCard,
   IonCardContent,
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
   IonContent,
-  IonHeader,
   IonIcon,
   IonItem,
   IonLabel,
   IonList,
   IonListHeader,
   IonNote,
-  IonSegment,
-  IonSegmentButton,
   IonSpinner,
-  IonTitle,
-  IonToolbar,
 } from '@ionic/angular/standalone';
 import { MONTH_LABELS } from '../../core/models/report.model';
 import { ReportsStore } from './reports.store';
@@ -33,55 +26,66 @@ type ViewMode = 'monthly' | 'yearly';
   standalone: true,
   imports: [
     CurrencyPipe,
-    IonButton,
-    IonButtons,
     IonCard,
     IonCardContent,
     IonCardHeader,
     IonCardSubtitle,
     IonCardTitle,
     IonContent,
-    IonHeader,
     IonIcon,
     IonItem,
     IonLabel,
     IonList,
     IonListHeader,
     IonNote,
-    IonSegment,
-    IonSegmentButton,
     IonSpinner,
-    IonTitle,
-    IonToolbar,
     YearBarChartComponent,
   ],
   template: `
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Reports</ion-title>
-      </ion-toolbar>
-      <ion-toolbar>
-        <ion-segment [value]="view()" (ionChange)="onViewChange($event)">
-          <ion-segment-button value="monthly"><ion-label>Monthly</ion-label></ion-segment-button>
-          <ion-segment-button value="yearly"><ion-label>Yearly</ion-label></ion-segment-button>
-        </ion-segment>
-      </ion-toolbar>
-      <ion-toolbar>
-        <ion-buttons slot="start">
-          <ion-button (click)="stepBack()" fill="clear">
-            <ion-icon name="chevron-forward" style="transform: rotate(180deg)"></ion-icon>
-          </ion-button>
-        </ion-buttons>
-        <ion-title size="small" class="ion-text-center">{{ rangeLabel() }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button (click)="stepForward()" fill="clear" [disabled]="!canStepForward()">
-            <ion-icon name="chevron-forward"></ion-icon>
-          </ion-button>
-        </ion-buttons>
-      </ion-toolbar>
-    </ion-header>
-
     <ion-content class="ion-padding">
+      <div class="page">
+        <header class="page-header">
+          <h1 class="page-title">Reports</h1>
+          <div class="view-switcher" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              [class.active]="view() === 'monthly'"
+              (click)="setView('monthly')"
+            >
+              <span>Monthly</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              [class.active]="view() === 'yearly'"
+              (click)="setView('yearly')"
+            >
+              <span>Yearly</span>
+            </button>
+          </div>
+          <div class="month-picker">
+            <button
+              type="button"
+              class="month-nav"
+              (click)="stepBack()"
+              aria-label="Previous period"
+            >
+              <ion-icon name="chevron-back"></ion-icon>
+            </button>
+            <span class="range-label">{{ rangeLabel() }}</span>
+            <button
+              type="button"
+              class="month-nav"
+              (click)="stepForward()"
+              [disabled]="!canStepForward()"
+              aria-label="Next period"
+            >
+              <ion-icon name="chevron-forward"></ion-icon>
+            </button>
+          </div>
+        </header>
+
       @if (store.loading()) {
         <div class="state"><ion-spinner></ion-spinner></div>
       } @else if (view() === 'monthly') {
@@ -167,9 +171,79 @@ type ViewMode = 'monthly' | 'yearly';
           }
         }
       }
+      </div>
     </ion-content>
   `,
   styles: [`
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .page-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--artha-text);
+    }
+    .view-switcher {
+      display: inline-flex;
+      padding: 4px;
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .view-switcher button {
+      border: 0; background: transparent;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--artha-text-muted);
+      font-size: 13px; font-weight: 500;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .view-switcher button:hover { color: var(--artha-text); }
+    .view-switcher button.active {
+      background: var(--artha-accent-tint);
+      color: var(--artha-accent);
+      font-weight: 600;
+    }
+    .month-picker {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .month-nav {
+      width: 32px; height: 32px;
+      border: 0; background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--artha-text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .month-nav:hover { background: var(--artha-surface-2); color: var(--artha-text); }
+    .month-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+    .month-nav ion-icon { font-size: 18px; }
+    .range-label {
+      min-width: 96px;
+      text-align: center;
+      font-size: 14px; font-weight: 600;
+      color: var(--artha-text);
+    }
+    @media (max-width: 640px) {
+      .month-picker { margin-left: 0; }
+    }
+
     .state {
       display: flex; align-items: center; justify-content: center;
       padding: 64px; color: var(--ion-color-medium);
@@ -220,9 +294,8 @@ export class ReportsPage implements OnInit {
     void this.refresh();
   }
 
-  async onViewChange(event: Event): Promise<void> {
-    const value = (event as CustomEvent<{ value: ViewMode }>).detail?.value;
-    if (value && value !== this.view()) {
+  async setView(value: ViewMode): Promise<void> {
+    if (value !== this.view()) {
       this.view.set(value);
       await this.refresh();
     }
