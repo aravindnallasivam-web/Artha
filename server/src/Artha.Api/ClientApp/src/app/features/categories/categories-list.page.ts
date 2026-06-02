@@ -17,9 +17,11 @@ import {
   IonTitle,
   IonToggle,
   IonToolbar,
+  ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Category } from '../../core/models/category.model';
+import { CategoryEditModal } from './category-edit.modal';
 import { CategoriesStore } from './categories.store';
 
 @Component({
@@ -64,11 +66,15 @@ import { CategoriesStore } from './categories.store';
           @for (cat of store.items(); track cat.id) {
             <ion-item-sliding>
               <ion-item>
-                <div
+                <span
                   class="color-dot"
                   [style.background]="cat.color || '#94a3b8'"
                   slot="start"
-                ></div>
+                >
+                  @if (cat.icon) {
+                    <ion-icon [name]="cat.icon"></ion-icon>
+                  }
+                </span>
                 <ion-label>
                   {{ cat.name }}
                   @if (cat.archived) {
@@ -78,7 +84,7 @@ import { CategoriesStore } from './categories.store';
               </ion-item>
               @if (!cat.archived) {
                 <ion-item-options side="end">
-                  <ion-item-option (click)="rename(cat)">
+                  <ion-item-option (click)="edit(cat)">
                     <ion-icon name="pencil" slot="icon-only"></ion-icon>
                   </ion-item-option>
                   <ion-item-option color="danger" (click)="archive(cat)">
@@ -99,7 +105,12 @@ import { CategoriesStore } from './categories.store';
     </ion-content>
   `,
   styles: [`
-    .color-dot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; }
+    .color-dot {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff;
+    }
+    .color-dot ion-icon { font-size: 16px; }
     .state, .empty {
       display: flex; align-items: center; justify-content: center;
       padding: 32px; color: var(--ion-color-medium);
@@ -109,6 +120,7 @@ import { CategoriesStore } from './categories.store';
 export class CategoriesListPage implements OnInit {
   protected readonly store = inject(CategoriesStore);
   private readonly alertCtrl = inject(AlertController);
+  private readonly modalCtrl = inject(ModalController);
   private readonly notifier = inject(ConflictNotifierService);
 
   ngOnInit(): void {
@@ -121,70 +133,22 @@ export class CategoriesListPage implements OnInit {
   }
 
   async addCategory(): Promise<void> {
-    const alert = await this.alertCtrl.create({
-      header: 'New category',
-      inputs: [
-        { name: 'name', type: 'text', placeholder: 'Name (e.g. Groceries)' },
-        { name: 'color', type: 'text', placeholder: 'Color hex (optional, e.g. #ef4444)' },
-      ],
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Add',
-          handler: async (values: { name: string; color: string }) => {
-            const name = (values.name ?? '').trim();
-            if (!name) {
-              await this.notifier.notifyError('Name is required.');
-              return false;
-            }
-            try {
-              await this.store.add({
-                name,
-                color: (values.color ?? '').trim() || null,
-                icon: null,
-              });
-              return true;
-            } catch (err) {
-              await this.notifier.notifyError('Could not add category.');
-              return false;
-            }
-          },
-        },
-      ],
-    });
-    await alert.present();
+    await this.openEditor();
   }
 
-  async rename(cat: Category): Promise<void> {
-    const alert = await this.alertCtrl.create({
-      header: 'Edit category',
-      inputs: [
-        { name: 'name', type: 'text', value: cat.name },
-        { name: 'color', type: 'text', value: cat.color ?? '' },
-      ],
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Save',
-          handler: async (values: { name: string; color: string }) => {
-            const name = (values.name ?? '').trim();
-            if (!name) return false;
-            try {
-              await this.store.update(cat.id, {
-                name,
-                color: (values.color ?? '').trim() || null,
-                icon: cat.icon,
-              });
-              return true;
-            } catch (err) {
-              await this.notifier.notifyError('Could not save category.');
-              return false;
-            }
-          },
-        },
-      ],
+  async edit(cat: Category): Promise<void> {
+    await this.openEditor(cat);
+  }
+
+  /** Open the category editor modal. The modal saves itself (showing a loader)
+      and dismisses with role 'saved' on success. */
+  private async openEditor(category?: Category): Promise<void> {
+    const modal = await this.modalCtrl.create({
+      component: CategoryEditModal,
+      componentProps: { category },
     });
-    await alert.present();
+    await modal.present();
+    await modal.onWillDismiss();
   }
 
   async archive(cat: Category): Promise<void> {
