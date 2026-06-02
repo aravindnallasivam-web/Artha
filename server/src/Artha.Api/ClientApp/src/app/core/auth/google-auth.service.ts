@@ -80,7 +80,13 @@ export class GoogleAuthService {
       try {
         const url = new URL(event.url);
         if (url.protocol !== 'com.artha.app:') return;
-        if (!url.pathname.endsWith('/auth/callback')) return;
+        // For a custom-scheme URL like `com.artha.app://auth/callback?...`,
+        // the URL parser treats "auth" as the host and "/callback" as the
+        // pathname. Match against host + pathname so the guard sees the full
+        // "auth/callback" — checking url.pathname alone (which is just
+        // "/callback") would reject every real callback and strand the user
+        // on the login screen.
+        if (!`${url.host}${url.pathname}`.replace(/\/$/, '').endsWith('auth/callback')) return;
 
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
