@@ -7,9 +7,6 @@ import {
   IonHeader,
   IonIcon,
   IonItem,
-  IonItemOption,
-  IonItemOptions,
-  IonItemSliding,
   IonLabel,
   IonList,
   IonNote,
@@ -34,9 +31,6 @@ import { CategoriesStore } from './categories.store';
     IonHeader,
     IonIcon,
     IonItem,
-    IonItemOption,
-    IonItemOptions,
-    IonItemSliding,
     IonLabel,
     IonList,
     IonNote,
@@ -64,35 +58,47 @@ import { CategoriesStore } from './categories.store';
       } @else {
         <ion-list>
           @for (cat of store.items(); track cat.id) {
-            <ion-item-sliding>
-              <ion-item>
-                <span
-                  class="color-dot"
-                  [style.background]="cat.color || '#94a3b8'"
-                  slot="start"
-                >
-                  @if (cat.icon) {
-                    <ion-icon [name]="cat.icon"></ion-icon>
-                  }
-                </span>
-                <ion-label>
-                  {{ cat.name }}
-                  @if (cat.archived) {
-                    <ion-note color="medium"> · archived</ion-note>
-                  }
-                </ion-label>
-              </ion-item>
+            <ion-item
+              [button]="!cat.archived"
+              [detail]="false"
+              (click)="!cat.archived && edit(cat)"
+            >
+              <span
+                class="color-dot"
+                [style.background]="cat.color || '#94a3b8'"
+                slot="start"
+              >
+                @if (cat.icon) {
+                  <ion-icon [name]="cat.icon"></ion-icon>
+                }
+              </span>
+              <ion-label>
+                {{ cat.name }}
+                @if (cat.archived) {
+                  <ion-note color="medium"> · archived</ion-note>
+                }
+              </ion-label>
               @if (!cat.archived) {
-                <ion-item-options side="end">
-                  <ion-item-option (click)="edit(cat)">
-                    <ion-icon name="pencil" slot="icon-only"></ion-icon>
-                  </ion-item-option>
-                  <ion-item-option color="danger" (click)="archive(cat)">
-                    <ion-icon name="trash" slot="icon-only"></ion-icon>
-                  </ion-item-option>
-                </ion-item-options>
+                <div class="row-actions" slot="end">
+                  <button
+                    type="button"
+                    class="row-action"
+                    (click)="edit(cat); $event.stopPropagation()"
+                    [attr.aria-label]="'Edit ' + cat.name"
+                  >
+                    <ion-icon name="pencil"></ion-icon>
+                  </button>
+                  <button
+                    type="button"
+                    class="row-action danger"
+                    (click)="onArchive($event, cat)"
+                    [attr.aria-label]="'Archive ' + cat.name"
+                  >
+                    <ion-icon name="trash"></ion-icon>
+                  </button>
+                </div>
               }
-            </ion-item-sliding>
+            </ion-item>
           }
         </ion-list>
       }
@@ -111,6 +117,19 @@ import { CategoriesStore } from './categories.store';
       color: #fff;
     }
     .color-dot ion-icon { font-size: 16px; }
+    .row-actions { display: inline-flex; gap: 4px; }
+    .row-action {
+      width: 34px; height: 34px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 0; border-radius: 8px;
+      background: transparent;
+      color: var(--ion-color-medium, #6b7280);
+      cursor: pointer;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .row-action:hover { background: var(--ion-color-step-100, #eceef1); color: var(--ion-color-dark, #111); }
+    .row-action.danger:hover { color: var(--ion-color-danger, #c0392b); }
+    .row-action ion-icon { font-size: 18px; }
     .state, .empty {
       display: flex; align-items: center; justify-content: center;
       padding: 32px; color: var(--ion-color-medium);
@@ -149,6 +168,11 @@ export class CategoriesListPage implements OnInit {
     });
     await modal.present();
     await modal.onWillDismiss();
+  }
+
+  onArchive(event: Event, cat: Category): void {
+    event.stopPropagation();
+    void this.archive(cat);
   }
 
   async archive(cat: Category): Promise<void> {
