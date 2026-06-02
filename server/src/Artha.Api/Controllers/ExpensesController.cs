@@ -1,5 +1,7 @@
+using System.Globalization;
 using Artha.Api.Dtos;
 using Artha.Api.Drive;
+using Artha.Api.Import;
 using Artha.Core.Drive;
 using Artha.Core.Models;
 using Artha.Drive;
@@ -214,6 +216,296 @@ public sealed class ExpensesController : ControllerBase
             cancellationToken);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Parse an uploaded .xlsx/.csv file and return a validated preview. Writes
+    /// nothing — the client reviews the rows (and which categories/accounts
+    /// would be auto-created) and then POSTs the valid rows to <see cref="ImportConfirm"/>.
+    /// </summary>
+    [HttpPost("import/preview")]
+    [RequestSizeLimit(5_000_000)]
+    public async Task<ActionResult<ImportPreviewResponse>> ImportPreview(
+        IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest(Problem400("No file was uploaded."));
+        }
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext is not (".xlsx" or ".csv"))
+        {
+            return BadRequest(Problem400("Unsupported file type. Upload a .xlsx or .csv file."));
+        }
+
+        IReadOnlyList<RawImportRow> raw;
+        try
+        {
+            // ClosedXML needs a seekable stream, so buffer the upload to memory.
+            using var buffer = new MemoryStream();
+            await using (var upload = file.OpenReadStream())
+            {
+                await upload.CopyToAsync(buffer, cancellationToken);
+            }
+            buffer.Position = 0;
+            raw = ExpenseImportParser.Parse(buffer, file.FileName);
+        }
+        catch (ImportFormatException ex)
+        {
+            return BadRequest(Problem400(ex.Message));
+        }
+
+        var ctx = await OpenAsync(cancellationToken);
+        var settings = await ctx.SettingsRepo.ReadAsync(DriveFileNames.Settings, cancellationToken);
+        var currency = settings?.Document.Currency ?? "USD";
+        var categories = (await ctx.CategoryRepo.ReadAsync(DriveFileNames.Categories, cancellationToken))
+            ?.Document.Items ?? Array.Empty<Category>();
+        var accounts = (await ctx.AccountRepo.ReadAsync(DriveFileNames.Accounts, cancellationToken))
+            ?.Document.Items ?? Array.Empty<Account>();
+
+        var existingCats = new HashSet<string>(
+            categories.Where(c => !c.Archived).Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+        var existingAccts = new HashSet<string>(
+            accounts.Where(a => !a.Archived).Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
+
+        var rows = new List<ImportPreviewRow>(raw.Count);
+        var newCats = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var newAccts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in raw)
+        {
+            var errors = new List<string>();
+
+            DateOnly? date = null;
+            if (string.IsNullOrWhiteSpace(r.Date))
+            {
+                errors.Add("Date is required.");
+            }
+            else if ((date = TryParseDate(r.Date)) is null)
+            {
+                errors.Add($"Unrecognised date '{r.Date}' (use YYYY-MM-DD).");
+            }
+
+            decimal? amount = null;
+            if (string.IsNullOrWhiteSpace(r.Amount))
+            {
+                errors.Add("Amount is required.");
+            }
+            else if ((amount = TryParseAmount(r.Amount)) is null)
+            {
+                errors.Add($"Unrecognised amount '{r.Amount}'.");
+            }
+            else if (amount <= 0)
+            {
+                errors.Add("Amount must be greater than zero.");
+            }
+
+            if (string.IsNullOrWhiteSpace(r.Category))
+            {
+                errors.Add("Category is required.");
+            }
+
+            var valid = errors.Count == 0;
+            if (valid)
+            {
+                if (!existingCats.Contains(r.Category!))
+                {
+                    newCats.Add(r.Category!.Trim());
+                }
+                if (!string.IsNullOrWhiteSpace(r.Account) && !existingAccts.Contains(r.Account))
+                {
+                    newAccts.Add(r.Account.Trim());
+                }
+            }
+
+            rows.Add(new ImportPreviewRow(
+                r.RowNumber, date, amount, r.Category, r.Account, r.Note, valid, errors));
+        }
+
+        return Ok(new ImportPreviewResponse(
+            rows,
+            rows.Count(x => x.Valid),
+            rows.Count(x => !x.Valid),
+            newCats.OrderBy(x => x).ToArray(),
+            newAccts.OrderBy(x => x).ToArray(),
+            currency));
+    }
+
+    /// <summary>
+    /// Persist confirmed import rows: auto-create any categories/accounts whose
+    /// names don't yet exist, then batch-append the expenses into their monthly
+    /// shards.
+    /// </summary>
+    [HttpPost("import")]
+    public async Task<ActionResult<ImportResultResponse>> ImportConfirm(
+        [FromBody] ImportConfirmRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Rows is null || request.Rows.Count == 0)
+        {
+            return BadRequest(Problem400("No rows to import."));
+        }
+
+        var ctx = await OpenAsync(cancellationToken);
+        var settings = await ctx.SettingsRepo.ReadAsync(DriveFileNames.Settings, cancellationToken);
+        var currency = settings?.Document.Currency ?? "USD";
+
+        var catDoc = await ctx.CategoryRepo.ReadAsync(DriveFileNames.Categories, cancellationToken);
+        var catList = (catDoc?.Document.Items ?? Array.Empty<Category>()).ToList();
+        var acctDoc = await ctx.AccountRepo.ReadAsync(DriveFileNames.Accounts, cancellationToken);
+        var acctList = (acctDoc?.Document.Items ?? Array.Empty<Account>()).ToList();
+
+        var catByName = catList.Where(c => !c.Archived)
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+        var acctByName = acctList.Where(a => !a.Archived)
+            .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+        // Defensive re-validation: never trust the client to have filtered.
+        var validRows = request.Rows
+            .Where(r => r.Amount > 0 && !string.IsNullOrWhiteSpace(r.Category))
+            .ToList();
+
+        var createdCats = new List<string>();
+        foreach (var name in validRows.Select(r => r.Category.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!catByName.ContainsKey(name))
+            {
+                var created = new Category($"cat-{Guid.NewGuid():N}", name, null, null, false);
+                catList.Add(created);
+                catByName[name] = created.Id;
+                createdCats.Add(name);
+            }
+        }
+
+        var createdAccts = new List<string>();
+        foreach (var name in validRows.Where(r => !string.IsNullOrWhiteSpace(r.Account))
+            .Select(r => r.Account!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!acctByName.ContainsKey(name))
+            {
+                var created = new Account($"acc-{Guid.NewGuid():N}", name, "cash", currency, 0m, null, null, false);
+                acctList.Add(created);
+                acctByName[name] = created.Id;
+                createdAccts.Add(name);
+            }
+        }
+
+        if (createdCats.Count > 0)
+        {
+            await ctx.CategoryRepo.WriteAsync(
+                DriveFileNames.Categories,
+                new CategoryList(SchemaVersions.Current, catList),
+                catDoc?.ETag,
+                cancellationToken);
+        }
+        if (createdAccts.Count > 0)
+        {
+            await ctx.AccountRepo.WriteAsync(
+                DriveFileNames.Accounts,
+                new AccountList(SchemaVersions.Current, acctList),
+                acctDoc?.ETag,
+                cancellationToken);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var expenses = validRows.Select(r => new Expense(
+            Id: $"exp-{Guid.NewGuid():N}",
+            Date: r.Date,
+            Amount: r.Amount,
+            Currency: currency,
+            CategoryId: catByName[r.Category.Trim()],
+            AccountId: string.IsNullOrWhiteSpace(r.Account)
+                ? DriveFileNames.DefaultAccountId
+                : acctByName[r.Account!.Trim()],
+            Note: string.IsNullOrWhiteSpace(r.Note) ? null : r.Note.Trim(),
+            CreatedAt: now,
+            UpdatedAt: now)).ToList();
+
+        await AppendManyToShardsAsync(ctx, expenses, cancellationToken);
+
+        return Ok(new ImportResultResponse(expenses.Count, createdCats, createdAccts));
+    }
+
+    private static readonly string[] DateFormats =
+    [
+        "yyyy-MM-dd", "yyyy/MM/dd", "MM/dd/yyyy", "M/d/yyyy",
+        "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "yyyy.MM.dd",
+    ];
+
+    private static DateOnly? TryParseDate(string raw)
+    {
+        if (DateOnly.TryParseExact(raw, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+        {
+            return d;
+        }
+        if (DateOnly.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out d))
+        {
+            return d;
+        }
+        return null;
+    }
+
+    private static decimal? TryParseAmount(string raw)
+    {
+        // Strip currency symbols / thousands separators, keep digits, '.', '-'.
+        var cleaned = new string(raw.Where(ch => char.IsDigit(ch) || ch is '.' or '-').ToArray());
+        return decimal.TryParse(cleaned, NumberStyles.Number, CultureInfo.InvariantCulture, out var v)
+            ? v
+            : null;
+    }
+
+    /// <summary>
+    /// Append many expenses at once, grouping by month so each shard (and the
+    /// manifest) is read and written only once. Used by the import flow.
+    /// </summary>
+    private static async Task AppendManyToShardsAsync(
+        Context ctx, IReadOnlyList<Expense> expenses, CancellationToken cancellationToken)
+    {
+        if (expenses.Count == 0)
+        {
+            return;
+        }
+
+        var manifestDoc = await ctx.ManifestRepo.ReadAsync(DriveFileNames.Manifest, cancellationToken);
+        var manifest = manifestDoc?.Document
+            ?? new Manifest(SchemaVersions.Current, Array.Empty<string>(), DateTimeOffset.UtcNow);
+        var shards = manifest.Shards.ToList();
+        var manifestChanged = false;
+
+        foreach (var group in expenses.GroupBy(e => YearMonth.From(e.Date)))
+        {
+            var month = group.Key;
+            var shardName = DriveFileNames.ShardFor(month);
+            var shardDoc = await ctx.ExpenseRepo.ReadAsync(shardName, cancellationToken);
+            var items = (shardDoc?.Document.Items ?? Array.Empty<Expense>())
+                .Concat(group)
+                .ToArray();
+            await ctx.ExpenseRepo.WriteAsync(
+                shardName,
+                new ExpenseShard(SchemaVersions.Current, items),
+                shardDoc?.ETag,
+                cancellationToken);
+
+            if (!shards.Contains(month.ToString()))
+            {
+                shards.Add(month.ToString());
+                manifestChanged = true;
+            }
+        }
+
+        if (manifestChanged)
+        {
+            await ctx.ManifestRepo.WriteAsync(
+                DriveFileNames.Manifest,
+                manifest with { Shards = shards.OrderBy(s => s).ToArray() },
+                manifestDoc?.ETag,
+                cancellationToken);
+        }
     }
 
     /// <summary>

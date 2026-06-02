@@ -5,11 +5,14 @@ import {
   IonContent,
   IonIcon,
   IonSpinner,
+  ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
+import { ImportResultResponse } from '../../core/models/import.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
+import { ExpenseImportModal } from './expense-import.modal';
 import { ExpensesStore } from './expenses.store';
 
 type ViewMode = 'list' | 'day' | 'month';
@@ -87,6 +90,11 @@ const TODAY_ISO = toIsoDate(new Date());
               </button>
             }
           </div>
+
+          <button type="button" class="import-cta" (click)="openImport()">
+            <ion-icon name="cloud-upload-outline" aria-hidden="true"></ion-icon>
+            <span>Import</span>
+          </button>
 
           <button type="button" class="add-cta" (click)="add()">
             <ion-icon name="add" aria-hidden="true"></ion-icon>
@@ -387,8 +395,24 @@ const TODAY_ISO = toIsoDate(new Date());
       font-weight: 600;
     }
 
-    .add-cta {
+    .import-cta {
       margin-left: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 14px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface);
+      color: var(--artha-text);
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--artha-shadow-sm);
+      transition: background 120ms ease, transform 80ms ease;
+    }
+    .import-cta:hover { background: var(--artha-surface-2); }
+    .import-cta:active { transform: translateY(1px); }
+    .import-cta ion-icon { font-size: 16px; }
+
+    .add-cta {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 9px 16px;
       border: 0;
@@ -705,6 +729,7 @@ const TODAY_ISO = toIsoDate(new Date());
     @media (max-width: 640px) {
       .page { padding: 20px 14px 56px; }
       .page-header { gap: 10px; }
+      .import-cta { margin-left: auto; }
       .add-cta { margin-left: 0; }
       .view-switcher button span { display: none; }
       .calendar { gap: 4px; }
@@ -721,6 +746,7 @@ export class ExpensesListPage implements OnInit {
   protected readonly accountsStore = inject(AccountsStore);
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly modalCtrl = inject(ModalController);
 
   protected readonly weekdays = WEEKDAYS;
 
@@ -930,6 +956,33 @@ export class ExpensesListPage implements OnInit {
     void this.router.navigate(['/expenses', 'new']);
   }
 
+  protected async openImport(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: ExpenseImportModal });
+    await modal.present();
+
+    const { role, data } = await modal.onWillDismiss<ImportResultResponse>();
+    if (role !== 'imported' || !data) {
+      return;
+    }
+
+    // New categories/accounts may have been created, and expenses added across
+    // months — force-refresh the relevant stores so the UI reflects the import.
+    await Promise.all([
+      this.categoriesStore.load(/* includeArchived */ true, /* force */ true),
+      this.accountsStore.load(/* includeArchived */ true, /* force */ true),
+      this.loadMonth(/* force */ true),
+    ]);
+
+    const parts = [`Imported ${data.importedCount} expense${data.importedCount === 1 ? '' : 's'}.`];
+    if (data.createdCategories.length > 0) {
+      parts.push(`Created ${data.createdCategories.length} categor${data.createdCategories.length === 1 ? 'y' : 'ies'}.`);
+    }
+    if (data.createdAccounts.length > 0) {
+      parts.push(`Created ${data.createdAccounts.length} account${data.createdAccounts.length === 1 ? '' : 's'}.`);
+    }
+    await this.notifier.notifyInfo(parts.join(' '));
+  }
+
   protected edit(id: string): void {
     void this.router.navigate(['/expenses', id]);
   }
@@ -943,9 +996,9 @@ export class ExpensesListPage implements OnInit {
     }
   }
 
-  private async loadMonth(): Promise<void> {
+  private async loadMonth(force = false): Promise<void> {
     const prefix = monthPrefix(this.viewYear(), this.viewMonth());
-    await this.expensesStore.load(prefix, prefix);
+    await this.expensesStore.load(prefix, prefix, force);
   }
 }
 
