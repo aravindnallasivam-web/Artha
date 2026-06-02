@@ -153,8 +153,10 @@ const NAV_GROUPS: NavGroup[] = [
     }
     .artha-menu-content {
       --background: var(--artha-surface);
-      --padding-top: 20px;
-      --padding-bottom: 14px;
+      /* Clear the status bar / notch when the menu opens as a full-height
+         slide-over on iOS; resolves to the base 20px on web and desktop. */
+      --padding-top: calc(20px + env(safe-area-inset-top));
+      --padding-bottom: calc(14px + env(safe-area-inset-bottom));
       --padding-start: 14px;
       --padding-end: 14px;
     }

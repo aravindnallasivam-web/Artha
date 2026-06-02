@@ -87,6 +87,29 @@
   --ion-color-step-600: #334155;
   --ion-color-step-700: #1e293b;
   --ion-color-step-800: #0f172a;
+
+  /* Native safe-area insets (iOS notch / home indicator, Android gesture bar).
+     Feeding env() into Ionic's own --ion-safe-area-* tokens makes ion-toolbar,
+     ion-header, ion-footer and ion-tab-bar pad around the insets regardless of
+     mode ('md' here). On the web and on inset-free devices these resolve to 0,
+     so every rule that consumes them is inert off-device. Requires
+     viewport-fit=cover in index.html. */
+  --ion-safe-area-top:    env(safe-area-inset-top);
+  --ion-safe-area-bottom: env(safe-area-inset-bottom);
+  --ion-safe-area-left:   env(safe-area-inset-left);
+  --ion-safe-area-right:  env(safe-area-inset-right);
+}
+
+/* Let the app surface bleed into the inset regions so there are no white/black
+   bars framing the notch and home indicator. */
+ion-app {
+  background: var(--artha-bg);
+}
+
+/* Keep the last scrollable row and any bottom-anchored controls clear of the
+   home indicator / gesture bar. */
+ion-content {
+  --padding-bottom: var(--ion-safe-area-bottom);
 }
 
 /* Dark-mode token overrides. Ionic's dark palette flips its own tokens
