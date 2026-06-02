@@ -158,4 +158,21 @@ ion-card-title,
     margin-inline: auto;
     padding-inline: 8px;
   }
+
+  /*
+   * Align page headers with the capped, centred content below them.
+   *
+   * <ion-header> renders as a sibling of <ion-content>, so without a cap its
+   * toolbars stretch the full main-content width (1600px+ on a wide window)
+   * while the content sits in a 1080px centred column. The result: titles and
+   * end-slotted buttons (e.g. a month stepper) drift to the far edge and get
+   * visually cut off, detached from the content they belong to. Constraining
+   * the header to the same width + centring keeps the two in lockstep on
+   * every page that uses the ion-header pattern.
+   */
+  [id="main-content"] ion-header {
+    max-width: 1080px;
+    margin-inline: auto;
+    padding-inline: 8px;
+  }
 }
