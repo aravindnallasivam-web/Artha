@@ -1,0 +1,68 @@
+name: Android
+
+# Builds the Capacitor Android app: compiles the Angular SPA with the mobile
+# configuration, syncs it into the native project, and assembles a debug APK
+# that is uploaded as a downloadable artifact. This is a debug (unsigned) build
+# meant for testing on a device — release signing is intentionally out of scope.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The Capacitor project (web + native android/) lives under the API's ClientApp.
+defaults:
+  run:
+    working-directory: server/src/Artha.Api/ClientApp
+
+jobs:
+  android:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/src/Artha.Api/ClientApp/package-lock.json
+
+      # AGP 8.13 / compileSdk 36 / Gradle 8.14 require JDK 21.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      # Ensure the exact SDK platform + build-tools the project targets are
+      # present (the runner image may lag a release behind).
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      # Gradle build/dependency caching keyed on the wrapper + gradle files.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Build web bundle (mobile configuration)
+        run: npm run build:mobile
+
+      - name: Capacitor sync (Android)
+        run: npx cap sync android
+
+      - name: Assemble debug APK
+        working-directory: server/src/Artha.Api/ClientApp/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artha-android-debug-apk
+          path: server/src/Artha.Api/ClientApp/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
