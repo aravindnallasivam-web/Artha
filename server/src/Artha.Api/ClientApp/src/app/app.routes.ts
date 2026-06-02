@@ -73,6 +73,21 @@ export const routes: Routes = [
           import('./features/accounts/account-edit.page').then((m) => m.AccountEditPage),
       },
       {
+        path: 'investments',
+        loadComponent: () =>
+          import('./features/investments/investments-list.page').then((m) => m.InvestmentsListPage),
+      },
+      {
+        path: 'investments/new',
+        loadComponent: () =>
+          import('./features/investments/investment-edit.page').then((m) => m.InvestmentEditPage),
+      },
+      {
+        path: 'investments/:id',
+        loadComponent: () =>
+          import('./features/investments/investment-edit.page').then((m) => m.InvestmentEditPage),
+      },
+      {
         path: 'categories',
         loadComponent: () =>
           import('./features/categories/categories-list.page').then((m) => m.CategoriesListPage),
