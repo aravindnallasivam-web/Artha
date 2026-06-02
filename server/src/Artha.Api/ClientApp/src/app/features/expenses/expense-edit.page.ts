@@ -19,6 +19,7 @@ import {
   IonSpinner,
   IonTextarea,
   IonTitle,
+  IonToggle,
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
@@ -49,6 +50,7 @@ import { ExpensesStore } from './expenses.store';
     IonSpinner,
     IonTextarea,
     IonTitle,
+    IonToggle,
     IonToolbar,
   ],
   template: `
@@ -118,6 +120,11 @@ import { ExpensesStore } from './expenses.store';
           </ion-item>
 
           <ion-item>
+            <ion-toggle formControlName="excluded">Exclude from totals</ion-toggle>
+          </ion-item>
+          <p class="hint">Won't count toward your spending (e.g. refunds, transfers, settlements).</p>
+
+          <ion-item>
             <ion-textarea
               label="Note (optional)"
               labelPlacement="floating"
@@ -138,6 +145,11 @@ import { ExpensesStore } from './expenses.store';
   `,
   styles: [`
     .actions { margin-top: 24px; }
+    .hint {
+      margin: 6px 16px 0;
+      font-size: 12px;
+      color: var(--ion-color-medium, #6b7280);
+    }
   `],
 })
 export class ExpenseEditPage implements OnInit {
@@ -161,6 +173,7 @@ export class ExpenseEditPage implements OnInit {
     categoryId: ['', Validators.required],
     accountId: [DEFAULT_ACCOUNT_ID, Validators.required],
     note: [''],
+    excluded: [false],
   });
 
   private editingId: string | null = null;
@@ -189,6 +202,7 @@ export class ExpenseEditPage implements OnInit {
             categoryId: expense.categoryId,
             accountId: expense.accountId || DEFAULT_ACCOUNT_ID,
             note: expense.note ?? '',
+            excluded: expense.excluded ?? false,
           });
         }
       } else {
@@ -216,6 +230,7 @@ export class ExpenseEditPage implements OnInit {
       categoryId: raw.categoryId,
       accountId: raw.accountId,
       note: raw.note?.trim() || null,
+      excluded: raw.excluded,
     };
     try {
       if (this.editingId) {

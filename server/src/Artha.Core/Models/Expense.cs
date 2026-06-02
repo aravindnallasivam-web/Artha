@@ -13,4 +13,8 @@ public sealed record Expense(
     string? AccountId,
     string? Note,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    // Marks a transaction that should be excluded from spending totals/counts
+    // (e.g. a refund, transfer or settlement). Defaults to false so shards
+    // written before this field deserialize cleanly.
+    bool Excluded = false);

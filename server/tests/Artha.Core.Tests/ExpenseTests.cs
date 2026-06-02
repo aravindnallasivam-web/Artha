@@ -33,6 +33,44 @@ public sealed class ExpenseTests
         var deserialized = JsonSerializer.Deserialize<Expense>(json, Options);
 
         deserialized.Should().Be(original);
+        deserialized!.Excluded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Expense_DeserializesLegacyJsonWithoutExcludedField()
+    {
+        // A shard written before the Excluded field existed.
+        var legacy = """
+            {"id":"exp-1","date":"2026-05-15","amount":12.50,"currency":"USD",
+             "categoryId":"cat-food","accountId":"acc-cash","note":"Lunch",
+             "createdAt":"2026-05-15T12:00:00+00:00","updatedAt":"2026-05-15T12:00:00+00:00"}
+            """;
+
+        var deserialized = JsonSerializer.Deserialize<Expense>(legacy, Options);
+
+        deserialized.Should().NotBeNull();
+        deserialized!.Excluded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Expense_ExcludedRoundTripsThroughJson()
+    {
+        var original = new Expense(
+            Id: "exp-2",
+            Date: new DateOnly(2026, 5, 16),
+            Amount: 500m,
+            Currency: "USD",
+            CategoryId: "cat-transfer",
+            AccountId: "acc-cash",
+            Note: "Refund",
+            CreatedAt: new DateTimeOffset(2026, 5, 16, 9, 0, 0, TimeSpan.Zero),
+            UpdatedAt: new DateTimeOffset(2026, 5, 16, 9, 0, 0, TimeSpan.Zero),
+            Excluded: true);
+
+        var json = JsonSerializer.Serialize(original, Options);
+        json.Should().Contain("\"excluded\":true");
+
+        JsonSerializer.Deserialize<Expense>(json, Options).Should().Be(original);
     }
 
     [Fact]

@@ -334,10 +334,13 @@ export class ReportsPage implements OnInit {
     return this.year() < now.getFullYear();
   });
 
+  /** Spending only — excluded items (refunds/transfers) are dropped. */
+  private readonly counted = computed(() => this.periodExpenses().filter((e) => !e.excluded));
+
   protected readonly total = computed(() =>
-    this.periodExpenses().reduce((s, e) => s + e.amount, 0),
+    this.counted().reduce((s, e) => s + e.amount, 0),
   );
-  protected readonly count = computed(() => this.periodExpenses().length);
+  protected readonly count = computed(() => this.counted().length);
 
   protected readonly averageSpend = computed(() => {
     const total = this.total();
@@ -362,7 +365,7 @@ export class ReportsPage implements OnInit {
 
   protected readonly byCategory = computed<CatRow[]>(() => {
     const map = new Map<string, { total: number; count: number }>();
-    for (const e of this.periodExpenses()) {
+    for (const e of this.counted()) {
       const cur = map.get(e.categoryId) ?? { total: 0, count: 0 };
       cur.total += e.amount;
       cur.count += 1;
@@ -400,7 +403,7 @@ export class ReportsPage implements OnInit {
   protected readonly dailySeries = computed<number[]>(() => {
     const days = daysInMonth(this.year(), this.month());
     const arr = new Array(days).fill(0);
-    for (const e of this.periodExpenses()) {
+    for (const e of this.counted()) {
       const d = Number(e.date.slice(8, 10));
       if (d >= 1 && d <= days) arr[d - 1] += e.amount;
     }
@@ -409,7 +412,7 @@ export class ReportsPage implements OnInit {
 
   protected readonly monthSummaries = computed<MonthSummary[]>(() => {
     const arr: MonthSummary[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, total: 0, count: 0 }));
-    for (const e of this.periodExpenses()) {
+    for (const e of this.counted()) {
       const m = Number(e.date.slice(5, 7));
       if (m >= 1 && m <= 12) { arr[m - 1].total += e.amount; arr[m - 1].count += 1; }
     }
@@ -418,7 +421,7 @@ export class ReportsPage implements OnInit {
 
   protected readonly topMerchants = computed(() => {
     const map = new Map<string, number>();
-    for (const e of this.periodExpenses()) {
+    for (const e of this.counted()) {
       const key = merchantOf(e.note);
       map.set(key, (map.get(key) ?? 0) + e.amount);
     }
@@ -430,7 +433,7 @@ export class ReportsPage implements OnInit {
 
   protected readonly byAccount = computed(() => {
     const map = new Map<string, number>();
-    for (const e of this.periodExpenses()) {
+    for (const e of this.counted()) {
       map.set(e.accountId, (map.get(e.accountId) ?? 0) + e.amount);
     }
     const byId = this.accountsStore.byId();

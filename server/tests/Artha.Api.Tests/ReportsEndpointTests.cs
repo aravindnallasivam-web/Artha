@@ -131,6 +131,32 @@ public sealed class ReportsEndpointTests : IClassFixture<ArthaTestFactory>
     }
 
     [Fact]
+    public async Task Monthly_ExcludesNonExpensesFromTotals_ButListKeepsThem()
+    {
+        var client = AuthedClient("user-reports-excluded");
+
+        await client.PostAsJsonAsync("/api/expenses",
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 2), 40m, "cat-food", "acc-cash", "lunch"));
+        // A refund/transfer flagged as a non-expense — must not count toward totals.
+        await client.PostAsJsonAsync("/api/expenses",
+            new ExpenseCreateRequest(new DateOnly(2026, 5, 3), 500m, "cat-food", "acc-cash", "refund", Excluded: true));
+
+        var report = await client.GetFromJsonAsync<MonthlyReportDto>(
+            "/api/reports/monthly?year=2026&month=5");
+
+        report!.Total.Should().Be(40m);
+        report.Count.Should().Be(1);
+        report.ByCategory.Should().ContainSingle();
+        report.ByCategory[0].Total.Should().Be(40m);
+
+        // The excluded row is still stored and returned by the list endpoint.
+        var list = await client.GetFromJsonAsync<ExpenseListResponse>(
+            "/api/expenses?from=2026-05&to=2026-05");
+        list!.Items.Should().HaveCount(2);
+        list.Items.Should().ContainSingle(e => e.Excluded);
+    }
+
+    [Fact]
     public async Task Monthly_InvalidMonth_Returns400()
     {
         var client = AuthedClient("user-reports-bad");

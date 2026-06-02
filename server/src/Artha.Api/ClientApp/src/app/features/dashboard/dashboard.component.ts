@@ -496,7 +496,9 @@ export class DashboardComponent implements OnInit {
     this.expensesStore.items().slice(0, 8),
   );
 
-  protected readonly expenseCount = computed(() => this.expensesStore.items().length);
+  protected readonly expenseCount = computed(() =>
+    this.expensesStore.items().filter((e) => !e.excluded).length,
+  );
 
   protected readonly accountCount = computed(() =>
     this.accountsStore.items().filter((a) => !a.archived).length,
@@ -516,6 +518,7 @@ export class DashboardComponent implements OnInit {
 
     const byCat = new Map<string, number>();
     for (const e of this.expensesStore.items()) {
+      if (e.excluded) continue;
       byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
     }
 

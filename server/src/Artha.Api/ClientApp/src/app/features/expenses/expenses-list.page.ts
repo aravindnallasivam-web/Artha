@@ -221,7 +221,10 @@ const TODAY_ISO = toIsoDate(new Date());
                             [style.background]="categoryColor(expense.categoryId)"
                           ></span>
                           <div class="row-text">
-                            <p class="row-title">{{ categoryName(expense.categoryId) }}</p>
+                            <p class="row-title">
+                            {{ categoryName(expense.categoryId) }}
+                            @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
+                          </p>
                             <p class="row-meta">
                               {{ accountName(expense.accountId) }}
                               @if (expense.note) { · {{ expense.note }} }
@@ -295,7 +298,10 @@ const TODAY_ISO = toIsoDate(new Date());
                           [style.background]="categoryColor(expense.categoryId)"
                         ></span>
                         <div class="row-text">
-                          <p class="row-title">{{ categoryName(expense.categoryId) }}</p>
+                          <p class="row-title">
+                            {{ categoryName(expense.categoryId) }}
+                            @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
+                          </p>
                           <p class="row-meta">
                             {{ accountName(expense.accountId) }}
                             @if (expense.note) { · {{ expense.note }} }
@@ -578,6 +584,15 @@ const TODAY_ISO = toIsoDate(new Date());
       font-size: 14px; font-weight: 600;
       color: var(--artha-text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .excluded-badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 10px; font-weight: 600;
+      background: var(--artha-surface-2); color: var(--artha-text-muted);
+      vertical-align: middle;
     }
     .row-meta {
       margin: 2px 0 0;
@@ -894,10 +909,12 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly monthTotal = computed(() =>
-    this.monthExpenses().reduce((sum, e) => sum + e.amount, 0),
+    this.monthExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
   );
 
-  protected readonly monthCount = computed(() => this.monthExpenses().length);
+  protected readonly monthCount = computed(() =>
+    this.monthExpenses().filter((e) => !e.excluded).length,
+  );
 
   protected readonly dailyAverage = computed(() => {
     const total = this.monthTotal();
@@ -917,7 +934,7 @@ export class ExpensesListPage implements OnInit {
         groups.set(e.date, g);
       }
       g.items.push(e);
-      g.total += e.amount;
+      if (!e.excluded) g.total += e.amount;
     }
     return Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date));
   });
@@ -930,7 +947,7 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly selectedDayTotal = computed(() =>
-    this.selectedDayExpenses().reduce((sum, e) => sum + e.amount, 0),
+    this.selectedDayExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
   );
 
   protected readonly calendar = computed<CalendarCell[]>(() => {
@@ -938,7 +955,7 @@ export class ExpensesListPage implements OnInit {
     const month = this.viewMonth();
     const totals = new Map<string, { total: number; count: number }>();
     for (const g of this.dayGroups()) {
-      totals.set(g.date, { total: g.total, count: g.items.length });
+      totals.set(g.date, { total: g.total, count: g.items.filter((e) => !e.excluded).length });
     }
 
     // Build a 6-row grid starting on Sunday for visual consistency.
