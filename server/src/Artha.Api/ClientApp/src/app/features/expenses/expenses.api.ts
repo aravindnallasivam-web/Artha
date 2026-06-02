@@ -8,6 +8,11 @@ import {
   ExpenseListResponse,
   ExpenseUpdateRequest,
 } from '../../core/models/expense.model';
+import {
+  ImportConfirmRequest,
+  ImportPreviewResponse,
+  ImportResultResponse,
+} from '../../core/models/import.model';
 
 @Injectable({ providedIn: 'root' })
 export class ExpensesApi {
@@ -31,5 +36,21 @@ export class ExpensesApi {
 
   remove(id: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(`${this.baseUrl}/${id}`));
+  }
+
+  /** Upload a .xlsx/.csv file and get back a validated preview (writes nothing). */
+  previewImport(file: File): Promise<ImportPreviewResponse> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return firstValueFrom(
+      this.http.post<ImportPreviewResponse>(`${this.baseUrl}/import/preview`, form),
+    );
+  }
+
+  /** Persist the confirmed import rows; auto-creates missing categories/accounts. */
+  confirmImport(request: ImportConfirmRequest): Promise<ImportResultResponse> {
+    return firstValueFrom(
+      this.http.post<ImportResultResponse>(`${this.baseUrl}/import`, request),
+    );
   }
 }
