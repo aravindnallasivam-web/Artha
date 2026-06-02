@@ -28,7 +28,7 @@ public sealed record ImportConfirmRow(
     DateOnly Date,
     decimal Amount,
     string Category,
-    string Account,
+    string? Account,
     string? Note);
 
 public sealed record ImportConfirmRequest(IReadOnlyList<ImportConfirmRow> Rows);

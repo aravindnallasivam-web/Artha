@@ -421,7 +421,7 @@ public sealed class ExpensesController : ControllerBase
             CategoryId: catByName[r.Category.Trim()],
             AccountId: string.IsNullOrWhiteSpace(r.Account)
                 ? DriveFileNames.DefaultAccountId
-                : acctByName[r.Account.Trim()],
+                : acctByName[r.Account!.Trim()],
             Note: string.IsNullOrWhiteSpace(r.Note) ? null : r.Note.Trim(),
             CreatedAt: now,
             UpdatedAt: now)).ToList();
