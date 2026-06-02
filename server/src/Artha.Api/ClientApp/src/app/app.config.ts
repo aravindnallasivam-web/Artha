@@ -25,8 +25,14 @@ export const appConfig: ApplicationConfig = {
     // if localStorage was evicted, then register the appUrlOpen handler so
     // the OAuth deep link is caught even on cold launch. Both no-op on web.
     provideAppInitializer(async () => {
-      await inject(SessionService).restoreFromNativeIfNeeded();
-      inject(GoogleAuthService).initializeMobileAuthListener();
+      // Resolve all dependencies synchronously, before the first `await`.
+      // After an `await` the injection context is gone, so calling inject()
+      // there throws NG0203 ("inject() must be called from an injection
+      // context").
+      const session = inject(SessionService);
+      const googleAuth = inject(GoogleAuthService);
+      await session.restoreFromNativeIfNeeded();
+      googleAuth.initializeMobileAuthListener();
     }),
   ],
 };
