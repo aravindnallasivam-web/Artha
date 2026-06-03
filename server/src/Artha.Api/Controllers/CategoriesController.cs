@@ -145,6 +145,121 @@ public sealed class CategoriesController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Merge one or more source categories into a target: every expense that
+    /// references a source category is reassigned to the target, then the source
+    /// categories are archived.
+    /// </summary>
+    [HttpPost("merge")]
+    public async Task<ActionResult<IReadOnlyList<CategoryDto>>> Merge(
+        [FromBody] CategoryMergeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.TargetId))
+        {
+            return BadRequest(Problem400("A target category is required."));
+        }
+
+        var sourceIds = (request.SourceIds ?? Array.Empty<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id) && id != request.TargetId)
+            .Distinct()
+            .ToHashSet();
+        if (sourceIds.Count == 0)
+        {
+            return BadRequest(Problem400("Select at least one other category to merge in."));
+        }
+
+        var ctx = await OpenAsync(cancellationToken);
+        var existing = await ctx.CategoryRepo.ReadAsync(DriveFileNames.Categories, cancellationToken);
+        var list = (existing?.Document.Items ?? Array.Empty<Category>()).ToList();
+
+        var target = list.FirstOrDefault(c => c.Id == request.TargetId);
+        if (target is null)
+        {
+            return NotFound();
+        }
+        if (target.Archived)
+        {
+            return BadRequest(Problem400("Cannot merge into an archived category."));
+        }
+        if (sourceIds.Any(id => list.All(c => c.Id != id)))
+        {
+            return NotFound();
+        }
+
+        // 1. Reassign expenses across every shard, one read+write per shard.
+        var manifest = await ctx.ManifestRepo.ReadAsync(DriveFileNames.Manifest, cancellationToken);
+        if (manifest is not null)
+        {
+            var now = DateTimeOffset.UtcNow;
+            foreach (var (_, shardName) in ExpenseShardOps.ShardsNewestFirst(manifest.Document))
+            {
+                await ReassignShardAsync(ctx, shardName, sourceIds, request.TargetId, now, cancellationToken);
+            }
+        }
+
+        // 2. Archive the merged-away source categories.
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (sourceIds.Contains(list[i].Id) && !list[i].Archived)
+            {
+                list[i] = list[i] with { Archived = true };
+            }
+        }
+        await ctx.CategoryRepo.WriteAsync(
+            DriveFileNames.Categories,
+            new CategoryList(SchemaVersions.Current, list),
+            existing?.ETag,
+            cancellationToken);
+
+        var active = list.Where(c => !c.Archived).Select(ToDto).ToList();
+        return Ok(active);
+    }
+
+    private static async Task ReassignShardAsync(
+        Context ctx,
+        string shardName,
+        IReadOnlySet<string> sourceIds,
+        string targetId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var shard = await ctx.ExpenseRepo.ReadAsync(shardName, cancellationToken);
+            if (shard is null)
+            {
+                return;
+            }
+
+            var items = shard.Document.Items;
+            if (!items.Any(e => sourceIds.Contains(e.CategoryId)))
+            {
+                return; // Nothing in this shard references a source category.
+            }
+
+            var updated = items
+                .Select(e => sourceIds.Contains(e.CategoryId)
+                    ? e with { CategoryId = targetId, UpdatedAt = now }
+                    : e)
+                .ToArray();
+
+            try
+            {
+                await ctx.ExpenseRepo.WriteAsync(
+                    shardName,
+                    new ExpenseShard(SchemaVersions.Current, updated),
+                    shard.ETag,
+                    cancellationToken);
+                return;
+            }
+            catch (DriveConflictException) when (attempt == 0)
+            {
+                // Shard advanced between read and write — re-read and retry once.
+            }
+        }
+    }
+
     private async Task<bool> CategoryIsReferenced(Context ctx, string categoryId, CancellationToken cancellationToken)
     {
         var manifest = await ctx.ManifestRepo.ReadAsync(DriveFileNames.Manifest, cancellationToken);

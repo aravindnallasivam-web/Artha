@@ -1,18 +1,18 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import {
   AlertController,
+  IonButton,
+  IonButtons,
   IonContent,
   IonFab,
   IonFabButton,
   IonHeader,
   IonIcon,
-  IonItem,
   IonLabel,
-  IonList,
-  IonNote,
+  IonSegment,
+  IonSegmentButton,
   IonSpinner,
   IonTitle,
-  IonToggle,
   IonToolbar,
   ModalController,
 } from '@ionic/angular/standalone';
@@ -25,115 +25,187 @@ import { CategoriesStore } from './categories.store';
   selector: 'artha-categories-list',
   standalone: true,
   imports: [
+    IonButton,
+    IonButtons,
     IonContent,
     IonFab,
     IonFabButton,
     IonHeader,
     IonIcon,
-    IonItem,
     IonLabel,
-    IonList,
-    IonNote,
+    IonSegment,
+    IonSegmentButton,
     IonSpinner,
     IonTitle,
-    IonToggle,
     IonToolbar,
   ],
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-title>Categories</ion-title>
+        @if (selecting()) {
+          <ion-buttons slot="start">
+            <ion-button (click)="cancelSelect()">Cancel</ion-button>
+          </ion-buttons>
+          <ion-title>{{ selectedIds().size }} selected</ion-title>
+          <ion-buttons slot="end">
+            <ion-button
+              [strong]="true"
+              [disabled]="selectedIds().size < 2"
+              (click)="startMerge()"
+            >
+              Merge
+            </ion-button>
+          </ion-buttons>
+        } @else {
+          <ion-title>Categories</ion-title>
+          @if (view() === 'active' && store.active().length >= 2) {
+            <ion-buttons slot="end">
+              <ion-button (click)="enterSelect()">
+                <ion-icon name="git-merge-outline" slot="start"></ion-icon>
+                Merge
+              </ion-button>
+            </ion-buttons>
+          }
+        }
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
-      <ion-item>
-        <ion-toggle (ionChange)="onToggleArchived($event)">Show archived</ion-toggle>
-      </ion-item>
-
       @if (store.loading()) {
         <div class="state"><ion-spinner></ion-spinner></div>
-      } @else if (store.items().length === 0) {
-        <div class="empty">No categories yet.</div>
       } @else {
-        <ion-list>
-          @for (cat of store.items(); track cat.id) {
-            <ion-item
-              [button]="!cat.archived"
-              [detail]="false"
-              (click)="!cat.archived && edit(cat)"
-            >
-              <span
-                class="color-dot"
-                [style.background]="cat.color || '#94a3b8'"
-                slot="start"
-              >
-                @if (cat.icon) {
-                  <ion-icon [name]="cat.icon"></ion-icon>
-                }
-              </span>
-              <ion-label>
-                {{ cat.name }}
-                @if (cat.archived) {
-                  <ion-note color="medium"> · archived</ion-note>
-                }
-              </ion-label>
-              @if (!cat.archived) {
-                <div class="row-actions" slot="end">
-                  <button
-                    type="button"
-                    class="row-action"
-                    (click)="edit(cat); $event.stopPropagation()"
-                    [attr.aria-label]="'Edit ' + cat.name"
-                  >
-                    <ion-icon name="pencil"></ion-icon>
-                  </button>
-                  <button
-                    type="button"
-                    class="row-action danger"
-                    (click)="onArchive($event, cat)"
-                    [attr.aria-label]="'Archive ' + cat.name"
-                  >
-                    <ion-icon name="trash"></ion-icon>
-                  </button>
-                </div>
-              }
-            </ion-item>
+        <div class="wrap">
+          @if (!selecting()) {
+            <ion-segment [value]="view()" (ionChange)="onView($event)">
+              <ion-segment-button value="active"><ion-label>Active</ion-label></ion-segment-button>
+              <ion-segment-button value="archived"><ion-label>Archived</ion-label></ion-segment-button>
+            </ion-segment>
+          } @else {
+            <div class="merge-hint">
+              Pick the categories to combine, then tap Merge and choose which one to keep.
+            </div>
           }
-        </ion-list>
+
+          @if (visible().length === 0) {
+            @if (view() === 'archived') {
+              <div class="empty">
+                <ion-icon name="archive-outline"></ion-icon>
+                <div>No archived categories.</div>
+              </div>
+            } @else {
+              <div class="empty">
+                <ion-icon name="pricetag-outline"></ion-icon>
+                <div>No categories yet.</div>
+                <div class="cta" (click)="addCategory()">Add your first category</div>
+              </div>
+            }
+          } @else {
+            @for (cat of visible(); track cat.id) {
+              <div
+                class="cat-card"
+                [class.selectable]="selecting()"
+                [class.selected]="isSelected(cat)"
+                (click)="onCardClick(cat)"
+              >
+                <div
+                  class="cat-badge"
+                  [style.background]="badgeBg(cat)"
+                  [style.color]="badgeColor(cat)"
+                >
+                  <ion-icon [name]="cat.icon || 'pricetag'"></ion-icon>
+                </div>
+                <div class="cat-name">{{ cat.name }}</div>
+
+                @if (selecting()) {
+                  <ion-icon
+                    class="check"
+                    [name]="isSelected(cat) ? 'checkmark-circle' : 'ellipse-outline'"
+                  ></ion-icon>
+                } @else if (!cat.archived) {
+                  <div class="cat-actions">
+                    <button
+                      class="iconbtn"
+                      [attr.aria-label]="'Edit ' + cat.name"
+                      (click)="edit($event, cat)"
+                    >
+                      <ion-icon name="pencil"></ion-icon>
+                    </button>
+                    <button
+                      class="iconbtn danger"
+                      [attr.aria-label]="'Archive ' + cat.name"
+                      (click)="onArchive($event, cat)"
+                    >
+                      <ion-icon name="trash"></ion-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
       }
 
-      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-        <ion-fab-button (click)="addCategory()">
-          <ion-icon name="add"></ion-icon>
-        </ion-fab-button>
-      </ion-fab>
+      @if (!selecting()) {
+        <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+          <ion-fab-button (click)="addCategory()">
+            <ion-icon name="add"></ion-icon>
+          </ion-fab-button>
+        </ion-fab>
+      }
     </ion-content>
   `,
   styles: [`
-    .color-dot {
-      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-      display: inline-flex; align-items: center; justify-content: center;
-      color: #fff;
+    ion-content { --background: var(--artha-bg); }
+    .wrap { padding: 14px 14px 96px; max-width: 640px; margin: 0 auto; }
+
+    ion-segment { margin-bottom: 14px; }
+    .merge-hint {
+      font-size: 13px; color: var(--artha-text-muted); line-height: 1.45;
+      background: var(--artha-accent-tint); border-radius: var(--artha-radius);
+      padding: 10px 14px; margin-bottom: 14px;
     }
-    .color-dot ion-icon { font-size: 16px; }
-    .row-actions { display: inline-flex; gap: 4px; }
-    .row-action {
-      width: 34px; height: 34px;
-      display: inline-flex; align-items: center; justify-content: center;
-      border: 0; border-radius: 8px;
-      background: transparent;
-      color: var(--ion-color-medium, #6b7280);
-      cursor: pointer;
-      transition: background 120ms ease, color 120ms ease;
+
+    .cat-card {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      padding: 12px 14px; margin-bottom: 10px;
+      box-shadow: var(--artha-shadow-sm);
+      transition: transform 120ms ease, border-color 120ms ease;
     }
-    .row-action:hover { background: var(--ion-color-step-100, #eceef1); color: var(--ion-color-dark, #111); }
-    .row-action.danger:hover { color: var(--ion-color-danger, #c0392b); }
-    .row-action ion-icon { font-size: 18px; }
+    .cat-card.selectable { cursor: pointer; }
+    .cat-card.selectable:active { transform: scale(0.992); }
+    .cat-card.selected {
+      border-color: var(--artha-accent);
+      box-shadow: 0 0 0 1px var(--artha-accent) inset;
+    }
+    .cat-badge {
+      width: 40px; height: 40px; border-radius: 12px; flex: none;
+      display: flex; align-items: center; justify-content: center; font-size: 20px;
+    }
+    .cat-name {
+      flex: 1; min-width: 0;
+      font-weight: 600; font-size: 15px; color: var(--artha-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .check { font-size: 24px; color: var(--artha-accent); flex: none; }
+    .check[name="ellipse-outline"] { color: var(--artha-text-subtle); }
+
+    .cat-actions { display: flex; gap: 2px; flex: none; }
+    .iconbtn {
+      background: transparent; border: 0; padding: 4px; border-radius: 8px;
+      color: var(--artha-text-subtle); font-size: 18px; display: flex; cursor: pointer;
+    }
+    .iconbtn:hover { background: var(--artha-surface-2); color: var(--artha-text-muted); }
+    .iconbtn.danger:hover { color: var(--artha-negative); }
+
     .state, .empty {
-      display: flex; align-items: center; justify-content: center;
-      padding: 32px; color: var(--ion-color-medium);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 8px; padding: 48px 24px; color: var(--artha-text-subtle); text-align: center;
     }
+    .empty ion-icon { font-size: 40px; }
+    .empty .cta { color: var(--artha-accent); font-weight: 600; cursor: pointer; }
   `],
 })
 export class CategoriesListPage implements OnInit {
@@ -142,25 +214,132 @@ export class CategoriesListPage implements OnInit {
   private readonly modalCtrl = inject(ModalController);
   private readonly notifier = inject(ConflictNotifierService);
 
+  protected readonly view = signal<'active' | 'archived'>('active');
+  protected readonly selecting = signal(false);
+  protected readonly selectedIds = signal<Set<string>>(new Set());
+
+  protected readonly visible = computed(() =>
+    this.view() === 'active'
+      ? this.store.active()
+      : this.store.items().filter((c) => c.archived),
+  );
+
   ngOnInit(): void {
     void this.store.load();
   }
 
-  async onToggleArchived(event: Event): Promise<void> {
-    const checked = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false;
-    await this.store.load(checked);
+  protected async onView(event: Event): Promise<void> {
+    const value = (event as CustomEvent<{ value: 'active' | 'archived' }>).detail?.value;
+    if (!value || value === this.view()) {
+      return;
+    }
+    this.view.set(value);
+    if (value === 'archived') {
+      await this.store.load(true);
+    }
   }
 
-  async addCategory(): Promise<void> {
-    await this.openEditor();
+  protected badgeColor(cat: Category): string {
+    return cat.color || 'var(--artha-accent)';
   }
 
-  async edit(cat: Category): Promise<void> {
-    await this.openEditor(cat);
+  protected badgeBg(cat: Category): string {
+    return cat.color ? `${cat.color}22` : 'var(--artha-accent-tint)';
   }
 
-  /** Open the category editor modal. The modal saves itself (showing a loader)
-      and dismisses with role 'saved' on success. */
+  // --- Selection / merge -------------------------------------------------
+
+  protected enterSelect(): void {
+    this.selectedIds.set(new Set());
+    this.selecting.set(true);
+  }
+
+  protected cancelSelect(): void {
+    this.selecting.set(false);
+    this.selectedIds.set(new Set());
+  }
+
+  protected isSelected(cat: Category): boolean {
+    return this.selectedIds().has(cat.id);
+  }
+
+  protected onCardClick(cat: Category): void {
+    if (this.selecting()) {
+      this.toggle(cat);
+    } else if (!cat.archived) {
+      void this.openEditor(cat);
+    }
+  }
+
+  private toggle(cat: Category): void {
+    const next = new Set(this.selectedIds());
+    if (next.has(cat.id)) {
+      next.delete(cat.id);
+    } else {
+      next.add(cat.id);
+    }
+    this.selectedIds.set(next);
+  }
+
+  protected async startMerge(): Promise<void> {
+    const chosen = this.store.active().filter((c) => this.selectedIds().has(c.id));
+    if (chosen.length < 2) {
+      return;
+    }
+    const alert = await this.alertCtrl.create({
+      header: 'Keep which category?',
+      message:
+        'Expenses from the others move into the one you keep, and those categories are archived.',
+      inputs: chosen.map((c, i) => ({
+        type: 'radio' as const,
+        label: c.name,
+        value: c.id,
+        checked: i === 0,
+      })),
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Merge',
+          handler: (targetId: string) => {
+            void this.runMerge(targetId, chosen);
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private async runMerge(targetId: string, chosen: Category[]): Promise<void> {
+    const sourceIds = chosen.map((c) => c.id).filter((id) => id !== targetId);
+    if (sourceIds.length === 0) {
+      return;
+    }
+    const targetName = chosen.find((c) => c.id === targetId)?.name ?? 'category';
+    try {
+      await this.store.merge(targetId, sourceIds);
+      this.cancelSelect();
+      await this.notifier.notifyInfo(
+        `Merged ${sourceIds.length + 1} categories into "${targetName}".`,
+      );
+    } catch {
+      await this.notifier.notifyError('Could not merge categories. Please try again.');
+    }
+  }
+
+  // --- Editing / archiving ----------------------------------------------
+
+  protected addCategory(): void {
+    void this.openEditor();
+  }
+
+  protected edit(event: Event, cat: Category): void {
+    event.stopPropagation();
+    void this.openEditor(cat);
+  }
+
+  /** Open the category editor modal. The modal saves itself and dismisses
+      with role 'saved' on success. */
   private async openEditor(category?: Category): Promise<void> {
     const modal = await this.modalCtrl.create({
       component: CategoryEditModal,
@@ -170,12 +349,12 @@ export class CategoriesListPage implements OnInit {
     await modal.onWillDismiss();
   }
 
-  onArchive(event: Event, cat: Category): void {
+  protected onArchive(event: Event, cat: Category): void {
     event.stopPropagation();
     void this.archive(cat);
   }
 
-  async archive(cat: Category): Promise<void> {
+  private async archive(cat: Category): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: `Archive "${cat.name}"?`,
       message:

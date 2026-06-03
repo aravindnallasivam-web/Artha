@@ -26,4 +26,12 @@ export class CategoriesApi {
   remove(id: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(`${this.baseUrl}/${id}`));
   }
+
+  /** Reassign every expense from the source categories to the target, then
+      archive the sources. Returns the remaining active categories. */
+  merge(targetId: string, sourceIds: string[]): Promise<Category[]> {
+    return firstValueFrom(
+      this.http.post<Category[]>(`${this.baseUrl}/merge`, { targetId, sourceIds }),
+    );
+  }
 }

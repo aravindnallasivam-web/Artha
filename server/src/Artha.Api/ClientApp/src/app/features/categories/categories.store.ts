@@ -67,4 +67,11 @@ export class CategoriesStore {
     // archived state is reflected (cache check would otherwise short-circuit).
     await this.load(this._includeArchived(), /* force */ true);
   }
+
+  /** Merge the source categories into the target (expenses reassigned
+      server-side, sources archived). Forces a reload afterwards. */
+  async merge(targetId: string, sourceIds: string[]): Promise<void> {
+    await this.api.merge(targetId, sourceIds);
+    await this.load(this._includeArchived(), /* force */ true);
+  }
 }
