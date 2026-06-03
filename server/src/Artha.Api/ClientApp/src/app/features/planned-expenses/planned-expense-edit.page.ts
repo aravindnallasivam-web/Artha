@@ -17,7 +17,12 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import {
+  PLANNED_FREQUENCIES,
+  PLANNED_FREQUENCY_LABELS,
+  PlannedExpenseUpsertRequest,
+  PlannedFrequency,
+} from '../../core/models/planned-expense.model';
 import { CategoriesStore } from '../categories/categories.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
 
@@ -67,13 +72,26 @@ import { PlannedExpensesStore } from './planned-expenses.store';
 
           <ion-item>
             <ion-input
-              label="Monthly amount"
+              label="Amount"
               labelPlacement="floating"
               type="number"
               inputmode="decimal"
               step="0.01"
               formControlName="amount"
             ></ion-input>
+          </ion-item>
+
+          <ion-item>
+            <ion-select
+              label="Recurs"
+              labelPlacement="floating"
+              formControlName="frequency"
+              interface="popover"
+            >
+              @for (f of frequencies; track f) {
+                <ion-select-option [value]="f">{{ frequencyLabel(f) }}</ion-select-option>
+              }
+            </ion-select>
           </ion-item>
 
           <ion-item>
@@ -129,10 +147,12 @@ export class PlannedExpenseEditPage implements OnInit {
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
   protected readonly mode = signal<'create' | 'edit'>('create');
+  protected readonly frequencies = PLANNED_FREQUENCIES;
 
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(60)]],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
+    frequency: ['monthly' as PlannedFrequency, Validators.required],
     categoryId: [null as string | null],
     dayOfMonth: [null as number | null, [Validators.min(1), Validators.max(31)]],
   });
@@ -155,6 +175,7 @@ export class PlannedExpenseEditPage implements OnInit {
           this.form.patchValue({
             name: item.name,
             amount: item.amount,
+            frequency: item.frequency,
             categoryId: item.categoryId,
             dayOfMonth: item.dayOfMonth,
           });
@@ -172,6 +193,7 @@ export class PlannedExpenseEditPage implements OnInit {
     const payload: PlannedExpenseUpsertRequest = {
       name: (raw.name ?? '').trim(),
       amount: Number(raw.amount),
+      frequency: raw.frequency,
       categoryId: raw.categoryId || null,
       dayOfMonth: raw.dayOfMonth != null && raw.dayOfMonth !== ('' as unknown as number)
         ? Number(raw.dayOfMonth)
@@ -191,5 +213,9 @@ export class PlannedExpenseEditPage implements OnInit {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  protected frequencyLabel(f: PlannedFrequency): string {
+    return PLANNED_FREQUENCY_LABELS[f];
   }
 }

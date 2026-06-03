@@ -26,6 +26,7 @@ import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.s
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
+import { PlannedExpensesStore } from '../planned-expenses/planned-expenses.store';
 import { ExpensesStore } from './expenses.store';
 
 @Component({
@@ -119,6 +120,25 @@ import { ExpensesStore } from './expenses.store';
             </ion-select>
           </ion-item>
 
+          @if (plannedBills().length > 0) {
+            <ion-item>
+              <ion-select
+                label="Linked planned bill (optional)"
+                labelPlacement="floating"
+                formControlName="plannedExpenseId"
+                interface="popover"
+                placeholder="Not linked"
+                (ionChange)="onPlannedSelected()"
+              >
+                <ion-select-option [value]="null">Not linked</ion-select-option>
+                @for (bill of plannedBills(); track bill.id) {
+                  <ion-select-option [value]="bill.id">{{ bill.name }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+            <p class="hint">Marks this as a payment for a planned bill (rent, broadband…) so Reports can track it as paid.</p>
+          }
+
           <ion-item>
             <ion-toggle formControlName="excluded">Exclude from totals</ion-toggle>
           </ion-item>
@@ -156,6 +176,7 @@ export class ExpenseEditPage implements OnInit {
   private readonly expensesStore = inject(ExpensesStore);
   protected readonly categoriesStore = inject(CategoriesStore);
   protected readonly accountsStore = inject(AccountsStore);
+  private readonly plannedStore = inject(PlannedExpensesStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
@@ -166,6 +187,7 @@ export class ExpenseEditPage implements OnInit {
   protected readonly mode = signal<'create' | 'edit'>('create');
   protected readonly categories = computed(() => this.categoriesStore.active());
   protected readonly accounts = computed(() => this.accountsStore.active());
+  protected readonly plannedBills = computed(() => this.plannedStore.active());
 
   protected readonly form = this.fb.nonNullable.group({
     date: [this.today(), Validators.required],
@@ -174,6 +196,7 @@ export class ExpenseEditPage implements OnInit {
     accountId: [DEFAULT_ACCOUNT_ID, Validators.required],
     note: [''],
     excluded: [false],
+    plannedExpenseId: [null as string | null],
   });
 
   private editingId: string | null = null;
@@ -184,6 +207,7 @@ export class ExpenseEditPage implements OnInit {
       const loads: Promise<void>[] = [];
       if (this.categoriesStore.items().length === 0) loads.push(this.categoriesStore.load());
       if (this.accountsStore.items().length === 0) loads.push(this.accountsStore.load());
+      loads.push(this.plannedStore.load());
       await Promise.all(loads);
 
       const id = this.route.snapshot.paramMap.get('id');
@@ -203,6 +227,7 @@ export class ExpenseEditPage implements OnInit {
             accountId: expense.accountId || DEFAULT_ACCOUNT_ID,
             note: expense.note ?? '',
             excluded: expense.excluded ?? false,
+            plannedExpenseId: expense.plannedExpenseId ?? null,
           });
         }
       } else {
@@ -231,6 +256,7 @@ export class ExpenseEditPage implements OnInit {
       accountId: raw.accountId,
       note: raw.note?.trim() || null,
       excluded: raw.excluded,
+      plannedExpenseId: raw.plannedExpenseId || null,
     };
     try {
       if (this.editingId) {
@@ -246,6 +272,22 @@ export class ExpenseEditPage implements OnInit {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /**
+   * When a planned bill is chosen, prefill the amount and category from it
+   * (still editable) so logging a recurring payment is one tap.
+   */
+  protected onPlannedSelected(): void {
+    const id = this.form.controls.plannedExpenseId.value;
+    if (!id) return;
+    const bill = this.plannedStore.byId()[id];
+    if (!bill) return;
+    const patch: { amount: number; categoryId?: string } = { amount: bill.amount };
+    if (bill.categoryId && this.categories().some((c) => c.id === bill.categoryId)) {
+      patch.categoryId = bill.categoryId;
+    }
+    this.form.patchValue(patch);
   }
 
   private today(): string {

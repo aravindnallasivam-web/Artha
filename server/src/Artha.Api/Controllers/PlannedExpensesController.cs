@@ -60,6 +60,7 @@ public sealed class PlannedExpensesController : ControllerBase
             Id: $"plan-{Guid.NewGuid():N}",
             Name: request.Name.Trim(),
             Amount: request.Amount,
+            Frequency: PlannedExpenseFrequencies.Normalize(request.Frequency),
             CategoryId: string.IsNullOrWhiteSpace(request.CategoryId) ? null : request.CategoryId,
             DayOfMonth: request.DayOfMonth,
             Archived: false);
@@ -101,6 +102,7 @@ public sealed class PlannedExpensesController : ControllerBase
         {
             Name = request.Name.Trim(),
             Amount = request.Amount,
+            Frequency = PlannedExpenseFrequencies.Normalize(request.Frequency),
             CategoryId = string.IsNullOrWhiteSpace(request.CategoryId) ? null : request.CategoryId,
             DayOfMonth = request.DayOfMonth,
         };
@@ -168,7 +170,8 @@ public sealed class PlannedExpensesController : ControllerBase
     }
 
     private static PlannedExpenseDto ToDto(PlannedExpense p) =>
-        new(p.Id, p.Name, p.Amount, p.CategoryId, p.DayOfMonth, p.Archived);
+        new(p.Id, p.Name, p.Amount, PlannedExpenseFrequencies.Normalize(p.Frequency),
+            p.CategoryId, p.DayOfMonth, p.Archived);
 
     private static ProblemDetails Problem400(string detail) => new()
     {

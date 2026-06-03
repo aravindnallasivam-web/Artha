@@ -125,7 +125,8 @@ public sealed class ExpensesController : ControllerBase
             Note: string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             CreatedAt: now,
             UpdatedAt: now,
-            Excluded: request.Excluded);
+            Excluded: request.Excluded,
+            PlannedExpenseId: string.IsNullOrWhiteSpace(request.PlannedExpenseId) ? null : request.PlannedExpenseId);
 
         await AppendToShardAsync(ctx, expense, cancellationToken);
 
@@ -169,6 +170,7 @@ public sealed class ExpensesController : ControllerBase
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             UpdatedAt = DateTimeOffset.UtcNow,
             Excluded = request.Excluded,
+            PlannedExpenseId = string.IsNullOrWhiteSpace(request.PlannedExpenseId) ? null : request.PlannedExpenseId,
         };
 
         if (oldMonth.Equals(newMonth))
@@ -598,7 +600,8 @@ public sealed class ExpensesController : ControllerBase
         Note: e.Note,
         CreatedAt: e.CreatedAt,
         UpdatedAt: e.UpdatedAt,
-        Excluded: e.Excluded);
+        Excluded: e.Excluded,
+        PlannedExpenseId: e.PlannedExpenseId);
 
     private static ProblemDetails Problem400(string detail) => new()
     {

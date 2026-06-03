@@ -39,30 +39,41 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-add");
 
         var response = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Rent", 1200m, "cat-bills", 1));
+            new PlannedExpenseUpsertRequest("Rent", 1200m, "monthly", "cat-bills", 1));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var list = await client.GetFromJsonAsync<List<PlannedExpenseDto>>("/api/planned-expenses");
         list.Should().ContainSingle(p =>
             p.Name == "Rent" &&
             p.Amount == 1200m &&
+            p.Frequency == "monthly" &&
             p.CategoryId == "cat-bills" &&
             p.DayOfMonth == 1 &&
             !p.Archived);
     }
 
     [Fact]
-    public async Task Post_WithoutCategoryOrDay_Succeeds()
+    public async Task Post_PersistsYearlyFrequency()
     {
-        var client = AuthedClient("user-planned-minimal");
+        var client = AuthedClient("user-planned-yearly");
 
         var response = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Broadband", 40m, null, null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-
+            new PlannedExpenseUpsertRequest("Insurance", 12000m, "yearly", null, null));
         var dto = await response.Content.ReadFromJsonAsync<PlannedExpenseDto>();
-        dto!.CategoryId.Should().BeNull();
-        dto.DayOfMonth.Should().BeNull();
+
+        dto!.Frequency.Should().Be("yearly");
+    }
+
+    [Fact]
+    public async Task Post_UnknownFrequency_NormalisesToMonthly()
+    {
+        var client = AuthedClient("user-planned-bad-freq");
+
+        var response = await client.PostAsJsonAsync("/api/planned-expenses",
+            new PlannedExpenseUpsertRequest("Mystery", 10m, "fortnightly", null, null));
+        var dto = await response.Content.ReadFromJsonAsync<PlannedExpenseDto>();
+
+        dto!.Frequency.Should().Be("monthly");
     }
 
     [Fact]
@@ -71,7 +82,7 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-bad-amount");
 
         var response = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Free thing", 0m, null, null));
+            new PlannedExpenseUpsertRequest("Free thing", 0m, "monthly", null, null));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -82,7 +93,7 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-bad-day");
 
         var response = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Rent", 100m, null, 32));
+            new PlannedExpenseUpsertRequest("Rent", 100m, "monthly", null, 32));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -93,7 +104,7 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-bad-cat");
 
         var response = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Rent", 100m, "cat-nonexistent", null));
+            new PlannedExpenseUpsertRequest("Rent", 100m, "monthly", "cat-nonexistent", null));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -104,9 +115,9 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-dup");
 
         await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Rent", 100m, null, null));
+            new PlannedExpenseUpsertRequest("Rent", 100m, "monthly", null, null));
         var second = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("RENT", 200m, null, null));
+            new PlannedExpenseUpsertRequest("RENT", 200m, "monthly", null, null));
 
         second.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -117,16 +128,16 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-update");
 
         var created = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Broadband", 40m, null, 5));
+            new PlannedExpenseUpsertRequest("Broadband", 40m, "monthly", null, 5));
         var dto = await created.Content.ReadFromJsonAsync<PlannedExpenseDto>();
 
         var put = await client.PutAsJsonAsync($"/api/planned-expenses/{dto!.Id}",
-            new PlannedExpenseUpsertRequest("Broadband Pro", 55m, "cat-bills", 10));
+            new PlannedExpenseUpsertRequest("Broadband Pro", 55m, "quarterly", "cat-bills", 10));
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var list = await client.GetFromJsonAsync<List<PlannedExpenseDto>>("/api/planned-expenses");
         list.Should().ContainSingle(p =>
-            p.Name == "Broadband Pro" && p.Amount == 55m && p.DayOfMonth == 10);
+            p.Name == "Broadband Pro" && p.Amount == 55m && p.Frequency == "quarterly" && p.DayOfMonth == 10);
     }
 
     [Fact]
@@ -135,7 +146,7 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
         var client = AuthedClient("user-planned-archive");
 
         var created = await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Gym", 30m, null, null));
+            new PlannedExpenseUpsertRequest("Gym", 30m, "monthly", null, null));
         var dto = await created.Content.ReadFromJsonAsync<PlannedExpenseDto>();
 
         var del = await client.DeleteAsync($"/api/planned-expenses/{dto!.Id}");
@@ -150,14 +161,15 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
     }
 
     [Fact]
-    public async Task MonthlyReport_IncludesPlannedTotal()
+    public async Task MonthlyReport_NormalisesPlannedTotalToMonthly()
     {
         var client = AuthedClient("user-planned-report");
 
+        // 1000/mo + 12000/yr (=1000/mo) => 2000/mo planned budget.
         await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Rent", 1000m, null, 1));
+            new PlannedExpenseUpsertRequest("Rent", 1000m, "monthly", null, 1));
         await client.PostAsJsonAsync("/api/planned-expenses",
-            new PlannedExpenseUpsertRequest("Broadband", 50m, null, 5));
+            new PlannedExpenseUpsertRequest("Insurance", 12000m, "yearly", null, null));
 
         await client.PostAsJsonAsync("/api/expenses",
             new ExpenseCreateRequest(new DateOnly(2026, 5, 3), 200m, "cat-food", "acc-cash", null));
@@ -166,8 +178,24 @@ public sealed class PlannedExpensesEndpointTests : IClassFixture<ArthaTestFactor
             "/api/reports/monthly?year=2026&month=5");
 
         report.Should().NotBeNull();
-        report!.PlannedTotal.Should().Be(1050m);
+        report!.PlannedTotal.Should().Be(2000m);
         report.PlannedCount.Should().Be(2);
         report.Total.Should().Be(200m);
+    }
+
+    [Fact]
+    public async Task Expense_PersistsPlannedExpenseLink()
+    {
+        var client = AuthedClient("user-expense-link");
+
+        var planned = await client.PostAsJsonAsync("/api/planned-expenses",
+            new PlannedExpenseUpsertRequest("Rent", 1000m, "monthly", "cat-bills", 1));
+        var plan = await planned.Content.ReadFromJsonAsync<PlannedExpenseDto>();
+
+        await client.PostAsJsonAsync("/api/expenses", new ExpenseCreateRequest(
+            new DateOnly(2026, 5, 1), 1000m, "cat-bills", "acc-cash", "May rent", false, plan!.Id));
+
+        var list = await client.GetFromJsonAsync<ExpenseListResponse>("/api/expenses?from=2026-05&to=2026-05");
+        list!.Items.Should().ContainSingle(e => e.PlannedExpenseId == plan.Id);
     }
 }

@@ -88,7 +88,7 @@ public sealed class ReportsController : ControllerBase
             Currency: currency,
             Total: counted.Sum(e => e.Amount),
             Count: counted.Count,
-            PlannedTotal: planned.Sum(p => p.Amount),
+            PlannedTotal: planned.Sum(p => PlannedExpenseFrequencies.MonthlyEquivalent(p.Amount, p.Frequency)),
             PlannedCount: planned.Count,
             ByCategory: byCategory));
     }

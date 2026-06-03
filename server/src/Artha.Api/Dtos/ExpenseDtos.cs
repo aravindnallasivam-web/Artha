@@ -6,7 +6,8 @@ public sealed record ExpenseCreateRequest(
     string CategoryId,
     string AccountId,
     string? Note,
-    bool Excluded = false);
+    bool Excluded = false,
+    string? PlannedExpenseId = null);
 
 public sealed record ExpenseUpdateRequest(
     DateOnly Date,
@@ -14,7 +15,8 @@ public sealed record ExpenseUpdateRequest(
     string CategoryId,
     string AccountId,
     string? Note,
-    bool Excluded = false);
+    bool Excluded = false,
+    string? PlannedExpenseId = null);
 
 public sealed record ExpenseDto(
     string Id,
@@ -26,7 +28,8 @@ public sealed record ExpenseDto(
     string? Note,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    bool Excluded = false);
+    bool Excluded = false,
+    string? PlannedExpenseId = null);
 
 public sealed record ExpenseListResponse(
     IReadOnlyList<ExpenseDto> Items,

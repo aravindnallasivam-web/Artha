@@ -17,4 +17,8 @@ public sealed record Expense(
     // Marks a transaction that should be excluded from spending totals/counts
     // (e.g. a refund, transfer or settlement). Defaults to false so shards
     // written before this field deserialize cleanly.
-    bool Excluded = false);
+    bool Excluded = false,
+    // Optional link to a PlannedExpense this transaction fulfils (e.g. this
+    // month's rent payment). Null for unlinked expenses. Lets reports show
+    // which planned bills have been paid.
+    string? PlannedExpenseId = null);

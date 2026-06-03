@@ -10,6 +10,10 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
+import {
+  PLANNED_FREQUENCY_SUFFIX,
+  PlannedFrequency,
+} from '../../core/models/planned-expense.model';
 import { MONTH_LABELS, MonthSummary } from '../../core/models/report.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
@@ -118,32 +122,32 @@ interface CatRow {
             </div>
           </section>
 
-          <!-- Planned vs actual: compares fixed monthly bills (rent, broadband)
-               against this month's actual spend. Monthly view only. -->
+          <!-- Planned bills: each predefined bill (rent, broadband…) with
+               whether a linked expense has been recorded this month. Monthly
+               view only. -->
           @if (view() === 'monthly' && plannedCount() > 0) {
             <section class="card">
               <div class="card-head">
-                <h2>Planned vs actual</h2>
-                <span class="card-sub">{{ plannedCount() }} predefined / month</span>
+                <h2>Planned bills</h2>
+                <span class="card-sub">Paid this month</span>
               </div>
-              <div class="pva-line">
-                <span class="bar-name">Planned</span>
-                <span class="bar-amt num">{{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-              </div>
-              <div class="pva-line">
-                <span class="bar-name">Actual</span>
-                <span class="bar-amt num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-              </div>
-              <div class="bar-track">
-                <div
-                  class="bar-fill"
-                  [style.width.%]="plannedPercent()"
-                  [style.background]="total() > plannedTotal() ? 'var(--artha-negative, #dc2626)' : 'var(--artha-accent)'"
-                ></div>
-              </div>
-              <div class="pva-line pva-delta" [class.over]="total() > plannedTotal()">
-                <span>{{ total() > plannedTotal() ? 'Over budget' : 'Remaining' }}</span>
-                <span class="num">{{ plannedDelta() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+              <ul class="bills">
+                @for (b of plannedBills(); track b.id) {
+                  <li class="bill-row">
+                    <span class="bill-name">{{ b.name }}</span>
+                    <span class="bill-amt num">
+                      {{ b.amount | currency: currency() : 'symbol' : '1.0-0' }}{{ suffix(b.frequency) }}
+                      @if (b.paid) {
+                        <span class="bill-actual">· paid {{ b.actual | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                      }
+                    </span>
+                    <span class="bill-badge" [class.paid]="b.paid">{{ b.paid ? 'Paid' : 'Pending' }}</span>
+                  </li>
+                }
+              </ul>
+              <div class="pva-foot">
+                <span>Planned ~{{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }}/mo</span>
+                <span class="num">Linked {{ plannedLinkedTotal() | currency: currency() : 'symbol' : '1.0-0' }}</span>
               </div>
             </section>
           }
@@ -330,11 +334,27 @@ interface CatRow {
     .bar-track { height: 8px; border-radius: 4px; background: var(--artha-surface-2, #eef2f7); overflow: hidden; }
     .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
 
-    /* Planned vs actual */
-    .pva-line { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13px; }
-    .pva-line .bar-name { color: var(--artha-text-muted); }
-    .pva-delta { margin-top: 8px; font-weight: 700; color: var(--artha-positive, #16a34a); }
-    .pva-delta.over { color: var(--artha-negative, #dc2626); }
+    /* Planned bills */
+    .bills { list-style: none; margin: 0; padding: 0; }
+    .bill-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 4px; border-bottom: 1px solid var(--artha-border);
+    }
+    .bill-row:last-child { border-bottom: 0; }
+    .bill-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--artha-text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bill-amt { font-size: 12.5px; color: var(--artha-text-muted); }
+    .bill-actual { color: var(--artha-positive, #16a34a); font-weight: 600; }
+    .bill-badge {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+      background: var(--artha-surface-2, #eef2f7); color: var(--artha-text-subtle);
+    }
+    .bill-badge.paid { background: rgba(22, 163, 74, 0.14); color: var(--artha-positive, #16a34a); }
+    .pva-foot {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--artha-border);
+      font-size: 13px; font-weight: 600; color: var(--artha-text);
+    }
 
     /* Merchants */
     .merchants { list-style: none; margin: 0; padding: 0; }
@@ -444,10 +464,34 @@ export class ReportsPage implements OnInit {
 
   protected readonly topCategory = computed(() => this.byCategory()[0] ?? null);
 
-  // Planned (predefined) monthly bills — a fixed budget compared against actual.
+  // Planned (predefined) bills — normalised monthly budget, and per-bill
+  // paid/pending status based on expenses linked to each bill this period.
   protected readonly plannedTotal = computed(() => this.plannedStore.plannedTotal());
   protected readonly plannedCount = computed(() => this.plannedStore.active().length);
-  protected readonly plannedDelta = computed(() => Math.abs(this.plannedTotal() - this.total()));
+
+  protected readonly plannedBills = computed(() => {
+    const linked = new Map<string, number>();
+    for (const e of this.counted()) {
+      if (e.plannedExpenseId) {
+        linked.set(e.plannedExpenseId, (linked.get(e.plannedExpenseId) ?? 0) + e.amount);
+      }
+    }
+    return this.plannedStore.active().map((b) => {
+      const actual = linked.get(b.id) ?? 0;
+      return {
+        id: b.id,
+        name: b.name,
+        amount: b.amount,
+        frequency: b.frequency,
+        actual,
+        paid: actual > 0,
+      };
+    });
+  });
+
+  protected readonly plannedLinkedTotal = computed(() =>
+    this.plannedBills().reduce((sum, b) => sum + b.actual, 0),
+  );
 
   protected readonly donutSegments = computed<DonutSegment[]>(() => {
     const cats = this.byCategory();
@@ -549,11 +593,8 @@ export class ReportsPage implements OnInit {
     return Math.round((value / total) * 100);
   }
 
-  /** Actual spend as a share of the planned budget, capped at 100% for the bar. */
-  protected plannedPercent(): number {
-    const planned = this.plannedTotal();
-    if (planned <= 0) return 0;
-    return Math.min(100, (this.total() / planned) * 100);
+  protected suffix(frequency: PlannedFrequency): string {
+    return PLANNED_FREQUENCY_SUFFIX[frequency];
   }
 
   protected openCategory(categoryId: string): void {

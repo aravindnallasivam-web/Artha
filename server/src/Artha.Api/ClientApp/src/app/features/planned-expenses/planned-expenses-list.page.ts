@@ -26,7 +26,11 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { PlannedExpense } from '../../core/models/planned-expense.model';
+import {
+  PLANNED_FREQUENCY_SUFFIX,
+  PlannedExpense,
+  PlannedFrequency,
+} from '../../core/models/planned-expense.model';
 import { CategoriesStore } from '../categories/categories.store';
 import { SettingsStore } from '../settings/settings.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
@@ -106,7 +110,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
                     <ion-note color="medium"> · archived</ion-note>
                   }
                 </ion-label>
-                <ion-note slot="end">{{ item.amount | currency: settings.currency() }}</ion-note>
+                <ion-note slot="end">{{ item.amount | currency: settings.currency() }}{{ suffix(item.frequency) }}</ion-note>
               </ion-item>
               @if (!item.archived) {
                 <ion-item-options side="end">
@@ -153,6 +157,10 @@ export class PlannedExpensesListPage implements OnInit {
   protected categoryName(categoryId: string | null): string | null {
     if (!categoryId) return null;
     return this.categories.byId()[categoryId]?.name ?? null;
+  }
+
+  protected suffix(frequency: PlannedFrequency): string {
+    return PLANNED_FREQUENCY_SUFFIX[frequency];
   }
 
   add(): void {

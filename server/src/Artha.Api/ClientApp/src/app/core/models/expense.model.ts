@@ -7,6 +7,7 @@ export interface Expense {
   accountId: string;
   note: string | null;
   excluded: boolean; // true => not counted in spending totals/counts
+  plannedExpenseId: string | null; // links this payment to a planned bill
   createdAt: string;
   updatedAt: string;
 }
@@ -18,6 +19,7 @@ export interface ExpenseCreateRequest {
   accountId: string;
   note: string | null;
   excluded: boolean;
+  plannedExpenseId?: string | null;
 }
 
 export interface ExpenseUpdateRequest extends ExpenseCreateRequest {}
