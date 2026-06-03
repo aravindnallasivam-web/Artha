@@ -1,9 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
+import { Expense } from '../../core/models/expense.model';
 import { SmsMessage, SmsReader } from '../../core/native/sms-reader';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
+import { ExpensesApi } from '../expenses/expenses.api';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 
@@ -23,6 +25,7 @@ export class SmsCaptureService {
   private readonly modalCtrl = inject(ModalController);
   private readonly categoriesStore = inject(CategoriesStore);
   private readonly accountsStore = inject(AccountsStore);
+  private readonly expensesApi = inject(ExpensesApi);
 
   private listener: PluginListenerHandle | null = null;
   // Serialise confirm dialogs so live messages never stack on top of each other.
@@ -100,9 +103,13 @@ export class SmsCaptureService {
       .filter((p): p is ParsedExpense => p !== null);
 
     await this.ensureStores();
+    // Pull existing expenses across the scanned months once, so we can flag
+    // ones already logged instead of creating duplicates.
+    const existing = await this.fetchExisting([...new Set(parsed.map((p) => monthOf(p.date)))]);
+
     // Oldest-first so the confirm sequence reads chronologically.
     for (const p of parsed.reverse()) {
-      await this.openConfirm(p);
+      await this.openConfirm(p, this.findDuplicate(p, existing));
     }
     return parsed.length;
   }
@@ -123,7 +130,34 @@ export class SmsCaptureService {
       return;
     }
     // Queue so concurrent messages don't open overlapping dialogs.
-    this.chain = this.chain.then(() => this.openConfirm(parsed));
+    this.chain = this.chain.then(() => this.confirmWithDedup(parsed));
+  }
+
+  /** Live path: fetch the month's expenses to flag duplicates, then confirm. */
+  private async confirmWithDedup(parsed: ParsedExpense): Promise<void> {
+    const existing = await this.fetchExisting([monthOf(parsed.date)]);
+    await this.openConfirm(parsed, this.findDuplicate(parsed, existing));
+  }
+
+  private async fetchExisting(months: string[]): Promise<Expense[]> {
+    const lists = await Promise.all(
+      months.map((m) => this.expensesApi.list(m, m).then((r) => r.items).catch(() => [])),
+    );
+    return lists.flat();
+  }
+
+  /**
+   * A parsed SMS is a duplicate when an expense on the same date has the same
+   * amount and a matching description (the SMS merchant vs. the expense note).
+   * When the SMS has no merchant we fall back to amount + date.
+   */
+  private findDuplicate(parsed: ParsedExpense, existing: Expense[]): Expense | null {
+    const desc = (parsed.merchant ?? '').trim().toLowerCase();
+    return existing.find((e) =>
+      e.date === parsed.date
+      && Math.abs(e.amount - parsed.amount) < 0.01
+      && descriptionMatches(desc, (e.note ?? '').trim().toLowerCase()),
+    ) ?? null;
   }
 
   private async ensureStores(): Promise<void> {
@@ -137,11 +171,12 @@ export class SmsCaptureService {
     await Promise.all(tasks);
   }
 
-  private async openConfirm(parsed: ParsedExpense): Promise<void> {
+  private async openConfirm(parsed: ParsedExpense, duplicate: Expense | null): Promise<void> {
     const modal = await this.modalCtrl.create({
       component: SmsConfirmModal,
       componentProps: {
         parsed,
+        duplicate,
         categoryId: this.resolveCategoryId(parsed.suggestedCategory),
         accountId: this.resolveAccountId(parsed.accountHint),
       },
@@ -174,4 +209,26 @@ export class SmsCaptureService {
     }
     return accounts[0]?.id ?? '';
   }
+}
+
+/** Month prefix (YYYY-MM) of a YYYY-MM-DD date. */
+function monthOf(isoDate: string): string {
+  return isoDate.slice(0, 7);
+}
+
+/**
+ * Whether an SMS merchant and an expense note describe the same thing. An empty
+ * SMS merchant matches anything (so amount + date alone decide); otherwise we
+ * accept exact or containment matches either way.
+ */
+function descriptionMatches(smsDesc: string, expenseNote: string): boolean {
+  if (!smsDesc) {
+    return true;
+  }
+  if (!expenseNote) {
+    return false;
+  }
+  return smsDesc === expenseNote
+    || smsDesc.includes(expenseNote)
+    || expenseNote.includes(smsDesc);
 }

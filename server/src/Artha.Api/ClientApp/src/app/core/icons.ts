@@ -3,6 +3,7 @@ import {
   add,
   addCircle,
   airplane,
+  alertCircleOutline,
   arrowDown,
   arrowUp,
   bagHandle,
@@ -71,6 +72,7 @@ export function registerIcons(): void {
   addIcons({
     add,
     'add-circle': addCircle,
+    'alert-circle-outline': alertCircleOutline,
     'arrow-down': arrowDown,
     'arrow-up': arrowUp,
     'calendar-outline': calendarOutline,

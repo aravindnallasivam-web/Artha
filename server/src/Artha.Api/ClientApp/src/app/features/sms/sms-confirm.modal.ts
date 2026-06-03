@@ -5,6 +5,7 @@ import {
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonInput,
   IonItem,
   IonLabel,
@@ -18,6 +19,7 @@ import {
   ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
+import { Expense } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
@@ -37,6 +39,7 @@ import { ParsedExpense } from './sms-parser';
     IonButtons,
     IonContent,
     IonHeader,
+    IonIcon,
     IonInput,
     IonItem,
     IonLabel,
@@ -69,6 +72,20 @@ import { ParsedExpense } from './sms-parser';
       <p class="lead">
         Detected from a message by <strong>{{ parsed.sender || 'your bank' }}</strong>.
       </p>
+
+      @if (duplicate) {
+        <div class="dupe" role="alert">
+          <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+          <div>
+            <p class="dupe-title">Possible duplicate</p>
+            <p class="dupe-body">
+              An expense for the same amount is already logged on
+              {{ duplicate.date }}@if (duplicate.note) { — “{{ duplicate.note }}”}.
+              Save only if this is a separate transaction.
+            </p>
+          </div>
+        </div>
+      }
 
       <ion-item>
         <ion-input
@@ -139,6 +156,19 @@ import { ParsedExpense } from './sms-parser';
   `,
   styles: [`
     .lead { margin: 0 0 12px; font-size: 14px; color: var(--artha-text-muted); }
+    .dupe {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--artha-warning-tint, #fef3c7);
+      border: 1px solid var(--artha-warning, #f59e0b);
+    }
+    .dupe ion-icon { font-size: 20px; color: var(--artha-warning, #f59e0b); flex-shrink: 0; }
+    .dupe-title { margin: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--artha-text); }
+    .dupe-body { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--artha-text-muted); }
     .warn { font-size: 13px; }
     .raw {
       display: block;
@@ -162,6 +192,8 @@ export class SmsConfirmModal implements OnInit {
 
   /** Parsed SMS — required input. */
   @Input({ required: true }) parsed!: ParsedExpense;
+  /** An already-logged expense this SMS likely duplicates, if any. */
+  @Input() duplicate: Expense | null = null;
   /** Pre-resolved best-guess category id (may be empty). */
   @Input() categoryId = '';
   /** Pre-resolved default account id (may be empty). */
