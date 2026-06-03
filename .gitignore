@@ -67,3 +67,6 @@ server/src/Artha.Api/wwwroot/
 .npm/
 .eslintcache
 /server/.vs
+
+# Scratch design/wireframe artifacts (not part of the app)
+/.wireframes/
