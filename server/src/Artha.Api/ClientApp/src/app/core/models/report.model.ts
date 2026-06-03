@@ -11,6 +11,8 @@ export interface MonthlyReport {
   currency: string;
   total: number;
   count: number;
+  plannedTotal: number;
+  plannedCount: number;
   byCategory: CategoryBreakdown[];
 }
 

@@ -18,6 +18,7 @@ interface MoreLink {
 }
 
 const LINKS: MoreLink[] = [
+  { path: '/planned-expenses', label: 'Planned', icon: 'calendar-outline', hint: 'Fixed monthly bills' },
   { path: '/categories', label: 'Categories', icon: 'pricetag-outline', hint: 'Organise your spending' },
   { path: '/settings', label: 'Settings', icon: 'settings-outline', hint: 'Currency, preferences' },
 ];
