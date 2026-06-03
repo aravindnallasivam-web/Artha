@@ -5,7 +5,6 @@ import {
   IonContent,
   IonIcon,
   IonMenu,
-  IonMenuButton,
   IonRouterOutlet,
   IonSplitPane,
   MenuController,
@@ -49,6 +48,16 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// Primary destinations for the mobile bottom tab bar. Capped at five (the
+// standard maximum); Categories + Settings live under "More".
+const TABS: NavItem[] = [
+  { path: '/dashboard', label: 'Home', icon: 'home-outline', iconActive: 'home' },
+  { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
+  { path: '/reports', label: 'Reports', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
+  { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
+  { path: '/more', label: 'More', icon: 'ellipsis-horizontal', iconActive: 'ellipsis-horizontal' },
+];
+
 @Component({
   selector: 'artha-shell',
   standalone: true,
@@ -59,7 +68,6 @@ const NAV_GROUPS: NavGroup[] = [
     IonContent,
     IonIcon,
     IonMenu,
-    IonMenuButton,
     IonRouterOutlet,
     IonSplitPane,
   ],
@@ -74,7 +82,7 @@ const NAV_GROUPS: NavGroup[] = [
         split-pane's content target.
       -->
       <ion-split-pane contentId="main-content" when="md" class="artha-split">
-        <ion-menu contentId="main-content" menuId="main" class="artha-menu">
+        <ion-menu contentId="main-content" menuId="main" class="artha-menu" [swipeGesture]="false">
           <ion-content class="artha-menu-content">
             <div class="brand">
               <span class="brand-mark" aria-hidden="true">
@@ -128,11 +136,25 @@ const NAV_GROUPS: NavGroup[] = [
         <ion-router-outlet id="main-content"></ion-router-outlet>
       </ion-split-pane>
 
-      <!-- Mobile-only: opens the slide-over menu. Hidden once the side pane
-           is visible (>=768px). -->
-      <div class="menu-fab">
-        <ion-menu-button menu="main" aria-label="Open menu"></ion-menu-button>
-      </div>
+      <!-- Mobile-only bottom tab bar: primary navigation, thumb-reachable.
+           Replaces the floating hamburger. Hidden once the side pane is
+           visible (>=768px). -->
+      <nav class="m-tabs" aria-label="Primary">
+        @for (t of tabs; track t.path) {
+          <a
+            [routerLink]="t.path"
+            routerLinkActive="active"
+            #rla="routerLinkActive"
+            class="m-tab"
+          >
+            <ion-icon
+              [name]="rla.isActive ? (t.iconActive ?? t.icon) : t.icon"
+              aria-hidden="true"
+            ></ion-icon>
+            <span>{{ t.label }}</span>
+          </a>
+        }
+      </nav>
     </ion-app>
   `,
   styles: [`
@@ -274,22 +296,46 @@ const NAV_GROUPS: NavGroup[] = [
     }
     .logout-btn ion-icon { font-size: 18px; }
 
-    /* Floating menu toggle — mobile only. */
-    .menu-fab {
+    /* ===== Mobile bottom tab bar ===== */
+    .m-tabs {
       position: fixed;
-      top: max(8px, env(safe-area-inset-top));
-      left: 8px;
+      left: 0; right: 0; bottom: 0;
       z-index: 20;
+      display: flex;
       background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: 10px;
-      box-shadow: var(--artha-shadow-sm);
+      border-top: 1px solid var(--artha-border);
+      padding-bottom: env(safe-area-inset-bottom);
+      box-shadow: 0 -1px 3px rgba(15, 23, 42, 0.04);
     }
-    .menu-fab ion-menu-button {
-      --color: var(--artha-text);
+    .m-tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 8px 0 7px;
+      text-decoration: none;
+      color: var(--artha-text-subtle);
+      font-size: 10px;
+      font-weight: 500;
     }
+    .m-tab ion-icon {
+      font-size: 22px;
+      padding: 2px 16px;
+      border-radius: 13px;
+      transition: background 140ms ease, color 140ms ease;
+    }
+    .m-tab.active {
+      color: var(--artha-accent);
+      font-weight: 700;
+    }
+    .m-tab.active ion-icon {
+      color: var(--artha-accent);
+      background: var(--artha-accent-tint);
+    }
+    /* The tab bar is mobile-only; the side pane takes over at >=768px. */
     @media (min-width: 768px) {
-      .menu-fab { display: none; }
+      .m-tabs { display: none; }
     }
   `],
 })
@@ -300,6 +346,7 @@ export class ShellComponent {
   private readonly menuCtrl = inject(MenuController);
 
   protected readonly nav = NAV_GROUPS;
+  protected readonly tabs = TABS;
   protected readonly user = this.session.currentUser;
 
   protected initial(name: string): string {

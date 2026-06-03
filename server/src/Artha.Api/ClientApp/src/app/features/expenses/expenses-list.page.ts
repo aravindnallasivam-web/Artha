@@ -2,9 +2,14 @@ import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
+  IonButton,
+  IonButtons,
   IonContent,
+  IonHeader,
   IonIcon,
   IonSpinner,
+  IonTitle,
+  IonToolbar,
   ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
@@ -43,11 +48,30 @@ const TODAY_ISO = toIsoDate(new Date());
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
+    IonButton,
+    IonButtons,
     IonContent,
+    IonHeader,
     IonIcon,
     IonSpinner,
+    IonTitle,
+    IonToolbar,
   ],
   template: `
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>Expenses</ion-title>
+        <ion-buttons slot="end">
+          <ion-button (click)="openImport()" aria-label="Import expenses">
+            <ion-icon slot="icon-only" name="cloud-upload-outline"></ion-icon>
+          </ion-button>
+          <ion-button (click)="add()" aria-label="Add expense">
+            <ion-icon slot="icon-only" name="add"></ion-icon>
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+
     <ion-content class="page-content">
       <div class="page">
         <!-- Header: month picker + view switcher + add CTA -->
@@ -90,16 +114,6 @@ const TODAY_ISO = toIsoDate(new Date());
               </button>
             }
           </div>
-
-          <button type="button" class="import-cta" (click)="openImport()">
-            <ion-icon name="cloud-upload-outline" aria-hidden="true"></ion-icon>
-            <span>Import</span>
-          </button>
-
-          <button type="button" class="add-cta" (click)="add()">
-            <ion-icon name="add" aria-hidden="true"></ion-icon>
-            <span>Add expense</span>
-          </button>
         </header>
 
         <!-- Summary strip -->
@@ -134,44 +148,59 @@ const TODAY_ISO = toIsoDate(new Date());
 
         <!-- Filters -->
         <section class="filters">
-          <select
-            class="filter-select"
-            aria-label="Filter by category"
-            [value]="filterCategoryId() ?? ''"
-            (change)="onCategoryFilter($event)"
-          >
-            <option value="">All categories</option>
-            @for (c of filterableCategories(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-            }
-          </select>
+          <div class="search-bar">
+            <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+            <input
+              class="search-input"
+              type="search"
+              placeholder="Search expenses…"
+              [value]="search()"
+              (input)="onSearch($event)"
+            />
+          </div>
 
-          <select
-            class="filter-select"
-            aria-label="Filter by account"
-            [value]="filterAccountId() ?? ''"
-            (change)="onAccountFilter($event)"
-          >
-            <option value="">All accounts</option>
-            @for (a of filterableAccounts(); track a.id) {
-              <option [value]="a.id">{{ a.name }}</option>
-            }
-          </select>
-
-          <input
-            class="filter-search"
-            type="search"
-            placeholder="Search notes…"
-            [value]="search()"
-            (input)="onSearch($event)"
-          />
-
-          @if (hasActiveFilters()) {
-            <button type="button" class="filter-clear" (click)="clearFilters()">
-              <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
-              <span>Clear</span>
+          <div class="chips" role="tablist" aria-label="Filter by category">
+            <button
+              type="button"
+              class="chip"
+              [class.active]="filterCategoryId() === null"
+              (click)="filterCategoryId.set(null)"
+            >
+              All
             </button>
-          }
+            @for (c of filterableCategories(); track c.id) {
+              <button
+                type="button"
+                class="chip"
+                [class.active]="filterCategoryId() === c.id"
+                (click)="filterCategoryId.set(c.id)"
+              >
+                <span class="chip-dot" [style.background]="categoryColor(c.id)"></span>
+                {{ c.name }}
+              </button>
+            }
+          </div>
+
+          <div class="filters-aux">
+            <select
+              class="filter-select"
+              aria-label="Filter by account"
+              [value]="filterAccountId() ?? ''"
+              (change)="onAccountFilter($event)"
+            >
+              <option value="">All accounts</option>
+              @for (a of filterableAccounts(); track a.id) {
+                <option [value]="a.id">{{ a.name }}</option>
+              }
+            </select>
+
+            @if (hasActiveFilters()) {
+              <button type="button" class="filter-clear" (click)="clearFilters()">
+                <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+                <span>Clear</span>
+              </button>
+            }
+          </div>
         </section>
 
         @if (expensesStore.loading()) {
@@ -217,9 +246,16 @@ const TODAY_ISO = toIsoDate(new Date());
                       @for (expense of group.items; track expense.id) {
                         <li class="row" (click)="edit(expense.id)">
                           <span
-                            class="row-dot"
-                            [style.background]="categoryColor(expense.categoryId)"
-                          ></span>
+                            class="row-icon"
+                            [style.background]="categoryTint(expense.categoryId)"
+                            [style.color]="categoryColor(expense.categoryId)"
+                          >
+                            @if (categoryIcon(expense.categoryId); as ic) {
+                              <ion-icon [name]="ic" aria-hidden="true"></ion-icon>
+                            } @else {
+                              {{ categoryName(expense.categoryId).charAt(0) }}
+                            }
+                          </span>
                           <div class="row-text">
                             <p class="row-title">
                             {{ categoryName(expense.categoryId) }}
@@ -489,12 +525,85 @@ const TODAY_ISO = toIsoDate(new Date());
     /* ====== Filters ====== */
     .filters {
       display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 4px 0;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      height: 42px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      background: var(--artha-surface);
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .search-bar ion-icon {
+      font-size: 18px;
+      color: var(--artha-text-subtle);
+      flex-shrink: 0;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      font-size: 14px;
+      color: var(--artha-text);
+    }
+    .search-input:focus { outline: none; }
+    .search-input::placeholder { color: var(--artha-text-subtle); }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-bottom: 2px;
+      margin: 0 -2px;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+      padding: 7px 14px;
+      border: 1px solid var(--artha-border-strong);
+      border-radius: 999px;
+      background: var(--artha-surface);
+      color: var(--artha-text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+    .chip:hover { background: var(--artha-surface-2); }
+    .chip.active {
+      background: var(--artha-accent);
+      border-color: var(--artha-accent);
+      color: white;
+    }
+    .chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .chip.active .chip-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55); }
+
+    .filters-aux {
+      display: flex;
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
-      margin: 16px 0 4px;
     }
-    .filter-select, .filter-search {
+    .filter-select {
       padding: 8px 11px;
       border: 1px solid var(--artha-border);
       border-radius: var(--artha-radius-sm);
@@ -502,10 +611,10 @@ const TODAY_ISO = toIsoDate(new Date());
       color: var(--artha-text);
       font-size: 13px;
       box-shadow: var(--artha-shadow-sm);
+      cursor: pointer;
+      min-width: 150px;
     }
-    .filter-select { cursor: pointer; min-width: 150px; }
-    .filter-search { flex: 1; min-width: 160px; }
-    .filter-select:focus, .filter-search:focus {
+    .filter-select:focus {
       outline: 2px solid var(--artha-accent); outline-offset: -1px;
     }
     .filter-clear {
@@ -564,20 +673,23 @@ const TODAY_ISO = toIsoDate(new Date());
     }
     .row {
       display: grid;
-      grid-template-columns: 10px 1fr auto 28px;
+      grid-template-columns: 38px 1fr auto 28px;
       align-items: center;
-      gap: 14px;
-      padding: 12px 16px;
+      gap: 12px;
+      padding: 10px 16px;
       cursor: pointer;
       border-top: 1px solid var(--artha-border);
       transition: background 120ms ease;
     }
     .row:first-child { border-top: 0; }
     .row:hover { background: var(--artha-surface-2); }
-    .row-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
+    .row-icon {
+      width: 38px; height: 38px;
+      border-radius: 11px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
     }
+    .row-icon ion-icon { font-size: 19px; }
     .row-text { min-width: 0; }
     .row-title {
       margin: 0;
@@ -1080,7 +1192,10 @@ export class ExpensesListPage implements OnInit {
   }
 
   protected categoryColor(id: string): string {
-    // Same deterministic palette as the dashboard for visual continuity.
+    // Prefer the category's own colour; fall back to the same deterministic
+    // palette as the dashboard for visual continuity.
+    const real = this.categoriesStore.byId()[id]?.color;
+    if (real) return real;
     const palette = [
       '#6366f1', '#10b981', '#f59e0b', '#f43f5e',
       '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16',
@@ -1091,6 +1206,15 @@ export class ExpensesListPage implements OnInit {
       hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
     }
     return palette[hash % palette.length];
+  }
+
+  protected categoryIcon(id: string): string | null {
+    return this.categoriesStore.byId()[id]?.icon ?? null;
+  }
+
+  /** Translucent fill (12% alpha) of the category colour for the icon chip. */
+  protected categoryTint(id: string): string {
+    return `${this.categoryColor(id)}1f`;
   }
 
   protected cellBg(cell: CalendarCell): string | null {
