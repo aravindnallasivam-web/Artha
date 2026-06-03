@@ -951,6 +951,11 @@ const TODAY_ISO = toIsoDate(new Date());
       .cell-total { font-size: 10px; }
       .day-summary-total { font-size: 30px; }
     }
+    /* Clear the fixed bottom tab bar (mobile-only, <768px) plus the
+       home-indicator safe area so the last expense isn't hidden. */
+    @media (max-width: 767.98px) {
+      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+    }
   `],
 })
 export class ExpensesListPage implements OnInit {

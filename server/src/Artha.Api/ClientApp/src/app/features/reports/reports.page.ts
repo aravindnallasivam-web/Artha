@@ -356,6 +356,11 @@ interface CatRow {
       .kpis { grid-template-columns: repeat(2, 1fr); }
       .charts-row { flex-direction: column; }
     }
+    /* Clear the fixed bottom tab bar (mobile-only, <768px) plus the
+       home-indicator safe area so the last card isn't hidden. */
+    @media (max-width: 767.98px) {
+      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+    }
   `],
 })
 export class ReportsPage implements OnInit {

@@ -533,6 +533,11 @@ interface CategorySlice {
       .page { padding: 18px 16px 56px; gap: 18px; }
       .balance-value { font-size: 34px; }
     }
+    /* Clear the fixed bottom tab bar (mobile-only, <768px) plus the
+       home-indicator safe area so the last card isn't hidden. */
+    @media (max-width: 767.98px) {
+      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+    }
   `],
 })
 export class DashboardComponent implements OnInit {
