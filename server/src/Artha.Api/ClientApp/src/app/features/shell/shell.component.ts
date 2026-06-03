@@ -37,6 +37,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Money',
     items: [
       { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
+      { path: '/planned-expenses', label: 'Planned', icon: 'calendar-outline', iconActive: 'calendar' },
       { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
     ],
   },
@@ -49,9 +50,11 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// Bottom tabs stay lean on mobile: categories and planned expenses are
+// setup-ish flows reachable from the side menu, so keep them out of the bar.
 const TAB_ITEMS: NavItem[] = NAV_GROUPS
   .flatMap((g) => g.items)
-  .filter((n) => n.path !== '/categories');
+  .filter((n) => n.path !== '/categories' && n.path !== '/planned-expenses');
 
 @Component({
   selector: 'artha-shell',

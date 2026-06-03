@@ -96,6 +96,35 @@ type ViewMode = 'monthly' | 'yearly';
             </ion-card-content>
           </ion-card>
 
+          @if (report.plannedCount > 0) {
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>Planned vs actual</ion-card-subtitle>
+              </ion-card-header>
+              <ion-card-content>
+                <div class="pva-row">
+                  <span>Planned ({{ report.plannedCount }})</span>
+                  <span>{{ report.plannedTotal | currency: report.currency }}</span>
+                </div>
+                <div class="pva-row">
+                  <span>Actual</span>
+                  <span>{{ report.total | currency: report.currency }}</span>
+                </div>
+                <div class="bar-track">
+                  <div
+                    class="bar-fill"
+                    [class.over]="report.total > report.plannedTotal"
+                    [style.width.%]="percentage(report.total, report.plannedTotal)"
+                  ></div>
+                </div>
+                <div class="pva-row pva-delta" [class.over]="report.total > report.plannedTotal">
+                  <span>{{ report.total > report.plannedTotal ? 'Over budget' : 'Remaining' }}</span>
+                  <span>{{ delta(report.plannedTotal, report.total) | currency: report.currency }}</span>
+                </div>
+              </ion-card-content>
+            </ion-card>
+          }
+
           @if (report.byCategory.length === 0) {
             <p class="empty">No spending recorded for this month.</p>
           } @else {
@@ -190,6 +219,14 @@ type ViewMode = 'monthly' | 'yearly';
       border-radius: 3px;
       transition: width 0.3s ease;
     }
+    .bar-fill.over { background: var(--ion-color-danger); }
+    .pva-row {
+      display: flex; justify-content: space-between;
+      padding: 4px 0; font-size: 14px;
+    }
+    .pva-row span:last-child { font-weight: 600; }
+    .pva-delta { margin-top: 8px; color: var(--ion-color-success); }
+    .pva-delta.over { color: var(--ion-color-danger); }
   `],
 })
 export class ReportsPage implements OnInit {
@@ -260,6 +297,11 @@ export class ReportsPage implements OnInit {
   protected percentage(value: number, total: number): number {
     if (total <= 0) return 0;
     return Math.min(100, (value / total) * 100);
+  }
+
+  /** Absolute gap between planned and actual, for the remaining/over figure. */
+  protected delta(planned: number, actual: number): number {
+    return Math.abs(planned - actual);
   }
 
   private async refresh(): Promise<void> {

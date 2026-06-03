@@ -58,6 +58,27 @@ export const routes: Routes = [
           import('./features/reports/reports.page').then((m) => m.ReportsPage),
       },
       {
+        path: 'planned-expenses',
+        loadComponent: () =>
+          import('./features/planned-expenses/planned-expenses-list.page').then(
+            (m) => m.PlannedExpensesListPage,
+          ),
+      },
+      {
+        path: 'planned-expenses/new',
+        loadComponent: () =>
+          import('./features/planned-expenses/planned-expense-edit.page').then(
+            (m) => m.PlannedExpenseEditPage,
+          ),
+      },
+      {
+        path: 'planned-expenses/:id',
+        loadComponent: () =>
+          import('./features/planned-expenses/planned-expense-edit.page').then(
+            (m) => m.PlannedExpenseEditPage,
+          ),
+      },
+      {
         path: 'accounts',
         loadComponent: () =>
           import('./features/accounts/accounts-list.page').then((m) => m.AccountsListPage),

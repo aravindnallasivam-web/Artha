@@ -8,6 +8,7 @@ public static partial class DriveFileNames
     public const string Categories = "categories.json";
     public const string Accounts = "accounts.json";
     public const string Settings = "settings.json";
+    public const string PlannedExpenses = "planned-expenses.json";
 
     /// <summary>
     /// Well-known ID of the default Cash account seeded for every user. Used
