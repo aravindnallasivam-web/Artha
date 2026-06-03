@@ -66,40 +66,37 @@ interface CategorySlice {
             <ion-spinner></ion-spinner>
           </div>
         } @else {
-          <!-- Hero greeting -->
-          <header class="hero">
-            <div>
-              <p class="hero-eyebrow">{{ monthLabel() }}</p>
-              <h1 class="hero-title">
-                @if (currentUser(); as user) {
-                  Hi, {{ firstName(user.name) }}
-                } @else {
-                  Welcome back
-                }
-              </h1>
-              <p class="hero-sub">Here's how your month is shaping up.</p>
+          <!-- Greeting -->
+          <p class="greeting">
+            @if (currentUser(); as user) {
+              Hi, {{ firstName(user.name) }} 👋
+            } @else {
+              Welcome back 👋
+            }
+          </p>
+
+          <!-- Balance hero -->
+          <section class="balance">
+            <div class="balance-top">
+              <p class="balance-label">Total spent · {{ monthShort() }}</p>
+              <a routerLink="/expenses/new" class="balance-add">
+                <ion-icon name="add" aria-hidden="true"></ion-icon>
+                Add
+              </a>
             </div>
-            <a routerLink="/expenses" class="hero-cta">
-              <ion-icon name="add" aria-hidden="true"></ion-icon>
-              Add expense
-            </a>
-          </header>
+            <p class="balance-value num">
+              {{ expensesStore.totalAmount() | currency: currency() : 'symbol' : '1.2-2' }}
+            </p>
+            <p class="balance-meta">
+              {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
+              @if (dailyAverage() > 0) {
+                · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day avg
+              }
+            </p>
+          </section>
 
           <!-- KPI tiles -->
           <section class="stats">
-            <article class="stat stat--primary">
-              <p class="stat-label">Spent this month</p>
-              <p class="stat-value num">
-                {{ expensesStore.totalAmount() | currency: currency() : 'symbol' : '1.2-2' }}
-              </p>
-              <p class="stat-meta">
-                {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
-                @if (dailyAverage() > 0) {
-                  · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day avg
-                }
-              </p>
-            </article>
-
             <article class="stat">
               <p class="stat-label">Top category</p>
               @if (topCategory(); as tc) {
@@ -239,77 +236,81 @@ interface CategorySlice {
     }
     .loading { display: flex; justify-content: center; padding: 48px; }
 
-    /* ====== Hero ====== */
-    .hero {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 24px;
-      flex-wrap: wrap;
-    }
-    .hero-eyebrow {
-      margin: 0 0 4px;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--artha-accent);
-    }
-    .hero-title {
-      margin: 0 0 4px;
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--artha-text);
-    }
-    .hero-sub {
+    /* ====== Greeting ====== */
+    .greeting {
       margin: 0;
       font-size: 14px;
+      font-weight: 500;
       color: var(--artha-text-muted);
     }
-    .hero-cta {
+
+    /* ====== Balance hero ====== */
+    .balance {
+      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
+      border-radius: var(--artha-radius-lg);
+      padding: 20px 22px 22px;
+      color: white;
+      box-shadow: 0 10px 24px -10px rgba(79, 70, 229, 0.55);
+    }
+    .balance-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .balance-label {
+      margin: 0;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.82);
+    }
+    .balance-add {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 10px 16px;
-      border-radius: var(--artha-radius-sm);
-      background: var(--artha-accent);
+      gap: 4px;
+      padding: 7px 14px 7px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
       color: white;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       text-decoration: none;
-      box-shadow: var(--artha-shadow-sm);
       transition: background 120ms ease, transform 80ms ease;
     }
-    .hero-cta:hover { background: var(--artha-accent-hover); }
-    .hero-cta:active { transform: translateY(1px); }
-    .hero-cta ion-icon { font-size: 18px; }
+    .balance-add:hover { background: rgba(255, 255, 255, 0.28); }
+    .balance-add:active { transform: translateY(1px); }
+    .balance-add ion-icon { font-size: 17px; }
+    .balance-value {
+      margin: 14px 0 0;
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.05;
+    }
+    .balance-meta {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+    }
 
     /* ====== Stat tiles ====== */
     .stats {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
     }
     .stat {
       background: var(--artha-surface);
       border: 1px solid var(--artha-border);
       border-radius: var(--artha-radius);
-      padding: 20px 22px;
+      padding: 16px 18px;
       box-shadow: var(--artha-shadow-sm);
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .stat--primary {
-      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
-      border-color: transparent;
-      color: white;
-      box-shadow: var(--artha-shadow);
-    }
-    .stat--primary .stat-label,
-    .stat--primary .stat-meta { color: rgba(255, 255, 255, 0.78); }
-    .stat--primary .stat-value { color: white; }
 
     .stat-label {
       margin: 0;
@@ -321,10 +322,13 @@ interface CategorySlice {
     }
     .stat-value {
       margin: 4px 0 0;
-      font-size: 28px;
+      font-size: 20px;
       font-weight: 700;
       letter-spacing: -0.02em;
       color: var(--artha-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .stat-value--empty { color: var(--artha-text-subtle); }
     .stat-meta {
@@ -523,13 +527,11 @@ interface CategorySlice {
 
     /* ====== Responsive ====== */
     @media (max-width: 900px) {
-      .stats { grid-template-columns: 1fr; }
       .main { grid-template-columns: 1fr; }
     }
     @media (max-width: 600px) {
-      .page { padding: 20px 16px 56px; }
-      .hero-title { font-size: 22px; }
-      .stat-value { font-size: 24px; }
+      .page { padding: 18px 16px 56px; gap: 18px; }
+      .balance-value { font-size: 34px; }
     }
   `],
 })
@@ -642,6 +644,10 @@ export class DashboardComponent implements OnInit {
 
   protected monthLabel(): string {
     return new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  protected monthShort(): string {
+    return new Date().toLocaleDateString(undefined, { month: 'long' });
   }
 
   protected firstName(name: string): string {
