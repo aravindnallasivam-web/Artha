@@ -60,7 +60,6 @@ interface CatRow {
       <div class="page">
         <!-- Header -->
         <header class="page-header">
-          <h1 class="page-title">Reports</h1>
           <div class="view-switcher" role="tablist">
             <button type="button" role="tab" [class.active]="view() === 'monthly'" (click)="setView('monthly')">
               <span>Monthly</span>
@@ -221,9 +220,8 @@ interface CatRow {
   `,
   styles: [`
     .page-header {
-      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px;
     }
-    .page-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--artha-text); }
     .view-switcher {
       display: inline-flex; padding: 4px;
       background: var(--artha-surface); border: 1px solid var(--artha-border);
