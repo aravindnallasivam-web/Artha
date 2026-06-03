@@ -75,13 +75,15 @@ import { BalanceSyncService } from './balance-sync.service';
         <ion-list>
           @for (acc of store.items(); track acc.id) {
             <ion-item-sliding>
-              <ion-item [routerLink]="['/accounts', acc.id]" detail>
+              <ion-item>
                 <ion-icon
                   slot="start"
                   [name]="iconFor(acc)"
                   [style.color]="acc.color || 'var(--ion-color-primary)'"
+                  class="tappable"
+                  [routerLink]="['/accounts', acc.id]"
                 ></ion-icon>
-                <ion-label>
+                <ion-label class="tappable" [routerLink]="['/accounts', acc.id]">
                   <h2>
                     {{ acc.name }}
                     @if (acc.archived) {
@@ -101,7 +103,11 @@ import { BalanceSyncService } from './balance-sync.service';
                     <ion-icon name="sync-outline" slot="icon-only"></ion-icon>
                   </ion-button>
                 }
-                <ion-note slot="end" class="balance">
+                <ion-note
+                  slot="end"
+                  class="balance tappable"
+                  [routerLink]="['/accounts', acc.id]"
+                >
                   {{ acc.openingBalance | currency: acc.currency }}
                 </ion-note>
               </ion-item>
@@ -135,6 +141,8 @@ import { BalanceSyncService } from './balance-sync.service';
     }
     ion-icon[slot="start"] { font-size: 24px; margin-inline-end: 12px; }
     .balance { font-variant-numeric: tabular-nums; }
+    .tappable { cursor: pointer; }
+    ion-label.tappable { align-self: stretch; }
   `],
 })
 export class AccountsListPage implements OnInit {
