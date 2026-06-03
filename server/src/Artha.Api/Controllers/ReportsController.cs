@@ -74,12 +74,22 @@ public sealed class ReportsController : ControllerBase
             .OrderByDescending(b => b.Total)
             .ToList();
 
+        // Planned (predefined) monthly expenses are budget figures, not
+        // transactions — the same set applies to every month, so we surface
+        // their total alongside the actual spend for a planned-vs-actual view.
+        var plannedDoc = await ctx.PlannedRepo.ReadAsync(DriveFileNames.PlannedExpenses, cancellationToken);
+        var planned = (plannedDoc?.Document.Items ?? Array.Empty<PlannedExpense>())
+            .Where(p => !p.Archived)
+            .ToList();
+
         return Ok(new MonthlyReportDto(
             Year: y,
             Month: m,
             Currency: currency,
             Total: counted.Sum(e => e.Amount),
             Count: counted.Count,
+            PlannedTotal: planned.Sum(p => p.Amount),
+            PlannedCount: planned.Count,
             ByCategory: byCategory));
     }
 
@@ -169,12 +179,14 @@ public sealed class ReportsController : ControllerBase
             new AppDataRepository<Manifest>(drive),
             new AppDataRepository<ExpenseShard>(drive),
             new AppDataRepository<CategoryList>(drive),
-            new AppDataRepository<SettingsDocument>(drive));
+            new AppDataRepository<SettingsDocument>(drive),
+            new AppDataRepository<PlannedExpenseList>(drive));
     }
 
     private sealed record Context(
         AppDataRepository<Manifest> ManifestRepo,
         AppDataRepository<ExpenseShard> ExpenseRepo,
         AppDataRepository<CategoryList> CategoryRepo,
-        AppDataRepository<SettingsDocument> SettingsRepo);
+        AppDataRepository<SettingsDocument> SettingsRepo,
+        AppDataRepository<PlannedExpenseList> PlannedRepo);
 }

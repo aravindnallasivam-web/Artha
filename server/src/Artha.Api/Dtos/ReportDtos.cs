@@ -12,6 +12,8 @@ public sealed record MonthlyReportDto(
     string Currency,
     decimal Total,
     int Count,
+    decimal PlannedTotal,
+    int PlannedCount,
     IReadOnlyList<CategoryBreakdownDto> ByCategory);
 
 public sealed record MonthSummaryDto(
