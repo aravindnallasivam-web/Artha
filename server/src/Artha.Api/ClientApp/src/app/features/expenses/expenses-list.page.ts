@@ -148,44 +148,59 @@ const TODAY_ISO = toIsoDate(new Date());
 
         <!-- Filters -->
         <section class="filters">
-          <select
-            class="filter-select"
-            aria-label="Filter by category"
-            [value]="filterCategoryId() ?? ''"
-            (change)="onCategoryFilter($event)"
-          >
-            <option value="">All categories</option>
-            @for (c of filterableCategories(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-            }
-          </select>
+          <div class="search-bar">
+            <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+            <input
+              class="search-input"
+              type="search"
+              placeholder="Search expenses…"
+              [value]="search()"
+              (input)="onSearch($event)"
+            />
+          </div>
 
-          <select
-            class="filter-select"
-            aria-label="Filter by account"
-            [value]="filterAccountId() ?? ''"
-            (change)="onAccountFilter($event)"
-          >
-            <option value="">All accounts</option>
-            @for (a of filterableAccounts(); track a.id) {
-              <option [value]="a.id">{{ a.name }}</option>
-            }
-          </select>
-
-          <input
-            class="filter-search"
-            type="search"
-            placeholder="Search notes…"
-            [value]="search()"
-            (input)="onSearch($event)"
-          />
-
-          @if (hasActiveFilters()) {
-            <button type="button" class="filter-clear" (click)="clearFilters()">
-              <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
-              <span>Clear</span>
+          <div class="chips" role="tablist" aria-label="Filter by category">
+            <button
+              type="button"
+              class="chip"
+              [class.active]="filterCategoryId() === null"
+              (click)="filterCategoryId.set(null)"
+            >
+              All
             </button>
-          }
+            @for (c of filterableCategories(); track c.id) {
+              <button
+                type="button"
+                class="chip"
+                [class.active]="filterCategoryId() === c.id"
+                (click)="filterCategoryId.set(c.id)"
+              >
+                <span class="chip-dot" [style.background]="categoryColor(c.id)"></span>
+                {{ c.name }}
+              </button>
+            }
+          </div>
+
+          <div class="filters-aux">
+            <select
+              class="filter-select"
+              aria-label="Filter by account"
+              [value]="filterAccountId() ?? ''"
+              (change)="onAccountFilter($event)"
+            >
+              <option value="">All accounts</option>
+              @for (a of filterableAccounts(); track a.id) {
+                <option [value]="a.id">{{ a.name }}</option>
+              }
+            </select>
+
+            @if (hasActiveFilters()) {
+              <button type="button" class="filter-clear" (click)="clearFilters()">
+                <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+                <span>Clear</span>
+              </button>
+            }
+          </div>
         </section>
 
         @if (expensesStore.loading()) {
@@ -510,12 +525,85 @@ const TODAY_ISO = toIsoDate(new Date());
     /* ====== Filters ====== */
     .filters {
       display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 4px 0;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      height: 42px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      background: var(--artha-surface);
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .search-bar ion-icon {
+      font-size: 18px;
+      color: var(--artha-text-subtle);
+      flex-shrink: 0;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      font-size: 14px;
+      color: var(--artha-text);
+    }
+    .search-input:focus { outline: none; }
+    .search-input::placeholder { color: var(--artha-text-subtle); }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-bottom: 2px;
+      margin: 0 -2px;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+      padding: 7px 14px;
+      border: 1px solid var(--artha-border-strong);
+      border-radius: 999px;
+      background: var(--artha-surface);
+      color: var(--artha-text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+    .chip:hover { background: var(--artha-surface-2); }
+    .chip.active {
+      background: var(--artha-accent);
+      border-color: var(--artha-accent);
+      color: white;
+    }
+    .chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .chip.active .chip-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55); }
+
+    .filters-aux {
+      display: flex;
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
-      margin: 16px 0 4px;
     }
-    .filter-select, .filter-search {
+    .filter-select {
       padding: 8px 11px;
       border: 1px solid var(--artha-border);
       border-radius: var(--artha-radius-sm);
@@ -523,10 +611,10 @@ const TODAY_ISO = toIsoDate(new Date());
       color: var(--artha-text);
       font-size: 13px;
       box-shadow: var(--artha-shadow-sm);
+      cursor: pointer;
+      min-width: 150px;
     }
-    .filter-select { cursor: pointer; min-width: 150px; }
-    .filter-search { flex: 1; min-width: 160px; }
-    .filter-select:focus, .filter-search:focus {
+    .filter-select:focus {
       outline: 2px solid var(--artha-accent); outline-offset: -1px;
     }
     .filter-clear {
