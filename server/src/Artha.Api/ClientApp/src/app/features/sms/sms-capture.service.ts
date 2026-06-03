@@ -81,8 +81,13 @@ export class SmsCaptureService {
     }
   }
 
-  private isIgnored(sender: string): boolean {
+  /** Whether a sender is currently on the ignore list (normalised match). */
+  isSenderIgnored(sender: string): boolean {
     return this.ignored.has(normalizeSender(sender));
+  }
+
+  private isIgnored(sender: string): boolean {
+    return this.isSenderIgnored(sender);
   }
 
   private loadIgnored(): string[] {

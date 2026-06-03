@@ -275,7 +275,9 @@ export class SmsBulkReviewModal implements OnInit {
       return;
     }
     this.sms.ignoreSender(sender);
-    this.rows.update((rs) => rs.filter((r) => r.parsed.sender !== sender));
+    // Drop every currently-shown row from this sender (normalised match), so
+    // all routing variants of the same bank disappear immediately too.
+    this.rows.update((rs) => rs.filter((r) => !this.sms.isSenderIgnored(r.parsed.sender)));
   }
 
   protected cancel(): void {
