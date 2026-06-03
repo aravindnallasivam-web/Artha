@@ -12,6 +12,7 @@ import { ExpensesStore } from '../expenses/expenses.store';
 import { SettingsStore } from '../settings/settings.store';
 import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
+import { SmsScanRangeModal } from './sms-scan-range.modal';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 
 const ENABLED_KEY = 'artha.sms.captureEnabled';
@@ -24,7 +25,6 @@ const ACCOUNT_MAP_KEY = 'artha.sms.accountMap';
 // Learned "which category does this merchant belong to" map, keyed by the
 // normalised merchant name.
 const CATEGORY_MAP_KEY = 'artha.sms.categoryMap';
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Coordinates SMS-based expense capture (Android only):
@@ -160,25 +160,31 @@ export class SmsCaptureService {
   }
 
   /**
-   * One-off backfill: read the last `days` of inbox messages, parse them, and
-   * show them all in one bulk-review list. Returns the number of expenses
-   * detected (so the caller can message "none found").
+   * One-off backfill: let the user pick a date range, read that slice of the
+   * inbox, parse it, and show everything in one bulk-review list.
+   * Returns the number of expenses detected, or -1 if no scan ran (not
+   * supported, permission denied, or the range picker was cancelled).
    */
-  async scanInbox(days = 30): Promise<number> {
+  async scanInbox(): Promise<number> {
     if (!this.isSupported()) {
-      return 0;
+      return -1;
     }
     let status = await SmsReader.checkPermissions().catch(() => null);
     if (status?.sms !== 'granted') {
       status = await SmsReader.requestPermissions().catch(() => null);
     }
     if (status?.sms !== 'granted') {
-      return 0;
+      return -1;
     }
 
-    const since = Date.now() - days * DAY_MS;
-    const { messages } = await SmsReader.readInbox({ since, limit: 400 });
+    const range = await this.pickRange();
+    if (!range) {
+      return -1;
+    }
+
+    const { messages } = await SmsReader.readInbox({ since: range.fromMs, limit: 1000 });
     const parsed = messages
+      .filter((m) => m.date <= range.toMs)
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
     if (parsed.length === 0) {
@@ -259,6 +265,22 @@ export class SmsCaptureService {
       .items()
       .filter((a) => !a.archived)
       .map((a) => ({ id: a.id, name: a.name }));
+  }
+
+  /** Prompt for the scan date range; null if the user cancels. */
+  private async pickRange(): Promise<{ fromMs: number; toMs: number } | null> {
+    const modal = await this.modalCtrl.create({ component: SmsScanRangeModal });
+    await modal.present();
+    const { role, data } = await modal.onWillDismiss<{ from: string; to: string }>();
+    if (role !== 'scan' || !data) {
+      return null;
+    }
+    const fromMs = Date.parse(`${data.from}T00:00:00`);
+    const toMs = Date.parse(`${data.to}T23:59:59`);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+      return null;
+    }
+    return { fromMs, toMs };
   }
 
   private async startWatching(): Promise<void> {
