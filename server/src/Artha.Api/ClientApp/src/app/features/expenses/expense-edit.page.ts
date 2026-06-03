@@ -10,9 +10,7 @@ import {
   IonDatetimeButton,
   IonHeader,
   IonIcon,
-  IonInput,
   IonItem,
-  IonLabel,
   IonModal,
   IonSelect,
   IonSelectOption,
@@ -41,9 +39,7 @@ import { ExpensesStore } from './expenses.store';
     IonDatetimeButton,
     IonHeader,
     IonIcon,
-    IonInput,
     IonItem,
-    IonLabel,
     IonModal,
     IonSelect,
     IonSelectOption,
@@ -63,77 +59,111 @@ import { ExpensesStore } from './expenses.store';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="ion-padding">
+    <ion-content>
       @if (loading()) {
-        <ion-spinner></ion-spinner>
+        <div class="state"><ion-spinner></ion-spinner></div>
       } @else {
         <form [formGroup]="form" (ngSubmit)="save()">
-          <ion-item>
-            <ion-input
-              label="Amount"
-              labelPlacement="floating"
-              type="number"
-              inputmode="decimal"
-              step="0.01"
-              formControlName="amount"
-            ></ion-input>
-          </ion-item>
+          <div class="wrap">
+            <!-- Amount hero -->
+            <div class="amount">
+              <div class="amount-label">AMOUNT</div>
+              <div class="amount-row">
+                <span class="cur">{{ currencySymbol() }}</span>
+                <input
+                  class="amount-input"
+                  type="number"
+                  inputmode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="0"
+                  formControlName="amount"
+                  (focus)="selectAll($event)"
+                  aria-label="Amount"
+                />
+              </div>
+            </div>
 
-          <ion-item>
-            <ion-label>Date</ion-label>
-            <ion-datetime-button datetime="datePicker" slot="end"></ion-datetime-button>
-            <ion-modal [keepContentsMounted]="true">
-              <ng-template>
-                <ion-datetime
-                  id="datePicker"
-                  presentation="date"
-                  formControlName="date"
-                ></ion-datetime>
-              </ng-template>
-            </ion-modal>
-          </ion-item>
+            <!-- Date -->
+            <div class="section-label">Date</div>
+            <div class="chips">
+              <button type="button" class="chip" [class.sel]="isToday()" (click)="setDate(0)">
+                Today
+              </button>
+              <button type="button" class="chip" [class.sel]="isYesterday()" (click)="setDate(1)">
+                Yesterday
+              </button>
+              <ion-datetime-button datetime="datePicker" class="chip-dt"></ion-datetime-button>
+              <ion-modal [keepContentsMounted]="true">
+                <ng-template>
+                  <ion-datetime
+                    id="datePicker"
+                    presentation="date"
+                    formControlName="date"
+                  ></ion-datetime>
+                </ng-template>
+              </ion-modal>
+            </div>
 
-          <ion-item>
-            <ion-select
-              label="Category"
-              labelPlacement="floating"
-              formControlName="categoryId"
-              interface="popover"
-            >
-              @for (cat of categories(); track cat.id) {
-                <ion-select-option [value]="cat.id">{{ cat.name }}</ion-select-option>
-              }
-            </ion-select>
-          </ion-item>
+            <!-- Category + Account -->
+            <div class="section-label">Details</div>
+            <div class="card">
+              <ion-item lines="full">
+                <ion-select
+                  label="Category"
+                  labelPlacement="stacked"
+                  formControlName="categoryId"
+                  interface="popover"
+                  placeholder="Choose a category"
+                >
+                  @for (cat of categories(); track cat.id) {
+                    <ion-select-option [value]="cat.id">{{ cat.name }}</ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-select
+                  label="Account"
+                  labelPlacement="stacked"
+                  formControlName="accountId"
+                  interface="popover"
+                  placeholder="Choose an account"
+                >
+                  @for (acc of accounts(); track acc.id) {
+                    <ion-select-option [value]="acc.id">{{ acc.name }}</ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+            </div>
 
-          <ion-item>
-            <ion-select
-              label="Account"
-              labelPlacement="floating"
-              formControlName="accountId"
-              interface="popover"
-            >
-              @for (acc of accounts(); track acc.id) {
-                <ion-select-option [value]="acc.id">{{ acc.name }}</ion-select-option>
-              }
-            </ion-select>
-          </ion-item>
+            <!-- Note -->
+            <div class="section-label">Note</div>
+            <div class="card">
+              <ion-item lines="none">
+                <ion-textarea
+                  label="Optional"
+                  labelPlacement="stacked"
+                  rows="2"
+                  autoGrow="true"
+                  placeholder="What was this for?"
+                  formControlName="note"
+                ></ion-textarea>
+              </ion-item>
+            </div>
 
-          <ion-item>
-            <ion-toggle formControlName="excluded">Exclude from totals</ion-toggle>
-          </ion-item>
-          <p class="hint">Won't count toward your spending (e.g. refunds, transfers, settlements).</p>
+            <!-- Exclude -->
+            <div class="card">
+              <ion-item lines="none">
+                <ion-toggle formControlName="excluded">
+                  <div class="excl-title">Exclude from totals</div>
+                  <div class="excl-sub">Refunds, transfers, settlements</div>
+                </ion-toggle>
+              </ion-item>
+            </div>
+          </div>
 
-          <ion-item>
-            <ion-textarea
-              label="Note (optional)"
-              labelPlacement="floating"
-              rows="3"
-              formControlName="note"
-            ></ion-textarea>
-          </ion-item>
-
-          <div class="actions">
+          <!-- Sticky save -->
+          <div class="save-bar">
             <ion-button type="submit" expand="block" [disabled]="form.invalid || saving()">
               <ion-icon name="save-outline" slot="start"></ion-icon>
               {{ saving() ? 'Saving…' : (mode() === 'edit' ? 'Save changes' : 'Add expense') }}
@@ -144,11 +174,75 @@ import { ExpensesStore } from './expenses.store';
     </ion-content>
   `,
   styles: [`
-    .actions { margin-top: 24px; }
-    .hint {
-      margin: 6px 16px 0;
-      font-size: 12px;
-      color: var(--ion-color-medium, #6b7280);
+    ion-content { --background: var(--artha-bg); }
+    .state { display: flex; justify-content: center; padding: 48px; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 16px; }
+
+    /* Amount hero */
+    .amount { text-align: center; padding: 14px 0 22px; }
+    .amount-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.2px;
+      color: var(--artha-text-subtle);
+    }
+    .amount-row {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      margin-top: 8px;
+    }
+    .cur { font-size: 26px; font-weight: 700; color: var(--artha-text-muted); }
+    .amount-input {
+      border: 0; outline: 0; background: transparent;
+      font-size: 46px; font-weight: 800; color: var(--artha-text);
+      width: 7ch; max-width: 60vw; text-align: center; padding: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .amount-input::placeholder { color: var(--artha-border-strong); }
+    .amount-input::-webkit-outer-spin-button,
+    .amount-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .amount-input { -moz-appearance: textfield; }
+
+    .section-label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+      color: var(--artha-text-subtle); margin: 16px 4px 8px;
+    }
+
+    /* Date chips */
+    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .chip {
+      border: 1px solid var(--artha-border); background: var(--artha-surface);
+      color: var(--artha-text-muted); font-size: 13px; font-weight: 600;
+      padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    }
+    .chip.sel {
+      background: var(--artha-accent); border-color: var(--artha-accent); color: #fff;
+    }
+    .chip-dt {
+      --background: var(--artha-surface);
+      --color: var(--artha-text-muted);
+      border: 1px solid var(--artha-border); border-radius: 999px;
+    }
+
+    /* Cards (match account-edit) */
+    .card {
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      box-shadow: var(--artha-shadow-sm);
+      overflow: hidden;
+    }
+    .card ion-item { --background: transparent; }
+    .excl-title { font-size: 14px; color: var(--artha-text); }
+    .excl-sub { font-size: 12px; color: var(--artha-text-muted); margin-top: 2px; }
+
+    /* Sticky save */
+    .save-bar {
+      position: sticky; bottom: 0;
+      background: var(--artha-bg);
+      box-shadow: 0 -1px 0 var(--artha-border);
+      padding: 12px 16px 14px;
+      max-width: 640px; margin: 0 auto;
+    }
+    @media (max-width: 767.98px) {
+      .save-bar { padding-bottom: 70px; } /* clear the mobile bottom tab bar */
     }
   `],
 })
@@ -246,6 +340,47 @@ export class ExpenseEditPage implements OnInit {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /** Currency symbol for the selected account, e.g. ₹ / $ / €. */
+  protected currencySymbol(): string {
+    const acc = this.accountsStore.byId()[this.form.controls.accountId.value];
+    const code = acc?.currency || 'INR';
+    try {
+      const parts = new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: code,
+      }).formatToParts(0);
+      return parts.find((p) => p.type === 'currency')?.value ?? code;
+    } catch {
+      return code;
+    }
+  }
+
+  protected selectAll(event: Event): void {
+    (event.target as HTMLInputElement | null)?.select();
+  }
+
+  protected isToday(): boolean {
+    return this.dateValue() === this.today();
+  }
+
+  protected isYesterday(): boolean {
+    return this.dateValue() === this.daysAgo(1);
+  }
+
+  protected setDate(days: number): void {
+    this.form.patchValue({ date: this.daysAgo(days) });
+  }
+
+  private dateValue(): string {
+    return this.toDateOnly(this.form.controls.date.value);
+  }
+
+  private daysAgo(days: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().slice(0, 10);
   }
 
   private today(): string {
