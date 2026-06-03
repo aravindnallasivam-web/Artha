@@ -209,3 +209,20 @@ ion-card-title,
     padding-inline: 8px;
   }
 }
+
+/* ============================================================
+ *  Floating action buttons vs. the mobile bottom tab bar
+ *  ------------------------------------------------------------
+ *  Below 768px the shell renders a fixed bottom tab bar (.m-tabs,
+ *  ~56px + safe-area). A bottom-anchored ion-fab (Add account /
+ *  category / planned expense) would otherwise sit *behind* it and
+ *  be untappable. Lift it clear of the bar. At >=768px the tab bar
+ *  is gone (side pane takes over), so no offset is needed.
+ * ============================================================ */
+@media (max-width: 767.98px) {
+  ion-fab[vertical="bottom"] {
+    /* Ionic already anchors the FAB at bottom: 10px + safe-area, so this
+       offset only needs to clear the ~56px tab bar itself. */
+    margin-bottom: 60px;
+  }
+}
