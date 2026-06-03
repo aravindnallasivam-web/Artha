@@ -17,6 +17,9 @@ const LAST_SEEN_KEY = 'artha.sms.lastSeen';
 // Learned "which Artha account does this SMS belong to" map, keyed by the
 // account's last-4 (or sender), built up from the user's confirmations.
 const ACCOUNT_MAP_KEY = 'artha.sms.accountMap';
+// Learned "which category does this merchant belong to" map, keyed by the
+// normalised merchant name.
+const CATEGORY_MAP_KEY = 'artha.sms.categoryMap';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -266,31 +269,66 @@ export class SmsCaptureService {
       componentProps: {
         parsed,
         duplicate,
-        categoryId: this.resolveCategoryId(parsed.suggestedCategory),
+        categoryId: this.resolveCategoryId(parsed),
         accountId: this.resolveAccountId(parsed),
       },
     });
     await modal.present();
-    const { role, data } = await modal.onWillDismiss<{ accountId?: string }>();
-    // Learn the account the user chose for this sender/account so future SMS
-    // from it map automatically.
-    if (role === 'saved' && data?.accountId) {
-      this.rememberAccount(parsed, data.accountId);
+    const { role, data } = await modal.onWillDismiss<{ accountId?: string; categoryId?: string }>();
+    // Learn the account + category the user chose, so future SMS from the same
+    // account/merchant map automatically.
+    if (role === 'saved') {
+      if (data?.accountId) {
+        this.rememberAccount(parsed, data.accountId);
+      }
+      if (data?.categoryId) {
+        this.rememberCategory(parsed, data.categoryId);
+      }
     }
   }
 
-  private resolveCategoryId(name: string | null): string {
-    if (!name) {
-      return '';
+  private resolveCategoryId(parsed: ParsedExpense): string {
+    const cats = this.categoriesStore.items().filter((c) => !c.archived);
+    // 1) A mapping the user taught us for this merchant.
+    const key = categoryKey(parsed.merchant);
+    if (key) {
+      const mapped = this.categoryMap()[key];
+      if (mapped && cats.some((c) => c.id === mapped)) {
+        return mapped;
+      }
     }
-    const lower = name.toLowerCase();
-    const match = this.categoriesStore
-      .items()
-      .find((c) => !c.archived && c.name.toLowerCase() === lower)
-      ?? this.categoriesStore
-        .items()
-        .find((c) => !c.archived && c.name.toLowerCase().includes(lower));
-    return match?.id ?? '';
+    // 2) Keyword-guessed category name matched against the user's categories.
+    const name = parsed.suggestedCategory;
+    if (name) {
+      const lower = name.toLowerCase();
+      const match = cats.find((c) => c.name.toLowerCase() === lower)
+        ?? cats.find((c) => c.name.toLowerCase().includes(lower));
+      if (match) {
+        return match.id;
+      }
+    }
+    return '';
+  }
+
+  private categoryMap(): Record<string, string> {
+    try {
+      return JSON.parse(localStorage.getItem(CATEGORY_MAP_KEY) ?? '{}') as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  private rememberCategory(parsed: ParsedExpense, categoryId: string): void {
+    const key = categoryKey(parsed.merchant);
+    if (!key) {
+      return;
+    }
+    const map = this.categoryMap();
+    if (map[key] === categoryId) {
+      return;
+    }
+    map[key] = categoryId;
+    localStorage.setItem(CATEGORY_MAP_KEY, JSON.stringify(map));
   }
 
   private resolveAccountId(parsed: ParsedExpense): string {
@@ -352,6 +390,11 @@ function normalizeSender(sender: string): string {
     .toUpperCase()
     .replace(/^[A-Z]{1,2}-/, '')
     .replace(/[^A-Z0-9]/g, '');
+}
+
+/** Normalised merchant key for category learning ("Swiggy*123" -> "swiggy123"). */
+function categoryKey(merchant: string | null): string {
+  return (merchant ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 /** Month prefix (YYYY-MM) of a YYYY-MM-DD date. */
