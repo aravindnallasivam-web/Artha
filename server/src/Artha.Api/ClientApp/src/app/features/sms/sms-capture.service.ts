@@ -14,6 +14,9 @@ const ENABLED_KEY = 'artha.sms.captureEnabled';
 // Watermark: epoch ms of the newest message we've already offered, so the
 // app-open/resume catch-up never re-prompts the same SMS.
 const LAST_SEEN_KEY = 'artha.sms.lastSeen';
+// Learned "which Artha account does this SMS belong to" map, keyed by the
+// account's last-4 (or sender), built up from the user's confirmations.
+const ACCOUNT_MAP_KEY = 'artha.sms.accountMap';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -264,11 +267,16 @@ export class SmsCaptureService {
         parsed,
         duplicate,
         categoryId: this.resolveCategoryId(parsed.suggestedCategory),
-        accountId: this.resolveAccountId(parsed.accountHint),
+        accountId: this.resolveAccountId(parsed),
       },
     });
     await modal.present();
-    await modal.onWillDismiss();
+    const { role, data } = await modal.onWillDismiss<{ accountId?: string }>();
+    // Learn the account the user chose for this sender/account so future SMS
+    // from it map automatically.
+    if (role === 'saved' && data?.accountId) {
+      this.rememberAccount(parsed, data.accountId);
+    }
   }
 
   private resolveCategoryId(name: string | null): string {
@@ -285,16 +293,65 @@ export class SmsCaptureService {
     return match?.id ?? '';
   }
 
-  private resolveAccountId(hint: string | null): string {
+  private resolveAccountId(parsed: ParsedExpense): string {
     const accounts = this.accountsStore.items().filter((a) => !a.archived);
-    if (hint) {
-      const byHint = accounts.find((a) => a.name.includes(hint));
+    // 1) A mapping the user taught us by confirming a prior SMS.
+    const mapped = this.accountMap()[accountKey(parsed)];
+    if (mapped && accounts.some((a) => a.id === mapped)) {
+      return mapped;
+    }
+    // 2) Heuristic: the account's last-4 appears in an account name.
+    if (parsed.accountHint) {
+      const byHint = accounts.find((a) => a.name.includes(parsed.accountHint!));
       if (byHint) {
         return byHint.id;
       }
     }
+    // 3) Fall back to the first account; the user's choice gets remembered.
     return accounts[0]?.id ?? '';
   }
+
+  private accountMap(): Record<string, string> {
+    try {
+      return JSON.parse(localStorage.getItem(ACCOUNT_MAP_KEY) ?? '{}') as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  private rememberAccount(parsed: ParsedExpense, accountId: string): void {
+    const key = accountKey(parsed);
+    if (!key) {
+      return;
+    }
+    const map = this.accountMap();
+    if (map[key] === accountId) {
+      return;
+    }
+    map[key] = accountId;
+    localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
+  }
+}
+
+/**
+ * Stable key for "which account does this SMS belong to": the mentioned
+ * account/card last-4 when present, otherwise the normalised sender. The last-4
+ * is the most reliable discriminator across a bank's many sender routes.
+ */
+function accountKey(p: ParsedExpense): string {
+  if (p.accountHint) {
+    return `h:${p.accountHint}`;
+  }
+  const sender = normalizeSender(p.sender);
+  return sender ? `s:${sender}` : '';
+}
+
+/** Strip the telecom operator prefix (e.g. "AD-HDFCBK" -> "HDFCBK"). */
+function normalizeSender(sender: string): string {
+  return (sender || '')
+    .toUpperCase()
+    .replace(/^[A-Z]{1,2}-/, '')
+    .replace(/[^A-Z0-9]/g, '');
 }
 
 /** Month prefix (YYYY-MM) of a YYYY-MM-DD date. */

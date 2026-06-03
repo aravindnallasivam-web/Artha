@@ -234,7 +234,9 @@ export class SmsConfirmModal implements OnInit {
         note: this.note?.trim() || null,
         excluded: this.excluded,
       });
-      await this.modalCtrl.dismiss(null, 'saved');
+      // Return the chosen account so the capture service can learn the
+      // SMS-account → Artha-account mapping for next time.
+      await this.modalCtrl.dismiss({ accountId: this.accountId }, 'saved');
     } catch {
       this.saving.set(false);
       await this.notifier.notifyError('Could not save the expense.');
