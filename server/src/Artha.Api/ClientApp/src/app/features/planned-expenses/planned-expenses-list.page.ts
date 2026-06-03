@@ -3,14 +3,14 @@ import { Component, OnInit, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   AlertController,
+  IonButton,
+  IonButtons,
   IonCard,
   IonCardContent,
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
   IonContent,
-  IonFab,
-  IonFabButton,
   IonHeader,
   IonIcon,
   IonItem,
@@ -36,14 +36,14 @@ import { PlannedExpensesStore } from './planned-expenses.store';
   standalone: true,
   imports: [
     CurrencyPipe,
+    IonButton,
+    IonButtons,
     IonCard,
     IonCardContent,
     IonCardHeader,
     IonCardSubtitle,
     IonCardTitle,
     IonContent,
-    IonFab,
-    IonFabButton,
     IonHeader,
     IonIcon,
     IonItem,
@@ -62,6 +62,11 @@ import { PlannedExpensesStore } from './planned-expenses.store';
     <ion-header>
       <ion-toolbar>
         <ion-title>Planned</ion-title>
+        <ion-buttons slot="end">
+          <ion-button (click)="add()" aria-label="Add planned expense">
+            <ion-icon slot="icon-only" name="add"></ion-icon>
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -117,12 +122,6 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           }
         </ion-list>
       }
-
-      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-        <ion-fab-button (click)="add()">
-          <ion-icon name="add"></ion-icon>
-        </ion-fab-button>
-      </ion-fab>
     </ion-content>
   `,
   styles: [`
