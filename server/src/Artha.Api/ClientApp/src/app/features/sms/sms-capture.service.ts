@@ -2,11 +2,15 @@ import { Injectable, inject } from '@angular/core';
 import { App } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
+import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
 import { SmsMessage, SmsReader } from '../../core/native/sms-reader';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
+import { ExpensesStore } from '../expenses/expenses.store';
+import { SettingsStore } from '../settings/settings.store';
+import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 
@@ -36,6 +40,9 @@ export class SmsCaptureService {
   private readonly categoriesStore = inject(CategoriesStore);
   private readonly accountsStore = inject(AccountsStore);
   private readonly expensesApi = inject(ExpensesApi);
+  private readonly expensesStore = inject(ExpensesStore);
+  private readonly settingsStore = inject(SettingsStore);
+  private readonly notifier = inject(ConflictNotifierService);
 
   private listener: PluginListenerHandle | null = null;
   private resumeBound = false;
@@ -154,8 +161,8 @@ export class SmsCaptureService {
 
   /**
    * One-off backfill: read the last `days` of inbox messages, parse them, and
-   * walk the user through a confirm dialog for each detected expense.
-   * Returns the number of expenses detected (offered for confirmation).
+   * show them all in one bulk-review list. Returns the number of expenses
+   * detected (so the caller can message "none found").
    */
   async scanInbox(days = 30): Promise<number> {
     if (!this.isSupported()) {
@@ -174,17 +181,84 @@ export class SmsCaptureService {
     const parsed = messages
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
+    if (parsed.length === 0) {
+      return 0;
+    }
 
     await this.ensureStores();
     // Pull existing expenses across the scanned months once, so we can flag
     // ones already logged instead of creating duplicates.
     const existing = await this.fetchExisting([...new Set(parsed.map((p) => monthOf(p.date)))]);
 
-    // Oldest-first so the confirm sequence reads chronologically.
-    for (const p of parsed.reverse()) {
-      await this.queue(() => this.openConfirm(p, this.findDuplicate(p, existing)));
+    // Newest first (matches the inbox order); duplicates start unticked.
+    const candidates: SmsCandidateRow[] = parsed.map((p) => {
+      const duplicate = this.findDuplicate(p, existing);
+      return {
+        parsed: p,
+        duplicate,
+        selected: !duplicate,
+        amount: p.amount,
+        date: p.date,
+        categoryId: this.resolveCategoryId(p),
+        accountId: this.resolveAccountId(p),
+        note: p.merchant ?? p.sender ?? null,
+        excluded: false,
+      };
+    });
+
+    const modal = await this.modalCtrl.create({
+      component: SmsBulkReviewModal,
+      componentProps: {
+        candidates,
+        categories: this.namedCategories(),
+        accounts: this.namedAccounts(),
+        currency: this.settingsStore.currency(),
+      },
+    });
+    await modal.present();
+    const { role, data } = await modal.onWillDismiss<{ rows: SmsCandidateRow[] }>();
+
+    if (role === 'save' && data?.rows?.length) {
+      let saved = 0;
+      for (const r of data.rows) {
+        if (!r.categoryId || !r.accountId || r.amount <= 0) {
+          continue;
+        }
+        try {
+          await this.expensesStore.add({
+            date: r.date,
+            amount: r.amount,
+            categoryId: r.categoryId,
+            accountId: r.accountId,
+            note: r.note?.trim() || null,
+            excluded: r.excluded,
+          });
+          this.rememberAccount(r.parsed, r.accountId);
+          this.rememberCategory(r.parsed, r.categoryId);
+          saved++;
+        } catch {
+          // Skip the failed row and keep going.
+        }
+      }
+      if (saved > 0) {
+        await this.notifier.notifyInfo(`Added ${saved} expense${saved === 1 ? '' : 's'} from SMS.`);
+      }
     }
     return parsed.length;
+  }
+
+  private namedCategories(): { id: string; name: string }[] {
+    return this.categoriesStore
+      .items()
+      .filter((c) => !c.archived)
+      .map((c) => ({ id: c.id, name: c.name }));
+  }
+
+  private namedAccounts(): { id: string; name: string }[] {
+    return this.accountsStore
+      .items()
+      .filter((a) => !a.archived)
+      .map((a) => ({ id: a.id, name: a.name }));
   }
 
   private async startWatching(): Promise<void> {

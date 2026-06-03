@@ -198,6 +198,16 @@ export class SmsConfirmModal implements OnInit {
   @Input() categoryId = '';
   /** Pre-resolved default account id (may be empty). */
   @Input() accountId = '';
+  /**
+   * 'create' (default): Save writes the expense and dismisses with role 'saved'.
+   * 'edit': used as the per-row editor in bulk review — Save returns the edited
+   * fields with role 'edited' and writes nothing.
+   */
+  @Input() mode: 'create' | 'edit' = 'create';
+  @Input() initialAmount?: number;
+  @Input() initialDate?: string;
+  @Input() initialNote?: string;
+  @Input() initialExcluded?: boolean;
 
   protected amount = 0;
   protected date = '';
@@ -211,9 +221,10 @@ export class SmsConfirmModal implements OnInit {
     this.accountsStore.items().filter((a) => !a.archived);
 
   ngOnInit(): void {
-    this.amount = this.parsed.amount;
-    this.date = this.parsed.date;
-    this.note = this.parsed.merchant ?? this.parsed.sender ?? '';
+    this.amount = this.initialAmount ?? this.parsed.amount;
+    this.date = this.initialDate ?? this.parsed.date;
+    this.note = this.initialNote ?? (this.parsed.merchant ?? this.parsed.sender ?? '');
+    this.excluded = this.initialExcluded ?? false;
   }
 
   protected canSave(): boolean {
@@ -222,6 +233,21 @@ export class SmsConfirmModal implements OnInit {
 
   protected async save(): Promise<void> {
     if (!this.canSave()) {
+      return;
+    }
+    // Bulk-review row editor: return the edited values, don't persist here.
+    if (this.mode === 'edit') {
+      await this.modalCtrl.dismiss(
+        {
+          amount: Number(this.amount),
+          date: this.date,
+          categoryId: this.categoryId,
+          accountId: this.accountId,
+          note: this.note?.trim() || null,
+          excluded: this.excluded,
+        },
+        'edited',
+      );
       return;
     }
     this.saving.set(true);
