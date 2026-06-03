@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+// Single source of truth for the human-facing version: ClientApp/package.json.
+// versionCode is the CI run number (monotonic, unique per build) and falls back
+// to 1 for local builds.
+def arthaVersionName = new groovy.json.JsonSlurper()
+        .parseText(file("../../package.json").text).version
+def arthaRunNumber = System.getenv("GITHUB_RUN_NUMBER")
+def arthaVersionCode = arthaRunNumber ? arthaRunNumber.toInteger() : 1
+
 android {
     namespace = "com.artha.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +15,8 @@ android {
         applicationId "com.artha.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode arthaVersionCode
+        versionName arthaVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
