@@ -1,3 +1,4 @@
+import { DecimalPipe } from '@angular/common';
 import { Component, Input, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
@@ -34,6 +35,7 @@ import { ParsedExpense } from './sms-parser';
   selector: 'artha-sms-confirm',
   standalone: true,
   imports: [
+    DecimalPipe,
     FormsModule,
     IonButton,
     IonButtons,
@@ -151,6 +153,12 @@ import { ParsedExpense } from './sms-parser';
         </ion-text>
       }
 
+      @if (parsed.balance != null) {
+        <ion-note class="bal">
+          Balance in SMS: {{ parsed.balance | number: '1.0-2' }} — the account's balance will update to this.
+        </ion-note>
+      }
+
       <ion-note class="raw">{{ parsed.raw }}</ion-note>
     </ion-content>
   `,
@@ -169,6 +177,7 @@ import { ParsedExpense } from './sms-parser';
     .dupe ion-icon { font-size: 20px; color: var(--artha-warning, #f59e0b); flex-shrink: 0; }
     .dupe-title { margin: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--artha-text); }
     .dupe-body { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--artha-text-muted); }
+    .bal { display: block; margin-top: 14px; font-size: 12.5px; color: var(--artha-accent); font-weight: 600; }
     .warn { font-size: 13px; }
     .raw {
       display: block;

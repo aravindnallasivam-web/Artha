@@ -11,6 +11,8 @@ export interface ParsedExpense {
   date: string;
   /** Canonical category name guessed from the merchant, or null. */
   suggestedCategory: string | null;
+  /** Available balance reported by the SMS, if any (to sync the account). */
+  balance: number | null;
   /** The sender address (bank short-code). */
   sender: string;
   /** Original message body, kept for the confirm dialog / note. */
@@ -24,6 +26,8 @@ const DEBIT_RE = /\b(debited|spent|withdrawn|withdrawal|purchase|paid|payment|de
 const CREDIT_RE = /\b(credited|received|refund|reversal|deposited|salary|cashback)\b/i;
 // "A/c XX1234", "card ending 1234", "Acct no. 5678".
 const ACCOUNT_RE = /\b(?:a\/c|acct|account|card)\b[^\d]{0,12}(\d{3,4})\b/i;
+// "Avl Bal Rs.45,000", "Available Balance: INR 45000", "A/c Bal: Rs 45000".
+const BALANCE_RE = /bal(?:ance)?\s*(?:is|:|-)?\s*(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
 // Merchant after a connective keyword.
 const MERCHANT_RE = /(?:\bat\s+|\bto\s+|\bvpa\s+|\binfo[:\-]\s*|\btowards\s+|\bfor\s+)([A-Za-z0-9][A-Za-z0-9 ._@&'\-*]{1,39})/i;
 // Messages we never want to treat as a transaction.
@@ -99,6 +103,10 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
   const merchantMatch = body.match(MERCHANT_RE);
   const merchant = merchantMatch ? cleanMerchant(merchantMatch[1]) : null;
   const accountMatch = body.match(ACCOUNT_RE);
+  const balanceMatch = body.match(BALANCE_RE);
+  const balance = balanceMatch
+    ? parseFloat(balanceMatch[1].replace(/,/g, ''))
+    : null;
 
   return {
     amount,
@@ -106,6 +114,7 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
     accountHint: accountMatch ? accountMatch[1] : null,
     date: toIsoDate(msg.date),
     suggestedCategory: guessCategory(merchant, body),
+    balance: balance !== null && isFinite(balance) ? balance : null,
     sender: msg.address ?? '',
     raw: body,
   };

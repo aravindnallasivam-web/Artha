@@ -226,6 +226,8 @@ export class SmsCaptureService {
 
     if (role === 'save' && data?.rows?.length) {
       let saved = 0;
+      // Rows are newest-first, so the first balance seen per account is newest.
+      const balanced = new Set<string>();
       for (const r of data.rows) {
         if (!r.categoryId || !r.accountId || r.amount <= 0) {
           continue;
@@ -241,6 +243,10 @@ export class SmsCaptureService {
           });
           this.rememberAccount(r.parsed, r.accountId);
           this.rememberCategory(r.parsed, r.categoryId);
+          if (r.parsed.balance != null && !balanced.has(r.accountId)) {
+            await this.syncBalance(r.accountId, r.parsed.balance);
+            balanced.add(r.accountId);
+          }
           saved++;
         } catch {
           // Skip the failed row and keep going.
@@ -372,14 +378,38 @@ export class SmsCaptureService {
     await modal.present();
     const { role, data } = await modal.onWillDismiss<{ accountId?: string; categoryId?: string }>();
     // Learn the account + category the user chose, so future SMS from the same
-    // account/merchant map automatically.
-    if (role === 'saved') {
-      if (data?.accountId) {
-        this.rememberAccount(parsed, data.accountId);
-      }
-      if (data?.categoryId) {
+    // account/merchant map automatically; sync the account balance from the SMS.
+    if (role === 'saved' && data?.accountId) {
+      this.rememberAccount(parsed, data.accountId);
+      if (data.categoryId) {
         this.rememberCategory(parsed, data.categoryId);
       }
+      if (parsed.balance != null) {
+        await this.syncBalance(data.accountId, parsed.balance);
+      }
+    }
+  }
+
+  /**
+   * Update an account's balance to the value the SMS reported. The app shows
+   * `openingBalance` as the account balance, so we write it there.
+   */
+  private async syncBalance(accountId: string, balance: number): Promise<void> {
+    const acc = this.accountsStore.items().find((a) => a.id === accountId);
+    if (!acc || acc.archived || Math.abs(acc.openingBalance - balance) < 0.005) {
+      return;
+    }
+    try {
+      await this.accountsStore.update(accountId, {
+        name: acc.name,
+        type: acc.type,
+        currency: acc.currency,
+        openingBalance: balance,
+        color: acc.color,
+        icon: acc.icon,
+      });
+    } catch {
+      // Balance sync is best-effort; never block expense capture.
     }
   }
 
