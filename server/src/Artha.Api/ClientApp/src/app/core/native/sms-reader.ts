@@ -9,6 +9,8 @@ export interface SmsMessage {
 
 export interface SmsPermissionStatus {
   sms: PermissionState;
+  /** POST_NOTIFICATIONS — for background "expense detected" alerts (Android 13+). */
+  notifications?: PermissionState;
 }
 
 export interface SmsReaderPlugin {

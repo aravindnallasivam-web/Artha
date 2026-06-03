@@ -34,6 +34,10 @@ import com.getcapacitor.annotation.Permission;
         @Permission(
             alias = "sms",
             strings = { Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS }
+        ),
+        @Permission(
+            alias = "notifications",
+            strings = { Manifest.permission.POST_NOTIFICATIONS }
         )
     }
 )
@@ -114,6 +118,11 @@ public class SmsReaderPlugin extends Plugin {
         receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
+                // Foreground only: when backgrounded/closed the manifest receiver
+                // posts a notification instead, so we don't double-handle.
+                if (!MainActivity.isForeground) {
+                    return;
+                }
                 SmsMessage[] parts = Telephony.Sms.Intents.getMessagesFromIntent(intent);
                 if (parts == null || parts.length == 0) {
                     return;

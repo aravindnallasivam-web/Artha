@@ -83,7 +83,7 @@ import { SettingsStore } from './settings.store';
               >
                 <ion-label>
                   <h2>Capture expenses from SMS</h2>
-                  <p>Detect bank debit messages and confirm them as expenses.</p>
+                  <p>Confirm bank debits as expenses — with a notification when Artha is closed.</p>
                 </ion-label>
               </ion-toggle>
             </ion-item>

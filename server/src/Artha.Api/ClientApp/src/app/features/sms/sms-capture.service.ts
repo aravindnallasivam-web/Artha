@@ -77,6 +77,11 @@ export class SmsCaptureService {
     if (status?.sms !== 'granted') {
       return false;
     }
+    // Best-effort: also request notification permission so background
+    // "expense detected" alerts can show (Android 13+). Never blocks capture.
+    if (status?.notifications !== 'granted') {
+      await SmsReader.requestPermissions().catch(() => null);
+    }
     localStorage.setItem(ENABLED_KEY, '1');
     // Start the watermark at "now" so we only catch messages from here on; use
     // "Scan recent messages" for historical backfill.
