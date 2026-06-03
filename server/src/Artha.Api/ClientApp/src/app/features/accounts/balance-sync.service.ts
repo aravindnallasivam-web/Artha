@@ -16,7 +16,7 @@ interface EnquiryOverride {
 
 const OVERRIDE_PREFIX = 'artha.banksync.';
 const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 45000;
+const POLL_TIMEOUT_MS = 90000;
 
 /**
  * "Sync balance" for an account: confirm/edit the bank's balance-enquiry SMS,

@@ -21,8 +21,9 @@ export interface ParsedExpense {
 
 // Amount like "Rs. 1,240.50", "INR 320", "₹2,899".
 const AMOUNT_RE = /(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
-// Spend verbs vs. incoming-money verbs.
-const DEBIT_RE = /\b(debited|spent|withdrawn|withdrawal|purchase|paid|payment|deducted|charged|debit)\b/i;
+// Spend verbs vs. incoming-money verbs. "sent"/"transferred" cover the newer
+// UPI alerts (e.g. HDFC "Sent Rs.70.00 From A/C .. To ..").
+const DEBIT_RE = /\b(debited|spent|sent|transferred|withdrawn|withdrawal|purchase|paid|payment|deducted|charged|debit)\b/i;
 const CREDIT_RE = /\b(credited|received|refund|reversal|deposited|salary|cashback)\b/i;
 // "A/c XX1234", "card ending 1234", "Acct no. 5678".
 const ACCOUNT_RE = /\b(?:a\/c|acct|account|card)\b[^\d]{0,12}(\d{3,4})\b/i;
@@ -43,9 +44,14 @@ const CATEGORY_KEYWORDS: { test: RegExp; category: string }[] = [
   { test: /pharmacy|apollo|medplus|hospital|clinic|medical|chemist|1mg|pharmeasy/i, category: 'Health' },
 ];
 
-/** Extract the available balance from any SMS body, or null. */
+// Balance-enquiry replies often put a whole clause between "balance" and the
+// amount, e.g. "Your Balance in account no. ending with 9772 is Rs. 44,453.57".
+// More lenient than BALANCE_RE (which expects the amount right after "bal").
+const BALANCE_REPLY_RE = /bal(?:ance)?\b[\s\S]{0,60}?(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+
+/** Extract the available balance from a balance-enquiry reply SMS, or null. */
 export function extractBalance(body: string): number | null {
-  const m = (body ?? '').match(BALANCE_RE);
+  const m = (body ?? '').match(BALANCE_REPLY_RE);
   if (!m) {
     return null;
   }

@@ -95,6 +95,30 @@ public sealed class AccountsEndpointTests : IClassFixture<ArthaTestFactory>
     }
 
     [Fact]
+    public async Task Post_And_Put_RoundTripBank()
+    {
+        var client = AuthedClient("user-acc-bank");
+
+        // Create with a bank — it should come back on the response...
+        var created = await client.PostAsJsonAsync("/api/accounts",
+            new AccountUpsertRequest("HDFC Savings", "savings", "INR", 1000m, null, null, "hdfc"));
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var dto = await created.Content.ReadFromJsonAsync<AccountDto>();
+        dto!.Bank.Should().Be("hdfc");
+
+        // ...and survive a re-fetch (proves it persists, not just echoes).
+        var list = await client.GetFromJsonAsync<List<AccountDto>>("/api/accounts");
+        list!.Should().ContainSingle(a => a.Id == dto.Id && a.Bank == "hdfc");
+
+        // PUT can change the bank.
+        var put = await client.PutAsJsonAsync($"/api/accounts/{dto.Id}",
+            new AccountUpsertRequest("HDFC Savings", "savings", "INR", 1000m, null, null, "icici"));
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await put.Content.ReadFromJsonAsync<AccountDto>();
+        updated!.Bank.Should().Be("icici");
+    }
+
+    [Fact]
     public async Task Delete_DefaultAccount_Returns400()
     {
         var client = AuthedClient("user-acc-no-default-del");

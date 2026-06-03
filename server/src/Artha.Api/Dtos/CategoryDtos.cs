@@ -11,3 +11,7 @@ public sealed record CategoryDto(
     string? Color,
     string? Icon,
     bool Archived);
+
+public sealed record CategoryMergeRequest(
+    string TargetId,
+    IReadOnlyList<string> SourceIds);
