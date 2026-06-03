@@ -31,6 +31,17 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
     }
 
     [Fact]
+    public async Task Get_Health_ListsBankSyncFeature()
+    {
+        var client = _factory.CreateClient();
+
+        var body = await client.GetStringAsync("/api/health");
+
+        // Lets a deployed build be identified without auth.
+        body.Should().Contain("account-bank-sync");
+    }
+
+    [Fact]
     public async Task Get_Me_WithoutToken_ReturnsUnauthorized()
     {
         var client = _factory.CreateClient();
