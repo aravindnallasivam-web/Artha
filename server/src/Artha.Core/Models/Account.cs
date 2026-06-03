@@ -12,7 +12,8 @@ public sealed record Account(
     decimal OpeningBalance,
     string? Color,
     string? Icon,
-    bool Archived);
+    bool Archived,
+    string? Bank = null);
 
 public static class AccountTypes
 {

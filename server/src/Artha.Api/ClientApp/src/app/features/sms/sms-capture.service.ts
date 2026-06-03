@@ -474,6 +474,7 @@ export class SmsCaptureService {
         openingBalance: balance,
         color: acc.color,
         icon: acc.icon,
+        bank: acc.bank,
       });
     } catch {
       // Balance sync is best-effort; never block expense capture.

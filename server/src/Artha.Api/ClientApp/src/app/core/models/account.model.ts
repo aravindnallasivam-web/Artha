@@ -9,6 +9,8 @@ export interface Account {
   color: string | null;
   icon: string | null;
   archived: boolean;
+  /** Bank preset id (e.g. 'hdfc') used for SMS balance sync, or null. */
+  bank: string | null;
 }
 
 export interface AccountUpsertRequest {
@@ -18,6 +20,7 @@ export interface AccountUpsertRequest {
   openingBalance: number;
   color: string | null;
   icon: string | null;
+  bank: string | null;
 }
 
 export const DEFAULT_ACCOUNT_ID = 'acc-cash';

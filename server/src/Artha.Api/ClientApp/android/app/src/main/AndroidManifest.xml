@@ -7,6 +7,8 @@
          after the user explicitly enables SMS capture in Settings. -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Send a balance-enquiry SMS to the bank when the user taps "Sync balance". -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- Post a notification when a bank SMS arrives while the app is closed. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

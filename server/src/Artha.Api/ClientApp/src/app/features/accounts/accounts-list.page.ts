@@ -3,6 +3,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import {
   AlertController,
+  IonButton,
   IonContent,
   IonFab,
   IonFabButton,
@@ -28,6 +29,7 @@ import {
   DEFAULT_ACCOUNT_ID,
 } from '../../core/models/account.model';
 import { AccountsStore } from './accounts.store';
+import { BalanceSyncService } from './balance-sync.service';
 
 @Component({
   selector: 'artha-accounts-list',
@@ -35,6 +37,7 @@ import { AccountsStore } from './accounts.store';
   imports: [
     CurrencyPipe,
     RouterLink,
+    IonButton,
     IonContent,
     IonFab,
     IonFabButton,
@@ -87,6 +90,17 @@ import { AccountsStore } from './accounts.store';
                   </h2>
                   <p>{{ typeLabel(acc) }} · {{ acc.currency }}</p>
                 </ion-label>
+                @if (canSync(acc)) {
+                  <ion-button
+                    slot="end"
+                    fill="clear"
+                    size="small"
+                    aria-label="Sync balance"
+                    (click)="syncBalance($event, acc)"
+                  >
+                    <ion-icon name="sync-outline" slot="icon-only"></ion-icon>
+                  </ion-button>
+                }
                 <ion-note slot="end" class="balance">
                   {{ acc.openingBalance | currency: acc.currency }}
                 </ion-note>
@@ -128,8 +142,18 @@ export class AccountsListPage implements OnInit {
   private readonly router = inject(Router);
   private readonly alertCtrl = inject(AlertController);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly balanceSync = inject(BalanceSyncService);
 
   protected readonly defaultAccountId = DEFAULT_ACCOUNT_ID;
+
+  protected canSync(acc: Account): boolean {
+    return this.balanceSync.isSupported() && !!acc.bank && !acc.archived;
+  }
+
+  protected syncBalance(event: Event, acc: Account): void {
+    event.stopPropagation();
+    void this.balanceSync.syncBalance(acc);
+  }
 
   ngOnInit(): void {
     void this.store.load();

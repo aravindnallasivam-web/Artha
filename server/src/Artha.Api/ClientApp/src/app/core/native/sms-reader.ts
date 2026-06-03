@@ -11,6 +11,8 @@ export interface SmsPermissionStatus {
   sms: PermissionState;
   /** POST_NOTIFICATIONS — for background "expense detected" alerts (Android 13+). */
   notifications?: PermissionState;
+  /** SEND_SMS — for the balance-enquiry "Sync balance" action. */
+  send?: PermissionState;
 }
 
 export interface SmsReaderPlugin {
@@ -21,6 +23,8 @@ export interface SmsReaderPlugin {
   /** Begin emitting `smsReceived` for each incoming message. */
   startWatch(): Promise<void>;
   stopWatch(): Promise<void>;
+  /** Send a balance-enquiry SMS to the bank (requires SEND_SMS). */
+  sendSms(options: { to: string; body: string }): Promise<void>;
   /** Persist the normalised ignored-sender list so the background receiver skips them. */
   setIgnoredSenders(options: { senders: string[] }): Promise<void>;
   addListener(

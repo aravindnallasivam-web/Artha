@@ -43,6 +43,16 @@ const CATEGORY_KEYWORDS: { test: RegExp; category: string }[] = [
   { test: /pharmacy|apollo|medplus|hospital|clinic|medical|chemist|1mg|pharmeasy/i, category: 'Health' },
 ];
 
+/** Extract the available balance from any SMS body, or null. */
+export function extractBalance(body: string): number | null {
+  const m = (body ?? '').match(BALANCE_RE);
+  if (!m) {
+    return null;
+  }
+  const value = parseFloat(m[1].replace(/,/g, ''));
+  return isFinite(value) ? value : null;
+}
+
 function guessCategory(merchant: string | null, body: string): string | null {
   const hay = `${merchant ?? ''} ${body}`;
   for (const { test, category } of CATEGORY_KEYWORDS) {

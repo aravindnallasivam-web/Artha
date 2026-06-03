@@ -9,6 +9,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Telephony;
+import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 
 import com.getcapacitor.JSArray;
@@ -38,6 +39,10 @@ import com.getcapacitor.annotation.Permission;
         @Permission(
             alias = "notifications",
             strings = { Manifest.permission.POST_NOTIFICATIONS }
+        ),
+        @Permission(
+            alias = "send",
+            strings = { Manifest.permission.SEND_SMS }
         )
     }
 )
@@ -109,6 +114,30 @@ public class SmsReaderPlugin extends Plugin {
     public void stopWatch(PluginCall call) {
         unregisterReceiverSafely();
         call.resolve();
+    }
+
+    /** Send a balance-enquiry SMS to the bank. */
+    @PluginMethod
+    public void sendSms(PluginCall call) {
+        if (getPermissionState("send") != PermissionState.GRANTED) {
+            call.reject("SEND_SMS permission not granted");
+            return;
+        }
+        String to = call.getString("to");
+        String body = call.getString("body");
+        if (to == null || to.trim().isEmpty() || body == null || body.trim().isEmpty()) {
+            call.reject("Missing 'to' or 'body'");
+            return;
+        }
+        try {
+            SmsManager sms = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? getContext().getSystemService(SmsManager.class)
+                : SmsManager.getDefault();
+            sms.sendTextMessage(to.trim(), null, body, null, null);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not send SMS: " + e.getMessage());
+        }
     }
 
     /** Persist the (already-normalised) ignored senders for the background receiver. */

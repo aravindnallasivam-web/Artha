@@ -63,7 +63,8 @@ public sealed class AccountsController : ControllerBase
             OpeningBalance: request.OpeningBalance,
             Color: request.Color,
             Icon: request.Icon,
-            Archived: false);
+            Archived: false,
+            Bank: request.Bank);
 
         var next = new AccountList(SchemaVersions.Current, list.Append(created).ToArray());
         await ctx.AccountRepo.WriteAsync(DriveFileNames.Accounts, next, existing?.ETag, cancellationToken);
@@ -105,6 +106,7 @@ public sealed class AccountsController : ControllerBase
             OpeningBalance = request.OpeningBalance,
             Color = request.Color,
             Icon = request.Icon,
+            Bank = request.Bank,
         };
 
         await ctx.AccountRepo.WriteAsync(
@@ -195,7 +197,7 @@ public sealed class AccountsController : ControllerBase
     }
 
     private static AccountDto ToDto(Account a) =>
-        new(a.Id, a.Name, a.Type, a.Currency, a.OpeningBalance, a.Color, a.Icon, a.Archived);
+        new(a.Id, a.Name, a.Type, a.Currency, a.OpeningBalance, a.Color, a.Icon, a.Archived, a.Bank);
 
     private static ProblemDetails Problem400(string detail) => new()
     {
