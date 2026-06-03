@@ -13,6 +13,7 @@ import { authInterceptor } from './core/auth/auth.interceptor';
 import { GoogleAuthService } from './core/auth/google-auth.service';
 import { SessionService } from './core/auth/session.service';
 import { NativeUiService } from './core/native/native-ui.service';
+import { SmsCaptureService } from './features/sms/sms-capture.service';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -34,9 +35,13 @@ export const appConfig: ApplicationConfig = {
       const session = inject(SessionService);
       const googleAuth = inject(GoogleAuthService);
       const nativeUi = inject(NativeUiService);
+      const smsCapture = inject(SmsCaptureService);
       await session.restoreFromNativeIfNeeded();
       googleAuth.initializeMobileAuthListener();
       await nativeUi.initialize();
+      // Resume the SMS watcher if the user enabled capture previously.
+      // No-op on web/iOS and when disabled.
+      void smsCapture.init();
     }),
   ],
 };

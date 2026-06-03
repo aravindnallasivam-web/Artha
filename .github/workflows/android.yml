@@ -49,6 +49,12 @@ jobs:
       - name: Install web dependencies
         run: npm ci
 
+      # Human-facing version comes from package.json; versionCode is derived
+      # from the run number inside build.gradle (via GITHUB_RUN_NUMBER).
+      - name: Read app version
+        id: version
+        run: echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Build web bundle (mobile configuration)
         run: npm run build:mobile
 
@@ -61,8 +67,14 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
+      # Stamp the version + build number onto the APK file itself, so a
+      # downloaded artifact is self-identifying.
+      - name: Name the APK with the version
+        working-directory: server/src/Artha.Api/ClientApp/android/app/build/outputs/apk/debug
+        run: mv app-debug.apk "artha-v${{ steps.version.outputs.name }}-build${{ github.run_number }}-debug.apk"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: artha-android-debug-apk
+          name: artha-android-v${{ steps.version.outputs.name }}-build${{ github.run_number }}
           path: server/src/Artha.Api/ClientApp/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

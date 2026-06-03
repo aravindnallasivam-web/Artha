@@ -8,7 +8,8 @@ public sealed record AccountDto(
     decimal OpeningBalance,
     string? Color,
     string? Icon,
-    bool Archived);
+    bool Archived,
+    string? Bank = null);
 
 public sealed record AccountUpsertRequest(
     string Name,
@@ -16,4 +17,5 @@ public sealed record AccountUpsertRequest(
     string Currency,
     decimal OpeningBalance,
     string? Color,
-    string? Icon);
+    string? Icon,
+    string? Bank = null);
