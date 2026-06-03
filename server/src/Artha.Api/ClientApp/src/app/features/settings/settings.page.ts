@@ -1,7 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
-  IonButton,
   IonContent,
   IonHeader,
   IonIcon,
@@ -30,7 +29,6 @@ import { SettingsStore } from './settings.store';
   selector: 'artha-settings',
   standalone: true,
   imports: [
-    IonButton,
     IonContent,
     IonHeader,
     IonIcon,
@@ -53,16 +51,16 @@ import { SettingsStore } from './settings.store';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="ion-padding">
+    <ion-content>
       @if (store.loading()) {
-        <ion-spinner></ion-spinner>
+        <div class="loading"><ion-spinner></ion-spinner></div>
       } @else {
         <ion-list inset="true">
           <ion-list-header><ion-label>Preferences</ion-label></ion-list-header>
-          <ion-item>
+          <ion-item lines="none">
             <ion-select
               label="Currency"
-              labelPlacement="floating"
+              labelPlacement="stacked"
               [value]="store.currency()"
               interface="popover"
               (ionChange)="onCurrencyChange($event)"
@@ -79,32 +77,36 @@ import { SettingsStore } from './settings.store';
             <ion-list-header><ion-label>Automation</ion-label></ion-list-header>
             <ion-item>
               <ion-toggle
+                labelPlacement="start"
+                justify="space-between"
                 [checked]="smsEnabled()"
                 [disabled]="smsBusy()"
                 (ionChange)="onSmsToggle($event)"
               >
-                <ion-label>
+                <ion-label class="ion-text-wrap">
                   <h2>Capture expenses from SMS</h2>
                   <p>Confirm bank debits as expenses — with a notification when Artha is closed.</p>
                 </ion-label>
               </ion-toggle>
             </ion-item>
-            <ion-item button [disabled]="smsBusy()" (click)="scanSms()">
-              <ion-icon name="search-outline" slot="start"></ion-icon>
+            <ion-item button detail="false" [disabled]="smsBusy()" (click)="scanSms()">
+              <ion-icon name="search-outline" slot="start" color="medium"></ion-icon>
               <ion-label>Scan recent messages</ion-label>
               @if (smsBusy()) { <ion-spinner slot="end"></ion-spinner> }
             </ion-item>
             @if (smsIgnoredCount() > 0) {
               <ion-item button (click)="manageIgnored()">
-                <ion-icon name="close-outline" slot="start"></ion-icon>
+                <ion-icon name="close-outline" slot="start" color="medium"></ion-icon>
                 <ion-label>Ignored senders</ion-label>
                 <ion-note slot="end">{{ smsIgnoredCount() }}</ion-note>
               </ion-item>
             }
-            <ion-item lines="none">
-              <ion-note>
-                Reads bank SMS on this device only — messages are never uploaded.
-              </ion-note>
+            <ion-item lines="none" class="footnote">
+              <ion-label class="ion-text-wrap">
+                <ion-note color="medium">
+                  Reads bank SMS on this device only — messages are never uploaded.
+                </ion-note>
+              </ion-label>
             </ion-item>
           </ion-list>
         }
@@ -112,23 +114,35 @@ import { SettingsStore } from './settings.store';
         <ion-list inset="true">
           <ion-list-header><ion-label>Account</ion-label></ion-list-header>
           @if (session.currentUser(); as user) {
-            <ion-item>
-              <ion-label>
+            <ion-item lines="full">
+              <ion-icon name="person-circle-outline" slot="start" color="medium" class="avatar"></ion-icon>
+              <ion-label class="ion-text-wrap">
                 <h2>{{ user.name }}</h2>
                 <p>{{ user.email }}</p>
               </ion-label>
             </ion-item>
           }
-          <ion-item>
-            <ion-button slot="end" fill="clear" color="danger" (click)="signOut()">
-              <ion-icon name="log-out-outline" slot="start"></ion-icon>
-              Sign out
-            </ion-button>
+          <ion-item button detail="false" (click)="signOut()">
+            <ion-icon name="log-out-outline" slot="start" color="danger"></ion-icon>
+            <ion-label color="danger">Sign out</ion-label>
           </ion-item>
         </ion-list>
       }
     </ion-content>
   `,
+  styles: [`
+    .loading {
+      display: flex; align-items: center; justify-content: center; padding: 48px;
+    }
+    ion-list-header ion-label {
+      font-size: 13px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.4px; color: var(--ion-color-medium);
+    }
+    .footnote { --min-height: 0; }
+    .footnote ion-note { font-size: 12.5px; line-height: 1.45; }
+    .avatar { font-size: 34px; }
+    h2 { font-weight: 600; }
+  `],
 })
 export class SettingsPage implements OnInit {
   protected readonly store = inject(SettingsStore);
