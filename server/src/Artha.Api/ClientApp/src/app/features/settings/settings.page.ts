@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   IonButton,
@@ -9,16 +9,19 @@ import {
   IonLabel,
   IonList,
   IonListHeader,
+  IonNote,
   IonSelect,
   IonSelectOption,
   IonSpinner,
   IonTitle,
+  IonToggle,
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
+import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SettingsStore } from './settings.store';
 
 @Component({
@@ -33,10 +36,12 @@ import { SettingsStore } from './settings.store';
     IonLabel,
     IonList,
     IonListHeader,
+    IonNote,
     IonSelect,
     IonSelectOption,
     IonSpinner,
     IonTitle,
+    IonToggle,
     IonToolbar,
   ],
   template: `
@@ -67,6 +72,34 @@ import { SettingsStore } from './settings.store';
           </ion-item>
         </ion-list>
 
+        @if (sms.isSupported()) {
+          <ion-list inset="true">
+            <ion-list-header><ion-label>Automation</ion-label></ion-list-header>
+            <ion-item>
+              <ion-toggle
+                [checked]="smsEnabled()"
+                [disabled]="smsBusy()"
+                (ionChange)="onSmsToggle($event)"
+              >
+                <ion-label>
+                  <h2>Capture expenses from SMS</h2>
+                  <p>Detect bank debit messages and confirm them as expenses.</p>
+                </ion-label>
+              </ion-toggle>
+            </ion-item>
+            <ion-item button [disabled]="smsBusy()" (click)="scanSms()">
+              <ion-icon name="search-outline" slot="start"></ion-icon>
+              <ion-label>Scan recent messages</ion-label>
+              @if (smsBusy()) { <ion-spinner slot="end"></ion-spinner> }
+            </ion-item>
+            <ion-item lines="none">
+              <ion-note>
+                Reads bank SMS on this device only — messages are never uploaded.
+              </ion-note>
+            </ion-item>
+          </ion-list>
+        }
+
         <ion-list inset="true">
           <ion-list-header><ion-label>Account</ion-label></ion-list-header>
           @if (session.currentUser(); as user) {
@@ -91,14 +124,55 @@ import { SettingsStore } from './settings.store';
 export class SettingsPage implements OnInit {
   protected readonly store = inject(SettingsStore);
   protected readonly session = inject(SessionService);
+  protected readonly sms = inject(SmsCaptureService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
 
   protected readonly currencies = SUPPORTED_CURRENCIES;
+  protected readonly smsEnabled = signal(false);
+  protected readonly smsBusy = signal(false);
 
   ngOnInit(): void {
     void this.store.load();
+    this.smsEnabled.set(this.sms.isEnabled());
+  }
+
+  async onSmsToggle(event: Event): Promise<void> {
+    const checked = (event as CustomEvent<{ checked: boolean }>).detail?.checked;
+    if (checked === this.smsEnabled()) {
+      return;
+    }
+    this.smsBusy.set(true);
+    try {
+      if (checked) {
+        const granted = await this.sms.enable();
+        this.smsEnabled.set(granted);
+        await (granted
+          ? this.notifier.notifyInfo('SMS capture on. New bank messages will prompt to log.')
+          : this.notifier.notifyError('SMS permission denied — capture stays off.'));
+      } else {
+        await this.sms.disable();
+        this.smsEnabled.set(false);
+        await this.notifier.notifyInfo('SMS capture turned off.');
+      }
+    } finally {
+      this.smsBusy.set(false);
+    }
+  }
+
+  async scanSms(): Promise<void> {
+    this.smsBusy.set(true);
+    try {
+      const count = await this.sms.scanInbox();
+      if (count === 0) {
+        await this.notifier.notifyInfo('No recent bank expense messages found.');
+      }
+    } catch {
+      await this.notifier.notifyError('Could not scan messages.');
+    } finally {
+      this.smsBusy.set(false);
+    }
   }
 
   async onCurrencyChange(event: Event): Promise<void> {

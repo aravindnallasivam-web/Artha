@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Read & receive SMS so Artha can detect bank transaction messages and
+         offer to log them as expenses. Android-only; parsing happens entirely
+         on-device. These are sensitive permissions and are only requested
+         after the user explicitly enables SMS capture in Settings. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
