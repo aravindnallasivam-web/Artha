@@ -44,9 +44,14 @@ const CATEGORY_KEYWORDS: { test: RegExp; category: string }[] = [
   { test: /pharmacy|apollo|medplus|hospital|clinic|medical|chemist|1mg|pharmeasy/i, category: 'Health' },
 ];
 
-/** Extract the available balance from any SMS body, or null. */
+// Balance-enquiry replies often put a whole clause between "balance" and the
+// amount, e.g. "Your Balance in account no. ending with 9772 is Rs. 44,453.57".
+// More lenient than BALANCE_RE (which expects the amount right after "bal").
+const BALANCE_REPLY_RE = /bal(?:ance)?\b[\s\S]{0,60}?(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+
+/** Extract the available balance from a balance-enquiry reply SMS, or null. */
 export function extractBalance(body: string): number | null {
-  const m = (body ?? '').match(BALANCE_RE);
+  const m = (body ?? '').match(BALANCE_REPLY_RE);
   if (!m) {
     return null;
   }
