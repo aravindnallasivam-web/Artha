@@ -21,8 +21,9 @@ export interface ParsedExpense {
 
 // Amount like "Rs. 1,240.50", "INR 320", "₹2,899".
 const AMOUNT_RE = /(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
-// Spend verbs vs. incoming-money verbs.
-const DEBIT_RE = /\b(debited|spent|withdrawn|withdrawal|purchase|paid|payment|deducted|charged|debit)\b/i;
+// Spend verbs vs. incoming-money verbs. "sent"/"transferred" cover the newer
+// UPI alerts (e.g. HDFC "Sent Rs.70.00 From A/C .. To ..").
+const DEBIT_RE = /\b(debited|spent|sent|transferred|withdrawn|withdrawal|purchase|paid|payment|deducted|charged|debit)\b/i;
 const CREDIT_RE = /\b(credited|received|refund|reversal|deposited|salary|cashback)\b/i;
 // "A/c XX1234", "card ending 1234", "Acct no. 5678".
 const ACCOUNT_RE = /\b(?:a\/c|acct|account|card)\b[^\d]{0,12}(\d{3,4})\b/i;
