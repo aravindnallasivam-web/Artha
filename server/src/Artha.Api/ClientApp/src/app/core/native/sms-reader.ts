@@ -21,6 +21,8 @@ export interface SmsReaderPlugin {
   /** Begin emitting `smsReceived` for each incoming message. */
   startWatch(): Promise<void>;
   stopWatch(): Promise<void>;
+  /** Persist the normalised ignored-sender list so the background receiver skips them. */
+  setIgnoredSenders(options: { senders: string[] }): Promise<void>;
   addListener(
     eventName: 'smsReceived',
     listenerFunc: (message: SmsMessage) => void,

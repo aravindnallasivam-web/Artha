@@ -15,6 +15,7 @@ import {
   ModalController,
 } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
+import { SmsCaptureService } from './sms-capture.service';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { ParsedExpense } from './sms-parser';
 
@@ -110,6 +111,7 @@ interface NamedRef {
                 <div class="line2">
                   {{ row.date }} · {{ row.parsed.sender }}
                   @if (row.duplicate) { <span class="dup">DUPLICATE</span> }
+                  <button type="button" class="ignore" (click)="ignore($event, i)">Ignore sender</button>
                 </div>
               </div>
 
@@ -187,6 +189,10 @@ interface NamedRef {
       font-size: 9px; font-weight: 700; letter-spacing: 0.03em;
       background: var(--artha-warning-tint, #fef3c7); color: #92400e;
     }
+    .ignore {
+      margin-left: 8px; padding: 0; border: 0; background: none; cursor: pointer;
+      font-size: 11px; font-weight: 600; color: var(--artha-negative);
+    }
     .selects { grid-area: selects; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .selects ion-select {
       --padding-start: 10px; --padding-end: 8px;
@@ -198,6 +204,7 @@ interface NamedRef {
 })
 export class SmsBulkReviewModal implements OnInit {
   private readonly modalCtrl = inject(ModalController);
+  private readonly sms = inject(SmsCaptureService);
 
   @Input({ required: true }) candidates: SmsCandidateRow[] = [];
   @Input() categories: NamedRef[] = [];
@@ -258,6 +265,17 @@ export class SmsBulkReviewModal implements OnInit {
     if (role === 'edited' && data) {
       this.patch(i, { ...data, selected: true });
     }
+  }
+
+  /** Ignore this sender from now on and drop its rows from the list. */
+  protected ignore(event: Event, i: number): void {
+    event.stopPropagation();
+    const sender = this.rows()[i]?.parsed.sender;
+    if (!sender) {
+      return;
+    }
+    this.sms.ignoreSender(sender);
+    this.rows.update((rs) => rs.filter((r) => r.parsed.sender !== sender));
   }
 
   protected cancel(): void {

@@ -24,6 +24,10 @@ import java.util.regex.Pattern;
  */
 public class SmsBackgroundReceiver extends BroadcastReceiver {
 
+    /** SharedPreferences the JS layer writes the ignored-sender list into. */
+    static final String PREFS = "artha_sms";
+    static final String KEY_IGNORED = "ignored_senders";
+
     private static final String CHANNEL_ID = "artha_sms";
     private static final int NOTIF_ID = 4201;
 
@@ -48,10 +52,20 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             return;
         }
         StringBuilder sb = new StringBuilder();
+        String address = "";
         for (SmsMessage part : parts) {
-            if (part != null) {
-                sb.append(part.getMessageBody());
+            if (part == null) {
+                continue;
             }
+            sb.append(part.getMessageBody());
+            String from = part.getOriginatingAddress();
+            if (from != null) {
+                address = from;
+            }
+        }
+        // Respect the user's ignored-sender list.
+        if (isIgnored(context, address)) {
+            return;
         }
         String body = sb.toString();
         if (body.isEmpty() || NOISE.matcher(body).find()) {
@@ -66,6 +80,30 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         }
 
         postNotification(context, amount.group(1));
+    }
+
+    private boolean isIgnored(Context ctx, String sender) {
+        if (sender == null || sender.isEmpty()) {
+            return false;
+        }
+        String csv = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_IGNORED, "");
+        if (csv == null || csv.isEmpty()) {
+            return false;
+        }
+        String norm = normalizeSender(sender);
+        for (String s : csv.split(",")) {
+            if (!s.isEmpty() && s.equals(norm)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Must match the JS normalizeSender(): strip operator prefix, keep A-Z0-9. */
+    private static String normalizeSender(String sender) {
+        return sender.toUpperCase()
+            .replaceFirst("^[A-Z]{1,2}-", "")
+            .replaceAll("[^A-Z0-9]", "");
     }
 
     private void postNotification(Context context, String amount) {

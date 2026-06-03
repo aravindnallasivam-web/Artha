@@ -16,12 +16,14 @@ import {
   IonTitle,
   IonToggle,
   IonToolbar,
+  ModalController,
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
 import { SmsCaptureService } from '../sms/sms-capture.service';
+import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
 import { SettingsStore } from './settings.store';
 
 @Component({
@@ -92,6 +94,13 @@ import { SettingsStore } from './settings.store';
               <ion-label>Scan recent messages</ion-label>
               @if (smsBusy()) { <ion-spinner slot="end"></ion-spinner> }
             </ion-item>
+            @if (smsIgnoredCount() > 0) {
+              <ion-item button (click)="manageIgnored()">
+                <ion-icon name="close-outline" slot="start"></ion-icon>
+                <ion-label>Ignored senders</ion-label>
+                <ion-note slot="end">{{ smsIgnoredCount() }}</ion-note>
+              </ion-item>
+            }
             <ion-item lines="none">
               <ion-note>
                 Reads bank SMS on this device only — messages are never uploaded.
@@ -128,14 +137,24 @@ export class SettingsPage implements OnInit {
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly modalCtrl = inject(ModalController);
 
   protected readonly currencies = SUPPORTED_CURRENCIES;
   protected readonly smsEnabled = signal(false);
   protected readonly smsBusy = signal(false);
+  protected readonly smsIgnoredCount = signal(0);
 
   ngOnInit(): void {
     void this.store.load();
     this.smsEnabled.set(this.sms.isEnabled());
+    this.smsIgnoredCount.set(this.sms.ignoredCount());
+  }
+
+  async manageIgnored(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: SmsIgnoredSendersModal });
+    await modal.present();
+    await modal.onWillDismiss();
+    this.smsIgnoredCount.set(this.sms.ignoredCount());
   }
 
   async onSmsToggle(event: Event): Promise<void> {
@@ -172,6 +191,7 @@ export class SettingsPage implements OnInit {
       await this.notifier.notifyError('Could not scan messages.');
     } finally {
       this.smsBusy.set(false);
+      this.smsIgnoredCount.set(this.sms.ignoredCount());
     }
   }
 

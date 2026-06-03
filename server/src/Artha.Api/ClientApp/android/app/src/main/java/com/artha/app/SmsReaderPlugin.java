@@ -111,6 +111,34 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Persist the (already-normalised) ignored senders for the background receiver. */
+    @PluginMethod
+    public void setIgnoredSenders(PluginCall call) {
+        JSArray senders = call.getArray("senders");
+        StringBuilder csv = new StringBuilder();
+        if (senders != null) {
+            try {
+                for (Object value : senders.toList()) {
+                    if (value == null) {
+                        continue;
+                    }
+                    if (csv.length() > 0) {
+                        csv.append(",");
+                    }
+                    csv.append(value.toString());
+                }
+            } catch (org.json.JSONException ignored) {
+                // Leave whatever we accumulated.
+            }
+        }
+        getContext()
+            .getSharedPreferences(SmsBackgroundReceiver.PREFS, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString(SmsBackgroundReceiver.KEY_IGNORED, csv.toString())
+            .apply();
+        call.resolve();
+    }
+
     private void registerReceiver() {
         if (receiver != null) {
             return;

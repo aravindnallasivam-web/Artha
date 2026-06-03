@@ -25,6 +25,8 @@ const ACCOUNT_MAP_KEY = 'artha.sms.accountMap';
 // Learned "which category does this merchant belong to" map, keyed by the
 // normalised merchant name.
 const CATEGORY_MAP_KEY = 'artha.sms.categoryMap';
+// Senders the user has chosen to ignore (normalised), skipped everywhere.
+const IGNORED_KEY = 'artha.sms.ignoredSenders';
 
 /**
  * Coordinates SMS-based expense capture (Android only):
@@ -48,6 +50,61 @@ export class SmsCaptureService {
   private resumeBound = false;
   // Serialise confirm dialogs so live messages never stack on top of each other.
   private chain: Promise<void> = Promise.resolve();
+  // In-memory cache of ignored senders (normalised) for synchronous checks.
+  private readonly ignored = new Set<string>(this.loadIgnored());
+
+  // ----- Ignored senders -----
+
+  /** Normalised senders the user has chosen to skip. */
+  ignoredSenders(): string[] {
+    return [...this.ignored];
+  }
+
+  ignoredCount(): number {
+    return this.ignored.size;
+  }
+
+  /** Skip all future messages from this sender (scan + live + background). */
+  ignoreSender(rawSender: string): void {
+    const key = normalizeSender(rawSender);
+    if (!key || this.ignored.has(key)) {
+      return;
+    }
+    this.ignored.add(key);
+    this.persistIgnored();
+  }
+
+  /** Stop ignoring a sender. */
+  unignoreSender(normalized: string): void {
+    if (this.ignored.delete(normalized)) {
+      this.persistIgnored();
+    }
+  }
+
+  private isIgnored(sender: string): boolean {
+    return this.ignored.has(normalizeSender(sender));
+  }
+
+  private loadIgnored(): string[] {
+    try {
+      return JSON.parse(localStorage.getItem(IGNORED_KEY) ?? '[]') as string[];
+    } catch {
+      return [];
+    }
+  }
+
+  private persistIgnored(): void {
+    localStorage.setItem(IGNORED_KEY, JSON.stringify([...this.ignored]));
+    void this.syncIgnoredToNative();
+  }
+
+  /** Push the blocklist to the native side so the background receiver honours it. */
+  private async syncIgnoredToNative(): Promise<void> {
+    if (!this.isSupported()) {
+      return;
+    }
+    await SmsReader.setIgnoredSenders({ senders: [...this.ignored] }).catch(() => undefined);
+  }
 
   /** SMS capture only exists on Android. */
   isSupported(): boolean {
@@ -68,6 +125,7 @@ export class SmsCaptureService {
       return;
     }
     this.bindResume();
+    void this.syncIgnoredToNative();
     if (!this.isEnabled()) {
       return;
     }
@@ -129,6 +187,7 @@ export class SmsCaptureService {
     this.setLastSeen(Date.now());
 
     const parsed = messages
+      .filter((m) => !this.isIgnored(m.address))
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
     if (parsed.length === 0) {
@@ -184,7 +243,7 @@ export class SmsCaptureService {
 
     const { messages } = await SmsReader.readInbox({ since: range.fromMs, limit: 1000 });
     const parsed = messages
-      .filter((m) => m.date <= range.toMs)
+      .filter((m) => m.date <= range.toMs && !this.isIgnored(m.address))
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
     if (parsed.length === 0) {
@@ -300,6 +359,9 @@ export class SmsCaptureService {
   }
 
   private handleIncoming(msg: SmsMessage): void {
+    if (this.isIgnored(msg.address)) {
+      return;
+    }
     // Move the watermark past this message so the resume catch-up won't re-offer it.
     if (msg.date) {
       this.setLastSeen(Math.max(this.getLastSeen(), msg.date + 1));
