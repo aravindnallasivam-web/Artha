@@ -87,6 +87,39 @@
   --ion-color-step-600: #334155;
   --ion-color-step-700: #1e293b;
   --ion-color-step-800: #0f172a;
+
+  /* Native safe-area insets (iOS notch / home indicator, Android gesture bar).
+     Feeding env() into Ionic's own --ion-safe-area-* tokens makes ion-toolbar,
+     ion-header, ion-footer and ion-tab-bar pad around the insets regardless of
+     mode ('md' here). On the web and on inset-free devices these resolve to 0,
+     so every rule that consumes them is inert off-device. Requires
+     viewport-fit=cover in index.html. */
+  --ion-safe-area-top:    env(safe-area-inset-top);
+  --ion-safe-area-bottom: env(safe-area-inset-bottom);
+  --ion-safe-area-left:   env(safe-area-inset-left);
+  --ion-safe-area-right:  env(safe-area-inset-right);
+}
+
+/* Let the app surface bleed into the inset regions so there are no white/black
+   bars framing the notch and home indicator. */
+ion-app {
+  background: var(--artha-bg);
+}
+
+/* Keep the last scrollable row and any bottom-anchored controls clear of the
+   home indicator / gesture bar. */
+ion-content {
+  --padding-bottom: var(--ion-safe-area-bottom);
+}
+
+/* On mobile the routed pages sit above the fixed bottom tab bar (~62px), so
+   pad their scroll area to keep the last row reachable. The tab bar carries
+   its own safe-area inset, so we only add its height here. Desktop (>=768px)
+   uses the side pane and needs no offset. */
+@media (max-width: 767px) {
+  [id="main-content"] ion-content {
+    --padding-bottom: 62px;
+  }
 }
 
 /* Dark-mode token overrides. Ionic's dark palette flips its own tokens
@@ -154,6 +187,23 @@ ion-card-title,
  */
 @media (min-width: 992px) {
   [id="main-content"] ion-content::part(scroll) {
+    max-width: 1080px;
+    margin-inline: auto;
+    padding-inline: 8px;
+  }
+
+  /*
+   * Align page headers with the capped, centred content below them.
+   *
+   * <ion-header> renders as a sibling of <ion-content>, so without a cap its
+   * toolbars stretch the full main-content width (1600px+ on a wide window)
+   * while the content sits in a 1080px centred column. The result: titles and
+   * end-slotted buttons (e.g. a month stepper) drift to the far edge and get
+   * visually cut off, detached from the content they belong to. Constraining
+   * the header to the same width + centring keeps the two in lockstep on
+   * every page that uses the ion-header pattern.
+   */
+  [id="main-content"] ion-header {
     max-width: 1080px;
     margin-inline: auto;
     padding-inline: 8px;

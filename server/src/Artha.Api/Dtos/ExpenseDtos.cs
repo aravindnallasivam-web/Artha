@@ -5,14 +5,16 @@ public sealed record ExpenseCreateRequest(
     decimal Amount,
     string CategoryId,
     string AccountId,
-    string? Note);
+    string? Note,
+    bool Excluded = false);
 
 public sealed record ExpenseUpdateRequest(
     DateOnly Date,
     decimal Amount,
     string CategoryId,
     string AccountId,
-    string? Note);
+    string? Note,
+    bool Excluded = false);
 
 public sealed record ExpenseDto(
     string Id,
@@ -23,7 +25,8 @@ public sealed record ExpenseDto(
     string AccountId,
     string? Note,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool Excluded = false);
 
 public sealed record ExpenseListResponse(
     IReadOnlyList<ExpenseDto> Items,

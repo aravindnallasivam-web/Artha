@@ -24,6 +24,7 @@ import {
   AccountUpsertRequest,
   DEFAULT_ACCOUNT_ID,
 } from '../../core/models/account.model';
+import { BANK_PRESETS } from '../../core/models/bank-preset';
 import { AccountsStore } from './accounts.store';
 
 const TYPE_OPTIONS: AccountType[] = ['cash', 'checking', 'savings', 'credit_card', 'other'];
@@ -118,6 +119,20 @@ const TYPE_OPTIONS: AccountType[] = ['cash', 'checking', 'savings', 'credit_card
             ></ion-input>
           </ion-item>
 
+          <ion-item>
+            <ion-select
+              label="Bank (for SMS balance sync)"
+              labelPlacement="floating"
+              formControlName="bank"
+              interface="action-sheet"
+            >
+              <ion-select-option [value]="''">None</ion-select-option>
+              @for (b of bankOptions; track b.id) {
+                <ion-select-option [value]="b.id">{{ b.name }}</ion-select-option>
+              }
+            </ion-select>
+          </ion-item>
+
           @if (isDefaultAccount()) {
             <ion-note color="medium" class="hint">
               The default Cash account can be renamed but not deleted — legacy
@@ -148,6 +163,7 @@ export class AccountEditPage implements OnInit {
   private readonly notifier = inject(ConflictNotifierService);
 
   protected readonly typeOptions = TYPE_OPTIONS;
+  protected readonly bankOptions = BANK_PRESETS;
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
   protected readonly mode = signal<'create' | 'edit'>('create');
@@ -158,6 +174,7 @@ export class AccountEditPage implements OnInit {
     currency: ['USD', [Validators.required, Validators.minLength(3), Validators.maxLength(3)]],
     openingBalance: [0, Validators.required],
     color: [''],
+    bank: [''],
   });
 
   private editingId: string | null = null;
@@ -180,6 +197,7 @@ export class AccountEditPage implements OnInit {
             currency: account.currency,
             openingBalance: account.openingBalance,
             color: account.color ?? '',
+            bank: account.bank ?? '',
           });
         }
       }
@@ -199,6 +217,7 @@ export class AccountEditPage implements OnInit {
       openingBalance: Number(raw.openingBalance),
       color: raw.color?.trim() || null,
       icon: null,
+      bank: raw.bank || null,
     };
     try {
       if (this.editingId) {

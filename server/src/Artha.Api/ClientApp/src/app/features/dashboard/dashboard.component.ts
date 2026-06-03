@@ -2,9 +2,14 @@ import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import {
+  IonButton,
+  IonButtons,
   IonContent,
+  IonHeader,
   IonIcon,
   IonSpinner,
+  IonTitle,
+  IonToolbar,
 } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -27,11 +32,33 @@ interface CategorySlice {
     DatePipe,
     DecimalPipe,
     RouterLink,
+    IonButton,
+    IonButtons,
     IonContent,
+    IonHeader,
     IonIcon,
     IonSpinner,
+    IonTitle,
+    IonToolbar,
   ],
   template: `
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>Home</ion-title>
+        <ion-buttons slot="end">
+          <ion-button routerLink="/more" aria-label="Profile and more">
+            @if (currentUser(); as u) {
+              @if (u.pictureUrl) {
+                <img class="topbar-avatar" [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
+              } @else {
+                <span class="topbar-avatar topbar-avatar--initial">{{ firstName(u.name).charAt(0) }}</span>
+              }
+            }
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+
     <ion-content>
       <div class="page">
         @if (loading()) {
@@ -39,40 +66,37 @@ interface CategorySlice {
             <ion-spinner></ion-spinner>
           </div>
         } @else {
-          <!-- Hero greeting -->
-          <header class="hero">
-            <div>
-              <p class="hero-eyebrow">{{ monthLabel() }}</p>
-              <h1 class="hero-title">
-                @if (currentUser(); as user) {
-                  Hi, {{ firstName(user.name) }}
-                } @else {
-                  Welcome back
-                }
-              </h1>
-              <p class="hero-sub">Here's how your month is shaping up.</p>
+          <!-- Greeting -->
+          <p class="greeting">
+            @if (currentUser(); as user) {
+              Hi, {{ firstName(user.name) }} 👋
+            } @else {
+              Welcome back 👋
+            }
+          </p>
+
+          <!-- Balance hero -->
+          <section class="balance">
+            <div class="balance-top">
+              <p class="balance-label">Total spent · {{ monthShort() }}</p>
+              <a routerLink="/expenses/new" class="balance-add">
+                <ion-icon name="add" aria-hidden="true"></ion-icon>
+                Add
+              </a>
             </div>
-            <a routerLink="/expenses" class="hero-cta">
-              <ion-icon name="add" aria-hidden="true"></ion-icon>
-              Add expense
-            </a>
-          </header>
+            <p class="balance-value num">
+              {{ expensesStore.totalAmount() | currency: currency() : 'symbol' : '1.2-2' }}
+            </p>
+            <p class="balance-meta">
+              {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
+              @if (dailyAverage() > 0) {
+                · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day avg
+              }
+            </p>
+          </section>
 
           <!-- KPI tiles -->
           <section class="stats">
-            <article class="stat stat--primary">
-              <p class="stat-label">Spent this month</p>
-              <p class="stat-value num">
-                {{ expensesStore.totalAmount() | currency: currency() : 'symbol' : '1.2-2' }}
-              </p>
-              <p class="stat-meta">
-                {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
-                @if (dailyAverage() > 0) {
-                  · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day avg
-                }
-              </p>
-            </article>
-
             <article class="stat">
               <p class="stat-label">Top category</p>
               @if (topCategory(); as tc) {
@@ -116,7 +140,17 @@ interface CategorySlice {
                 <ul class="activity">
                   @for (expense of recent(); track expense.id) {
                     <li class="activity-row">
-                      <span class="activity-dot" [style.background]="categoryColor(expense.categoryId)"></span>
+                      <span
+                        class="activity-icon"
+                        [style.background]="categoryTint(expense.categoryId)"
+                        [style.color]="categoryColor(expense.categoryId)"
+                      >
+                        @if (categoryIcon(expense.categoryId); as ic) {
+                          <ion-icon [name]="ic" aria-hidden="true"></ion-icon>
+                        } @else {
+                          {{ categoryName(expense.categoryId).charAt(0) }}
+                        }
+                      </span>
                       <div class="activity-text">
                         <p class="activity-name">{{ categoryName(expense.categoryId) }}</p>
                         <p class="activity-meta">
@@ -180,6 +214,18 @@ interface CategorySlice {
     :host { display: contents; }
     ion-content { --background: var(--artha-bg); }
 
+    .topbar-avatar {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .topbar-avatar--initial {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
+      color: white;
+      font-size: 13px; font-weight: 700;
+    }
+
     .page {
       padding: 32px 28px 64px;
       max-width: 1080px;
@@ -190,77 +236,81 @@ interface CategorySlice {
     }
     .loading { display: flex; justify-content: center; padding: 48px; }
 
-    /* ====== Hero ====== */
-    .hero {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 24px;
-      flex-wrap: wrap;
-    }
-    .hero-eyebrow {
-      margin: 0 0 4px;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--artha-accent);
-    }
-    .hero-title {
-      margin: 0 0 4px;
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--artha-text);
-    }
-    .hero-sub {
+    /* ====== Greeting ====== */
+    .greeting {
       margin: 0;
       font-size: 14px;
+      font-weight: 500;
       color: var(--artha-text-muted);
     }
-    .hero-cta {
+
+    /* ====== Balance hero ====== */
+    .balance {
+      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
+      border-radius: var(--artha-radius-lg);
+      padding: 20px 22px 22px;
+      color: white;
+      box-shadow: 0 10px 24px -10px rgba(79, 70, 229, 0.55);
+    }
+    .balance-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .balance-label {
+      margin: 0;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.82);
+    }
+    .balance-add {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 10px 16px;
-      border-radius: var(--artha-radius-sm);
-      background: var(--artha-accent);
+      gap: 4px;
+      padding: 7px 14px 7px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
       color: white;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       text-decoration: none;
-      box-shadow: var(--artha-shadow-sm);
       transition: background 120ms ease, transform 80ms ease;
     }
-    .hero-cta:hover { background: var(--artha-accent-hover); }
-    .hero-cta:active { transform: translateY(1px); }
-    .hero-cta ion-icon { font-size: 18px; }
+    .balance-add:hover { background: rgba(255, 255, 255, 0.28); }
+    .balance-add:active { transform: translateY(1px); }
+    .balance-add ion-icon { font-size: 17px; }
+    .balance-value {
+      margin: 14px 0 0;
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.05;
+    }
+    .balance-meta {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+    }
 
     /* ====== Stat tiles ====== */
     .stats {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
     }
     .stat {
       background: var(--artha-surface);
       border: 1px solid var(--artha-border);
       border-radius: var(--artha-radius);
-      padding: 20px 22px;
+      padding: 16px 18px;
       box-shadow: var(--artha-shadow-sm);
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .stat--primary {
-      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
-      border-color: transparent;
-      color: white;
-      box-shadow: var(--artha-shadow);
-    }
-    .stat--primary .stat-label,
-    .stat--primary .stat-meta { color: rgba(255, 255, 255, 0.78); }
-    .stat--primary .stat-value { color: white; }
 
     .stat-label {
       margin: 0;
@@ -272,10 +322,13 @@ interface CategorySlice {
     }
     .stat-value {
       margin: 4px 0 0;
-      font-size: 28px;
+      font-size: 20px;
       font-weight: 700;
       letter-spacing: -0.02em;
       color: var(--artha-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .stat-value--empty { color: var(--artha-text-subtle); }
     .stat-meta {
@@ -353,19 +406,24 @@ interface CategorySlice {
     }
     .activity-row {
       display: grid;
-      grid-template-columns: 10px 1fr auto;
+      grid-template-columns: 38px 1fr auto;
       align-items: center;
-      gap: 14px;
-      padding: 12px 18px;
+      gap: 12px;
+      padding: 10px 18px;
       border-top: 1px solid var(--artha-border);
     }
     .activity-row:first-child { border-top: none; }
-    .activity-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--artha-accent);
+    .activity-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
     }
+    .activity-icon ion-icon { font-size: 19px; }
     .activity-text { min-width: 0; }
     .activity-name {
       margin: 0;
@@ -469,13 +527,11 @@ interface CategorySlice {
 
     /* ====== Responsive ====== */
     @media (max-width: 900px) {
-      .stats { grid-template-columns: 1fr; }
       .main { grid-template-columns: 1fr; }
     }
     @media (max-width: 600px) {
-      .page { padding: 20px 16px 56px; }
-      .hero-title { font-size: 22px; }
-      .stat-value { font-size: 24px; }
+      .page { padding: 18px 16px 56px; gap: 18px; }
+      .balance-value { font-size: 34px; }
     }
   `],
 })
@@ -496,7 +552,9 @@ export class DashboardComponent implements OnInit {
     this.expensesStore.items().slice(0, 8),
   );
 
-  protected readonly expenseCount = computed(() => this.expensesStore.items().length);
+  protected readonly expenseCount = computed(() =>
+    this.expensesStore.items().filter((e) => !e.excluded).length,
+  );
 
   protected readonly accountCount = computed(() =>
     this.accountsStore.items().filter((a) => !a.archived).length,
@@ -516,6 +574,7 @@ export class DashboardComponent implements OnInit {
 
     const byCat = new Map<string, number>();
     for (const e of this.expensesStore.items()) {
+      if (e.excluded) continue;
       byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
     }
 
@@ -557,9 +616,11 @@ export class DashboardComponent implements OnInit {
   }
 
   protected categoryColor(id: string): string {
-    // Deterministic colour per category from a curated palette so the
-    // dashboard's activity dots, breakdown bars, and pills stay visually
-    // consistent across reloads.
+    // Prefer the category's own colour; fall back to a deterministic colour
+    // from a curated palette so uncoloured categories still stay consistent
+    // across reloads.
+    const real = this.categoriesStore.byId()[id]?.color;
+    if (real) return real;
     const palette = [
       '#6366f1', '#10b981', '#f59e0b', '#f43f5e',
       '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16',
@@ -572,8 +633,21 @@ export class DashboardComponent implements OnInit {
     return palette[hash % palette.length];
   }
 
+  protected categoryIcon(id: string): string | null {
+    return this.categoriesStore.byId()[id]?.icon ?? null;
+  }
+
+  /** Translucent fill (12% alpha) of the category colour for the icon chip. */
+  protected categoryTint(id: string): string {
+    return `${this.categoryColor(id)}1f`;
+  }
+
   protected monthLabel(): string {
     return new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  protected monthShort(): string {
+    return new Date().toLocaleDateString(undefined, { month: 'long' });
   }
 
   protected firstName(name: string): string {

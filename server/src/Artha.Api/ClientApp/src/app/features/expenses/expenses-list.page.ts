@@ -1,15 +1,23 @@
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
+  IonButton,
+  IonButtons,
   IonContent,
+  IonHeader,
   IonIcon,
   IonSpinner,
+  IonTitle,
+  IonToolbar,
+  ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
+import { ImportResultResponse } from '../../core/models/import.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
+import { ExpenseImportModal } from './expense-import.modal';
 import { ExpensesStore } from './expenses.store';
 
 type ViewMode = 'list' | 'day' | 'month';
@@ -40,11 +48,30 @@ const TODAY_ISO = toIsoDate(new Date());
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
+    IonButton,
+    IonButtons,
     IonContent,
+    IonHeader,
     IonIcon,
     IonSpinner,
+    IonTitle,
+    IonToolbar,
   ],
   template: `
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>Expenses</ion-title>
+        <ion-buttons slot="end">
+          <ion-button (click)="openImport()" aria-label="Import expenses">
+            <ion-icon slot="icon-only" name="cloud-upload-outline"></ion-icon>
+          </ion-button>
+          <ion-button (click)="add()" aria-label="Add expense">
+            <ion-icon slot="icon-only" name="add"></ion-icon>
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+
     <ion-content class="page-content">
       <div class="page">
         <!-- Header: month picker + view switcher + add CTA -->
@@ -87,11 +114,6 @@ const TODAY_ISO = toIsoDate(new Date());
               </button>
             }
           </div>
-
-          <button type="button" class="add-cta" (click)="add()">
-            <ion-icon name="add" aria-hidden="true"></ion-icon>
-            <span>Add expense</span>
-          </button>
         </header>
 
         <!-- Summary strip -->
@@ -124,16 +146,83 @@ const TODAY_ISO = toIsoDate(new Date());
           </div>
         </section>
 
+        <!-- Filters -->
+        <section class="filters">
+          <div class="search-bar">
+            <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+            <input
+              class="search-input"
+              type="search"
+              placeholder="Search expenses…"
+              [value]="search()"
+              (input)="onSearch($event)"
+            />
+          </div>
+
+          <div class="chips" role="tablist" aria-label="Filter by category">
+            <button
+              type="button"
+              class="chip"
+              [class.active]="filterCategoryId() === null"
+              (click)="filterCategoryId.set(null)"
+            >
+              All
+            </button>
+            @for (c of filterableCategories(); track c.id) {
+              <button
+                type="button"
+                class="chip"
+                [class.active]="filterCategoryId() === c.id"
+                (click)="filterCategoryId.set(c.id)"
+              >
+                <span class="chip-dot" [style.background]="categoryColor(c.id)"></span>
+                {{ c.name }}
+              </button>
+            }
+          </div>
+
+          <div class="filters-aux">
+            <select
+              class="filter-select"
+              aria-label="Filter by account"
+              [value]="filterAccountId() ?? ''"
+              (change)="onAccountFilter($event)"
+            >
+              <option value="">All accounts</option>
+              @for (a of filterableAccounts(); track a.id) {
+                <option [value]="a.id">{{ a.name }}</option>
+              }
+            </select>
+
+            @if (hasActiveFilters()) {
+              <button type="button" class="filter-clear" (click)="clearFilters()">
+                <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+                <span>Clear</span>
+              </button>
+            }
+          </div>
+        </section>
+
         @if (expensesStore.loading()) {
           <div class="state"><ion-spinner></ion-spinner></div>
         } @else if (monthCount() === 0) {
-          <div class="empty">
-            <ion-icon name="receipt-outline"></ion-icon>
-            <p>No expenses in {{ monthLabel() }}.</p>
-            <button type="button" class="empty-cta" (click)="add()">
-              Add your first one
-            </button>
-          </div>
+          @if (hasActiveFilters()) {
+            <div class="empty">
+              <ion-icon name="receipt-outline"></ion-icon>
+              <p>No expenses match your filters in {{ monthLabel() }}.</p>
+              <button type="button" class="empty-cta" (click)="clearFilters()">
+                Clear filters
+              </button>
+            </div>
+          } @else {
+            <div class="empty">
+              <ion-icon name="receipt-outline"></ion-icon>
+              <p>No expenses in {{ monthLabel() }}.</p>
+              <button type="button" class="empty-cta" (click)="add()">
+                Add your first one
+              </button>
+            </div>
+          }
         } @else {
           <!-- View body -->
           @switch (view()) {
@@ -157,11 +246,21 @@ const TODAY_ISO = toIsoDate(new Date());
                       @for (expense of group.items; track expense.id) {
                         <li class="row" (click)="edit(expense.id)">
                           <span
-                            class="row-dot"
-                            [style.background]="categoryColor(expense.categoryId)"
-                          ></span>
+                            class="row-icon"
+                            [style.background]="categoryTint(expense.categoryId)"
+                            [style.color]="categoryColor(expense.categoryId)"
+                          >
+                            @if (categoryIcon(expense.categoryId); as ic) {
+                              <ion-icon [name]="ic" aria-hidden="true"></ion-icon>
+                            } @else {
+                              {{ categoryName(expense.categoryId).charAt(0) }}
+                            }
+                          </span>
                           <div class="row-text">
-                            <p class="row-title">{{ categoryName(expense.categoryId) }}</p>
+                            <p class="row-title">
+                            {{ categoryName(expense.categoryId) }}
+                            @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
+                          </p>
                             <p class="row-meta">
                               {{ accountName(expense.accountId) }}
                               @if (expense.note) { · {{ expense.note }} }
@@ -235,7 +334,10 @@ const TODAY_ISO = toIsoDate(new Date());
                           [style.background]="categoryColor(expense.categoryId)"
                         ></span>
                         <div class="row-text">
-                          <p class="row-title">{{ categoryName(expense.categoryId) }}</p>
+                          <p class="row-title">
+                            {{ categoryName(expense.categoryId) }}
+                            @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
+                          </p>
                           <p class="row-meta">
                             {{ accountName(expense.accountId) }}
                             @if (expense.note) { · {{ expense.note }} }
@@ -387,8 +489,24 @@ const TODAY_ISO = toIsoDate(new Date());
       font-weight: 600;
     }
 
-    .add-cta {
+    .import-cta {
       margin-left: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 14px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface);
+      color: var(--artha-text);
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--artha-shadow-sm);
+      transition: background 120ms ease, transform 80ms ease;
+    }
+    .import-cta:hover { background: var(--artha-surface-2); }
+    .import-cta:active { transform: translateY(1px); }
+    .import-cta ion-icon { font-size: 16px; }
+
+    .add-cta {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 9px 16px;
       border: 0;
@@ -403,6 +521,113 @@ const TODAY_ISO = toIsoDate(new Date());
     .add-cta:hover { background: var(--artha-accent-hover); }
     .add-cta:active { transform: translateY(1px); }
     .add-cta ion-icon { font-size: 16px; }
+
+    /* ====== Filters ====== */
+    .filters {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 4px 0;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      height: 42px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      background: var(--artha-surface);
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .search-bar ion-icon {
+      font-size: 18px;
+      color: var(--artha-text-subtle);
+      flex-shrink: 0;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      font-size: 14px;
+      color: var(--artha-text);
+    }
+    .search-input:focus { outline: none; }
+    .search-input::placeholder { color: var(--artha-text-subtle); }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-bottom: 2px;
+      margin: 0 -2px;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+      padding: 7px 14px;
+      border: 1px solid var(--artha-border-strong);
+      border-radius: 999px;
+      background: var(--artha-surface);
+      color: var(--artha-text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+    .chip:hover { background: var(--artha-surface-2); }
+    .chip.active {
+      background: var(--artha-accent);
+      border-color: var(--artha-accent);
+      color: white;
+    }
+    .chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .chip.active .chip-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55); }
+
+    .filters-aux {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .filter-select {
+      padding: 8px 11px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface);
+      color: var(--artha-text);
+      font-size: 13px;
+      box-shadow: var(--artha-shadow-sm);
+      cursor: pointer;
+      min-width: 150px;
+    }
+    .filter-select:focus {
+      outline: 2px solid var(--artha-accent); outline-offset: -1px;
+    }
+    .filter-clear {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 8px 12px;
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface);
+      color: var(--artha-text-muted);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .filter-clear:hover { background: var(--artha-surface-2); color: var(--artha-text); }
+    .filter-clear ion-icon { font-size: 15px; }
 
     /* ====== Summary strip ====== */
     .summary {
@@ -448,26 +673,38 @@ const TODAY_ISO = toIsoDate(new Date());
     }
     .row {
       display: grid;
-      grid-template-columns: 10px 1fr auto 28px;
+      grid-template-columns: 38px 1fr auto 28px;
       align-items: center;
-      gap: 14px;
-      padding: 12px 16px;
+      gap: 12px;
+      padding: 10px 16px;
       cursor: pointer;
       border-top: 1px solid var(--artha-border);
       transition: background 120ms ease;
     }
     .row:first-child { border-top: 0; }
     .row:hover { background: var(--artha-surface-2); }
-    .row-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
+    .row-icon {
+      width: 38px; height: 38px;
+      border-radius: 11px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
     }
+    .row-icon ion-icon { font-size: 19px; }
     .row-text { min-width: 0; }
     .row-title {
       margin: 0;
       font-size: 14px; font-weight: 600;
       color: var(--artha-text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .excluded-badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 10px; font-weight: 600;
+      background: var(--artha-surface-2); color: var(--artha-text-muted);
+      vertical-align: middle;
     }
     .row-meta {
       margin: 2px 0 0;
@@ -705,6 +942,7 @@ const TODAY_ISO = toIsoDate(new Date());
     @media (max-width: 640px) {
       .page { padding: 20px 14px 56px; }
       .page-header { gap: 10px; }
+      .import-cta { margin-left: auto; }
       .add-cta { margin-left: 0; }
       .view-switcher button span { display: none; }
       .calendar { gap: 4px; }
@@ -720,7 +958,9 @@ export class ExpensesListPage implements OnInit {
   protected readonly categoriesStore = inject(CategoriesStore);
   protected readonly accountsStore = inject(AccountsStore);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly modalCtrl = inject(ModalController);
 
   protected readonly weekdays = WEEKDAYS;
 
@@ -737,10 +977,41 @@ export class ExpensesListPage implements OnInit {
   protected readonly viewMonth = signal<number>(new Date().getMonth() + 1);
   protected readonly selectedDay = signal<string>(TODAY_ISO);
 
-  // --- Derived: filter the store's items to the visible month ---
+  // --- Filters ---
+  protected readonly filterCategoryId = signal<string | null>(null);
+  protected readonly filterAccountId = signal<string | null>(null);
+  protected readonly search = signal<string>('');
+
+  protected readonly hasActiveFilters = computed(() =>
+    this.filterCategoryId() !== null
+    || this.filterAccountId() !== null
+    || this.search().trim() !== '',
+  );
+
+  protected readonly filterableCategories = computed(() =>
+    [...this.categoriesStore.items()].sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  protected readonly filterableAccounts = computed(() =>
+    [...this.accountsStore.items()].sort((a, b) => a.name.localeCompare(b.name)),
+  );
+
+  // --- Derived: filter the store's items to the visible month + active filters ---
   protected readonly monthExpenses = computed<Expense[]>(() => {
     const prefix = monthPrefix(this.viewYear(), this.viewMonth());
-    return this.expensesStore.items().filter((e) => e.date.startsWith(prefix));
+    const cat = this.filterCategoryId();
+    const acc = this.filterAccountId();
+    const q = this.search().trim().toLowerCase();
+    return this.expensesStore.items().filter((e) => {
+      if (!e.date.startsWith(prefix)) return false;
+      if (cat && e.categoryId !== cat) return false;
+      if (acc && e.accountId !== acc) return false;
+      if (q) {
+        const hay = `${e.note ?? ''} ${this.categoryName(e.categoryId)} ${this.accountName(e.accountId)}`
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
   });
 
   protected readonly currency = computed(() =>
@@ -750,10 +1021,12 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly monthTotal = computed(() =>
-    this.monthExpenses().reduce((sum, e) => sum + e.amount, 0),
+    this.monthExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
   );
 
-  protected readonly monthCount = computed(() => this.monthExpenses().length);
+  protected readonly monthCount = computed(() =>
+    this.monthExpenses().filter((e) => !e.excluded).length,
+  );
 
   protected readonly dailyAverage = computed(() => {
     const total = this.monthTotal();
@@ -773,7 +1046,7 @@ export class ExpensesListPage implements OnInit {
         groups.set(e.date, g);
       }
       g.items.push(e);
-      g.total += e.amount;
+      if (!e.excluded) g.total += e.amount;
     }
     return Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date));
   });
@@ -786,7 +1059,7 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly selectedDayTotal = computed(() =>
-    this.selectedDayExpenses().reduce((sum, e) => sum + e.amount, 0),
+    this.selectedDayExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
   );
 
   protected readonly calendar = computed<CalendarCell[]>(() => {
@@ -794,7 +1067,7 @@ export class ExpensesListPage implements OnInit {
     const month = this.viewMonth();
     const totals = new Map<string, { total: number; count: number }>();
     for (const g of this.dayGroups()) {
-      totals.set(g.date, { total: g.total, count: g.items.length });
+      totals.set(g.date, { total: g.total, count: g.items.filter((e) => !e.excluded).length });
     }
 
     // Build a 6-row grid starting on Sunday for visual consistency.
@@ -834,6 +1107,24 @@ export class ExpensesListPage implements OnInit {
   }
 
   ngOnInit(): void {
+    // Deep-link support, e.g. from the Reports "by category" drill-down:
+    // /expenses?category=<id>&year=YYYY&month=M
+    const qp = this.route.snapshot.queryParamMap;
+    const year = Number(qp.get('year'));
+    const month = Number(qp.get('month'));
+    if (year >= 2000 && month >= 1 && month <= 12) {
+      this.viewYear.set(year);
+      this.viewMonth.set(month);
+    }
+    const category = qp.get('category');
+    if (category) {
+      this.filterCategoryId.set(category);
+    }
+    const account = qp.get('account');
+    if (account) {
+      this.filterAccountId.set(account);
+    }
+
     void this.loadMonth();
     if (this.categoriesStore.items().length === 0) {
       void this.categoriesStore.load(/* includeArchived */ true);
@@ -901,7 +1192,10 @@ export class ExpensesListPage implements OnInit {
   }
 
   protected categoryColor(id: string): string {
-    // Same deterministic palette as the dashboard for visual continuity.
+    // Prefer the category's own colour; fall back to the same deterministic
+    // palette as the dashboard for visual continuity.
+    const real = this.categoriesStore.byId()[id]?.color;
+    if (real) return real;
     const palette = [
       '#6366f1', '#10b981', '#f59e0b', '#f43f5e',
       '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16',
@@ -912,6 +1206,15 @@ export class ExpensesListPage implements OnInit {
       hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
     }
     return palette[hash % palette.length];
+  }
+
+  protected categoryIcon(id: string): string | null {
+    return this.categoriesStore.byId()[id]?.icon ?? null;
+  }
+
+  /** Translucent fill (12% alpha) of the category colour for the icon chip. */
+  protected categoryTint(id: string): string {
+    return `${this.categoryColor(id)}1f`;
   }
 
   protected cellBg(cell: CalendarCell): string | null {
@@ -926,8 +1229,53 @@ export class ExpensesListPage implements OnInit {
     return `rgba(99, 102, 241, ${alpha.toFixed(2)})`;
   }
 
+  protected onCategoryFilter(event: Event): void {
+    this.filterCategoryId.set((event.target as HTMLSelectElement).value || null);
+  }
+
+  protected onAccountFilter(event: Event): void {
+    this.filterAccountId.set((event.target as HTMLSelectElement).value || null);
+  }
+
+  protected onSearch(event: Event): void {
+    this.search.set((event.target as HTMLInputElement).value);
+  }
+
+  protected clearFilters(): void {
+    this.filterCategoryId.set(null);
+    this.filterAccountId.set(null);
+    this.search.set('');
+  }
+
   protected add(): void {
     void this.router.navigate(['/expenses', 'new']);
+  }
+
+  protected async openImport(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: ExpenseImportModal });
+    await modal.present();
+
+    const { role, data } = await modal.onWillDismiss<ImportResultResponse>();
+    if (role !== 'imported' || !data) {
+      return;
+    }
+
+    // New categories/accounts may have been created, and expenses added across
+    // months — force-refresh the relevant stores so the UI reflects the import.
+    await Promise.all([
+      this.categoriesStore.load(/* includeArchived */ true, /* force */ true),
+      this.accountsStore.load(/* includeArchived */ true, /* force */ true),
+      this.loadMonth(/* force */ true),
+    ]);
+
+    const parts = [`Imported ${data.importedCount} expense${data.importedCount === 1 ? '' : 's'}.`];
+    if (data.createdCategories.length > 0) {
+      parts.push(`Created ${data.createdCategories.length} categor${data.createdCategories.length === 1 ? 'y' : 'ies'}.`);
+    }
+    if (data.createdAccounts.length > 0) {
+      parts.push(`Created ${data.createdAccounts.length} account${data.createdAccounts.length === 1 ? '' : 's'}.`);
+    }
+    await this.notifier.notifyInfo(parts.join(' '));
   }
 
   protected edit(id: string): void {
@@ -943,9 +1291,9 @@ export class ExpensesListPage implements OnInit {
     }
   }
 
-  private async loadMonth(): Promise<void> {
+  private async loadMonth(force = false): Promise<void> {
     const prefix = monthPrefix(this.viewYear(), this.viewMonth());
-    await this.expensesStore.load(prefix, prefix);
+    await this.expensesStore.load(prefix, prefix, force);
   }
 }
 

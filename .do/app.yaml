@@ -63,10 +63,15 @@ services:
         scope: RUN_TIME
         value: artha-client
       # CORS is only relevant for the Capacitor mobile app (cross-origin from
-      # capacitor://localhost / ionic://localhost). Web is same-origin.
+      # the WebView origin). Web is same-origin. iOS loads from
+      # capacitor://localhost; Android (androidScheme: 'https') from
+      # https://localhost — both must be allowed.
       - key: Cors__AllowedOrigins__0
         scope: RUN_TIME
         value: capacitor://localhost
       - key: Cors__AllowedOrigins__1
         scope: RUN_TIME
         value: ionic://localhost
+      - key: Cors__AllowedOrigins__2
+        scope: RUN_TIME
+        value: https://localhost

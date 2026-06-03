@@ -1,5 +1,5 @@
-import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -26,7 +26,16 @@ export class GoogleAuthService {
   private readonly router = inject(Router);
   private mobileListenerAttached = false;
 
+  /**
+   * Last auth failure message, published for the login screen to display.
+   * The mobile OAuth flow finishes asynchronously inside the appUrlOpen
+   * listener — detached from the component that started it — so failures are
+   * surfaced here instead of leaving the button stuck on "Redirecting…".
+   */
+  readonly authError = signal<string | null>(null);
+
   async beginLogin(): Promise<void> {
+    this.authError.set(null);
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
@@ -80,7 +89,13 @@ export class GoogleAuthService {
       try {
         const url = new URL(event.url);
         if (url.protocol !== 'com.artha.app:') return;
-        if (!url.pathname.endsWith('/auth/callback')) return;
+        // For a custom-scheme URL like `com.artha.app://auth/callback?...`,
+        // the URL parser treats "auth" as the host and "/callback" as the
+        // pathname. Match against host + pathname so the guard sees the full
+        // "auth/callback" — checking url.pathname alone (which is just
+        // "/callback") would reject every real callback and strand the user
+        // on the login screen.
+        if (!`${url.host}${url.pathname}`.replace(/\/$/, '').endsWith('auth/callback')) return;
 
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
@@ -88,9 +103,10 @@ export class GoogleAuthService {
 
         await this.completeLogin(code, state);
         await this.router.navigate(['/dashboard']);
-      } catch {
-        // Surfacing is handled by the login UI's error path; keep the
-        // listener silent so a malformed deep link doesn't crash the app.
+      } catch (err) {
+        // This runs detached from the login component, so publish the failure
+        // for the login UI to display instead of hanging on "Redirecting…".
+        this.authError.set(describeAuthError(err));
       } finally {
         try { await Browser.close(); } catch { /* already dismissed */ }
       }
@@ -138,4 +154,26 @@ export class GoogleAuthService {
     }
   }
 
+}
+
+/**
+ * Turn an auth failure into a message the user can act on. A status of 0 from
+ * HttpClient means the request never got a usable response — typically a
+ * network drop or a CORS rejection (the app's https://localhost origin not
+ * being allowed by the API). Server ProblemDetails carry a human-readable
+ * detail/title we can show directly.
+ */
+function describeAuthError(err: unknown): string {
+  if (err instanceof HttpErrorResponse) {
+    if (err.status === 0) {
+      return 'Could not reach the server — this is usually a network or CORS issue. Please try again.';
+    }
+    const body = err.error as { detail?: string; title?: string } | string | null;
+    if (body && typeof body === 'object') {
+      return body.detail ?? body.title ?? `Sign-in failed (HTTP ${err.status}).`;
+    }
+    return `Sign-in failed (HTTP ${err.status}).`;
+  }
+  if (err instanceof Error) return err.message;
+  return 'Sign-in failed. Please try again.';
 }

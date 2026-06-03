@@ -76,8 +76,11 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(CorsPolicyName, policy =>
     {
+        // Android (Capacitor androidScheme: 'https') serves the app from
+        // https://localhost; iOS from capacitor://localhost. Both must be
+        // allowed for the mobile app's cross-origin API calls to succeed.
         var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-            ?? new[] { "http://localhost:4200", "http://localhost:8100", "capacitor://localhost", "ionic://localhost" };
+            ?? new[] { "http://localhost:4200", "http://localhost:8100", "capacitor://localhost", "ionic://localhost", "https://localhost" };
 
         policy.WithOrigins(origins)
             .AllowAnyHeader()

@@ -27,7 +27,7 @@ export class ExpensesStore {
   readonly loading = this._loading.asReadonly();
   readonly error = this._error.asReadonly();
   readonly totalAmount = computed(() =>
-    this._items().reduce((sum, e) => sum + e.amount, 0),
+    this._items().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
   );
 
   async load(from?: string, to?: string, force = false): Promise<void> {
