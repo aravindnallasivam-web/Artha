@@ -168,6 +168,53 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * If this launch came from tapping a background "expense detected"
+     * notification, hand back the SMS that triggered it (once) so the web layer
+     * can open the confirm dialog immediately. Returns { message: null } when the
+     * app was opened any other way.
+     */
+    @PluginMethod
+    public void consumePendingSms(PluginCall call) {
+        JSObject ret = new JSObject();
+        android.app.Activity activity = getActivity();
+        Intent intent = activity != null ? activity.getIntent() : null;
+        boolean fromNotification =
+            intent != null && intent.getBooleanExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS, false);
+        if (!fromNotification) {
+            ret.put("message", null);
+            call.resolve(ret);
+            return;
+        }
+
+        // Consume the flag so a later plain resume doesn't re-open the dialog.
+        intent.removeExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS);
+        activity.setIntent(intent);
+
+        android.content.SharedPreferences prefs =
+            getContext().getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE);
+        String body = prefs.getString(SmsBackgroundReceiver.KEY_PENDING_BODY, null);
+        if (body == null || body.isEmpty()) {
+            ret.put("message", null);
+            call.resolve(ret);
+            return;
+        }
+        String address = prefs.getString(SmsBackgroundReceiver.KEY_PENDING_ADDRESS, "");
+        long date = prefs.getLong(SmsBackgroundReceiver.KEY_PENDING_DATE, System.currentTimeMillis());
+        prefs.edit()
+            .remove(SmsBackgroundReceiver.KEY_PENDING_BODY)
+            .remove(SmsBackgroundReceiver.KEY_PENDING_ADDRESS)
+            .remove(SmsBackgroundReceiver.KEY_PENDING_DATE)
+            .apply();
+
+        JSObject message = new JSObject();
+        message.put("address", address);
+        message.put("body", body);
+        message.put("date", date);
+        ret.put("message", message);
+        call.resolve(ret);
+    }
+
     private void registerReceiver() {
         if (receiver != null) {
             return;

@@ -27,6 +27,13 @@ export interface SmsReaderPlugin {
   sendSms(options: { to: string; body: string }): Promise<void>;
   /** Persist the normalised ignored-sender list so the background receiver skips them. */
   setIgnoredSenders(options: { senders: string[] }): Promise<void>;
+  /**
+   * If the app was opened by tapping a background "expense detected"
+   * notification, return the SMS that triggered it (and clear it so it is
+   * handed out only once). `message` is null otherwise. Lets the app open the
+   * confirm dialog straight from the notification instead of re-scanning.
+   */
+  consumePendingSms(): Promise<{ message: SmsMessage | null }>;
   addListener(
     eventName: 'smsReceived',
     listenerFunc: (message: SmsMessage) => void,

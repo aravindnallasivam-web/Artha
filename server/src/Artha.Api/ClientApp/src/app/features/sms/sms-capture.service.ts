@@ -137,8 +137,47 @@ export class SmsCaptureService {
     const status = await SmsReader.checkPermissions().catch(() => null);
     if (status?.sms === 'granted') {
       await this.startWatching();
+      // Fast path first: if we were opened by tapping a notification, show its
+      // confirm dialog straight away before the slower full catch-up scan.
+      await this.handlePendingNotification();
       await this.catchUp();
     }
+  }
+
+  /**
+   * When the app is opened by tapping a background "expense detected"
+   * notification, the SMS that triggered it is already parsed and waiting
+   * natively. Grab it and open the confirm dialog immediately — no inbox
+   * re-scan and no duplicate-check round-trip — so the screen appears fast.
+   */
+  private async handlePendingNotification(): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    let pending: SmsMessage | null = null;
+    try {
+      pending = (await SmsReader.consumePendingSms()).message;
+    } catch {
+      return;
+    }
+    if (!pending) {
+      return;
+    }
+    // Advance the watermark so the catch-up scan won't re-offer this same SMS.
+    if (pending.date) {
+      this.setLastSeen(Math.max(this.getLastSeen(), pending.date + 1));
+    }
+    if (this.isIgnored(pending.address)) {
+      return;
+    }
+    const parsed = parseExpenseSms(pending);
+    if (!parsed) {
+      return;
+    }
+    await this.ensureStores();
+    // The SMS only just arrived, so it can't already be logged — open the
+    // dialog right away with no duplicate (the live/scan paths still dedup).
+    await this.queue(() => this.openConfirm(parsed, null));
   }
 
   /** Turn capture on: request permission, persist the flag, start watching. */
@@ -211,7 +250,10 @@ export class SmsCaptureService {
     }
     this.resumeBound = true;
     void App.addListener('resume', () => {
-      void this.catchUp();
+      void (async () => {
+        await this.handlePendingNotification();
+        await this.catchUp();
+      })();
     });
   }
 
