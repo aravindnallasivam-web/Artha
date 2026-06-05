@@ -31,6 +31,8 @@ export interface SmsCandidateRow {
   excluded: boolean;
   /** An already-logged expense this likely duplicates (auto-unselected). */
   duplicate: Expense | null;
+  /** Persistent-queue key (queue mode only); lets the caller drop resolved items. */
+  key?: string;
 }
 
 interface NamedRef {
@@ -69,10 +71,10 @@ interface NamedRef {
             <ion-icon slot="icon-only" name="close-outline"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title>Review SMS expenses</ion-title>
+        <ion-title>{{ queueMode ? 'Pending expenses' : 'Review SMS expenses' }}</ion-title>
         <ion-buttons slot="end">
           <ion-button strong="true" [disabled]="selectedCount() === 0" (click)="add()">
-            Add ({{ selectedCount() }})
+            Save ({{ selectedCount() }})
           </ion-button>
         </ion-buttons>
       </ion-toolbar>
@@ -111,6 +113,9 @@ interface NamedRef {
                 <div class="line2">
                   {{ row.date }} · {{ row.parsed.sender }}
                   @if (row.duplicate) { <span class="dup">DUPLICATE</span> }
+                  @if (queueMode) {
+                    <button type="button" class="dismiss" (click)="dismissRow($event, i)">Dismiss</button>
+                  }
                   <button type="button" class="ignore" (click)="ignore($event, i)">Ignore sender</button>
                 </div>
               </div>
@@ -142,7 +147,10 @@ interface NamedRef {
             </div>
           }
         </div>
-        <ion-note class="hint">Tap a row to edit its date, note or exclusion. Duplicates are unticked by default.</ion-note>
+        <ion-note class="hint">
+          Tap a row to edit its date, note or exclusion. Duplicates are unticked by default.
+          @if (queueMode) { Tick the ones to log and tap Save, or Dismiss the ones you don't want. }
+        </ion-note>
       }
     </ion-content>
   `,
@@ -193,6 +201,10 @@ interface NamedRef {
       margin-left: 8px; padding: 0; border: 0; background: none; cursor: pointer;
       font-size: 11px; font-weight: 600; color: var(--artha-negative);
     }
+    .dismiss {
+      margin-left: 8px; padding: 0; border: 0; background: none; cursor: pointer;
+      font-size: 11px; font-weight: 600; color: var(--artha-text-muted);
+    }
     .selects { grid-area: selects; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .selects ion-select {
       --padding-start: 10px; --padding-end: 8px;
@@ -210,8 +222,14 @@ export class SmsBulkReviewModal implements OnInit {
   @Input() categories: NamedRef[] = [];
   @Input() accounts: NamedRef[] = [];
   @Input() currency = 'INR';
+  /** Queue mode: the list is the persistent pending queue, so rows carry a
+      `key` and gain a per-row Dismiss action. */
+  @Input() queueMode = false;
 
   protected readonly rows = signal<SmsCandidateRow[]>([]);
+  /** Queue keys the user explicitly dismissed/ignored, returned to the caller
+      so they can be dropped from the persistent queue. */
+  private readonly dismissedKeys = new Set<string>();
 
   protected readonly selected = computed(() => this.rows().filter((r) => r.selected));
   protected readonly selectedCount = computed(() => this.selected().length);
@@ -276,16 +294,36 @@ export class SmsBulkReviewModal implements OnInit {
     }
     this.sms.ignoreSender(sender);
     // Drop every currently-shown row from this sender (normalised match), so
-    // all routing variants of the same bank disappear immediately too.
+    // all routing variants of the same bank disappear immediately too. Their
+    // queue keys are dismissed so the backlog clears them as well.
+    for (const r of this.rows()) {
+      if (r.key && this.sms.isSenderIgnored(r.parsed.sender)) {
+        this.dismissedKeys.add(r.key);
+      }
+    }
     this.rows.update((rs) => rs.filter((r) => !this.sms.isSenderIgnored(r.parsed.sender)));
   }
 
+  /** Drop a single pending item from the queue without logging it. */
+  protected dismissRow(event: Event, i: number): void {
+    event.stopPropagation();
+    const row = this.rows()[i];
+    if (row?.key) {
+      this.dismissedKeys.add(row.key);
+    }
+    this.rows.update((rs) => rs.filter((_, idx) => idx !== i));
+  }
+
   protected cancel(): void {
-    void this.modalCtrl.dismiss(null, 'cancel');
+    // Closing keeps un-acted rows in the queue; only explicit dismissals leave.
+    void this.modalCtrl.dismiss({ rows: [], dismissedKeys: [...this.dismissedKeys] }, 'cancel');
   }
 
   protected add(): void {
-    void this.modalCtrl.dismiss({ rows: this.selected() }, 'save');
+    void this.modalCtrl.dismiss(
+      { rows: this.selected(), dismissedKeys: [...this.dismissedKeys] },
+      'save',
+    );
   }
 
   private patch(i: number, change: Partial<SmsCandidateRow>): void {

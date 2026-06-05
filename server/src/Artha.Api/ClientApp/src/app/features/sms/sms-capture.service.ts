@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { App } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
@@ -27,6 +27,17 @@ const ACCOUNT_MAP_KEY = 'artha.sms.accountMap';
 const CATEGORY_MAP_KEY = 'artha.sms.categoryMap';
 // Senders the user has chosen to ignore (normalised), skipped everywhere.
 const IGNORED_KEY = 'artha.sms.ignoredSenders';
+// Persistent queue of detected-but-unattended expenses. Items survive app
+// restarts and stay until the user saves or dismisses them.
+const PENDING_KEY = 'artha.sms.pending';
+
+/** A detected expense waiting in the persistent queue. */
+interface PendingItem {
+  /** Content key used to dedup and to drop the item once resolved. */
+  key: string;
+  parsed: ParsedExpense;
+  addedAt: number;
+}
 
 /**
  * Coordinates SMS-based expense capture (Android only):
@@ -48,10 +59,19 @@ export class SmsCaptureService {
 
   private listener: PluginListenerHandle | null = null;
   private resumeBound = false;
-  // Serialise confirm dialogs so live messages never stack on top of each other.
-  private chain: Promise<void> = Promise.resolve();
   // In-memory cache of ignored senders (normalised) for synchronous checks.
   private readonly ignored = new Set<string>(this.loadIgnored());
+
+  // ----- Pending queue -----
+  // Reactive count for UI badges. Declared before `pending` so the field
+  // initializer below can update it as it loads.
+  private readonly _pendingCount = signal(0);
+  /** Number of detected expenses waiting to be saved or dismissed. */
+  readonly pendingCount = this._pendingCount.asReadonly();
+  private pending: PendingItem[] = this.loadPending();
+  // Guards so we never stack the queue-review or single-confirm dialogs.
+  private reviewing = false;
+  private confirming = false;
 
   // ----- Ignored senders -----
 
@@ -174,10 +194,12 @@ export class SmsCaptureService {
     if (!parsed) {
       return;
     }
+    // Keep it in the queue first (so it's never lost), then — since the user
+    // tapped the notification to deal with it now — open the polished single
+    // confirm for this one straight away.
+    this.enqueue(parsed);
     await this.ensureStores();
-    // The SMS only just arrived, so it can't already be logged — open the
-    // dialog right away with no duplicate (the live/scan paths still dedup).
-    await this.queue(() => this.openConfirm(parsed, null));
+    await this.openSingleConfirm(parsed);
   }
 
   /** Turn capture on: request permission, persist the flag, start watching. */
@@ -234,14 +256,13 @@ export class SmsCaptureService {
       .filter((m) => !this.isIgnored(m.address))
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
-    if (parsed.length === 0) {
-      return;
+    // Add everything detected to the persistent queue (deduped), then surface
+    // the backlog as one reviewable list. Items the user doesn't act on stay
+    // queued for next time instead of being lost.
+    for (const p of parsed) {
+      this.enqueue(p);
     }
-    await this.ensureStores();
-    const existing = await this.fetchExisting([...new Set(parsed.map((p) => monthOf(p.date)))]);
-    for (const p of parsed.reverse()) {
-      await this.queue(() => this.openConfirm(p, this.findDuplicate(p, existing)));
-    }
+    await this.presentQueue();
   }
 
   private bindResume(): void {
@@ -417,14 +438,10 @@ export class SmsCaptureService {
     if (!parsed) {
       return;
     }
-    void this.queue(() => this.confirmWithDedup(parsed));
-  }
-
-  /** Serialise all confirm dialogs (live + catch-up + scan) into one queue. */
-  private queue(task: () => Promise<void>): Promise<void> {
-    const next = this.chain.then(task, task);
-    this.chain = next.catch(() => undefined);
-    return next;
+    // Queue it (never lost), then — the app is open, so the user is here —
+    // pop the single confirm right away.
+    this.enqueue(parsed);
+    void this.ensureStores().then(() => this.openSingleConfirm(parsed));
   }
 
   private getLastSeen(): number {
@@ -434,12 +451,6 @@ export class SmsCaptureService {
 
   private setLastSeen(ms: number): void {
     localStorage.setItem(LAST_SEEN_KEY, String(ms));
-  }
-
-  /** Live path: fetch the month's expenses to flag duplicates, then confirm. */
-  private async confirmWithDedup(parsed: ParsedExpense): Promise<void> {
-    const existing = await this.fetchExisting([monthOf(parsed.date)]);
-    await this.openConfirm(parsed, this.findDuplicate(parsed, existing));
   }
 
   private async fetchExisting(months: string[]): Promise<Expense[]> {
@@ -474,29 +485,188 @@ export class SmsCaptureService {
     await Promise.all(tasks);
   }
 
-  private async openConfirm(parsed: ParsedExpense, duplicate: Expense | null): Promise<void> {
-    const modal = await this.modalCtrl.create({
-      component: SmsConfirmModal,
-      componentProps: {
-        parsed,
-        duplicate,
-        categoryId: this.resolveCategoryId(parsed),
-        accountId: this.resolveAccountId(parsed),
-      },
-    });
-    await modal.present();
-    const { role, data } = await modal.onWillDismiss<{ accountId?: string; categoryId?: string }>();
-    // Learn the account + category the user chose, so future SMS from the same
-    // account/merchant map automatically; sync the account balance from the SMS.
-    if (role === 'saved' && data?.accountId) {
-      this.rememberAccount(parsed, data.accountId);
-      if (data.categoryId) {
-        this.rememberCategory(parsed, data.categoryId);
-      }
-      if (parsed.balance != null) {
-        await this.syncBalance(data.accountId, parsed.balance);
-      }
+  /**
+   * Open the single, polished confirm dialog for one detected expense (used by
+   * the live path and notification taps). Saving logs it and clears it from the
+   * queue; closing leaves it queued so it can be handled later from the backlog.
+   */
+  private async openSingleConfirm(parsed: ParsedExpense): Promise<void> {
+    // If a dialog is already up, leave this one queued — it'll surface later.
+    if (this.confirming || this.reviewing) {
+      return;
     }
+    this.confirming = true;
+    try {
+      const existing = await this.fetchExisting([monthOf(parsed.date)]);
+      const modal = await this.modalCtrl.create({
+        component: SmsConfirmModal,
+        componentProps: {
+          parsed,
+          duplicate: this.findDuplicate(parsed, existing),
+          categoryId: this.resolveCategoryId(parsed),
+          accountId: this.resolveAccountId(parsed),
+        },
+      });
+      await modal.present();
+      const { role, data } = await modal.onWillDismiss<{ accountId?: string; categoryId?: string }>();
+      // Learn the account + category the user chose, so future SMS from the same
+      // account/merchant map automatically; sync the account balance from the SMS.
+      if (role === 'saved' && data?.accountId) {
+        this.rememberAccount(parsed, data.accountId);
+        if (data.categoryId) {
+          this.rememberCategory(parsed, data.categoryId);
+        }
+        if (parsed.balance != null) {
+          await this.syncBalance(data.accountId, parsed.balance);
+        }
+        this.removePending([this.pendingKey(parsed)]);
+      }
+      // On cancel/close we deliberately keep the item in the queue.
+    } finally {
+      this.confirming = false;
+    }
+  }
+
+  // ----- Pending queue -----
+
+  /** Open the persistent queue as one reviewable list. Public entry for the UI. */
+  async reviewPending(): Promise<void> {
+    await this.presentQueue();
+  }
+
+  /**
+   * Surface the whole pending queue in the bulk-review list. Saved rows are
+   * logged and dropped; rows the user dismisses (or whose sender they ignore)
+   * are dropped without logging; everything else stays queued.
+   */
+  private async presentQueue(): Promise<void> {
+    if (this.reviewing || this.pending.length === 0) {
+      return;
+    }
+    this.reviewing = true;
+    try {
+      await this.ensureStores();
+      const items = [...this.pending];
+      const existing = await this.fetchExisting([
+        ...new Set(items.map((i) => monthOf(i.parsed.date))),
+      ]);
+      const candidates: SmsCandidateRow[] = items.map((i) => {
+        const p = i.parsed;
+        const duplicate = this.findDuplicate(p, existing);
+        return {
+          key: i.key,
+          parsed: p,
+          duplicate,
+          selected: !duplicate,
+          amount: p.amount,
+          date: p.date,
+          categoryId: this.resolveCategoryId(p),
+          accountId: this.resolveAccountId(p),
+          note: p.merchant ?? p.sender ?? null,
+          excluded: false,
+        };
+      });
+
+      const modal = await this.modalCtrl.create({
+        component: SmsBulkReviewModal,
+        componentProps: {
+          candidates,
+          categories: this.namedCategories(),
+          accounts: this.namedAccounts(),
+          currency: this.settingsStore.currency(),
+          queueMode: true,
+        },
+      });
+      await modal.present();
+      const { role, data } = await modal.onWillDismiss<{
+        rows: SmsCandidateRow[];
+        dismissedKeys: string[];
+      }>();
+
+      // Keys to drop from the queue: everything the user explicitly dismissed…
+      const resolved = new Set<string>(data?.dismissedKeys ?? []);
+      // …plus everything successfully saved.
+      if (role === 'save' && data?.rows?.length) {
+        let saved = 0;
+        const balanced = new Set<string>();
+        for (const r of data.rows) {
+          if (!r.categoryId || !r.accountId || r.amount <= 0) {
+            continue;
+          }
+          try {
+            await this.expensesStore.add({
+              date: r.date,
+              amount: r.amount,
+              categoryId: r.categoryId,
+              accountId: r.accountId,
+              note: r.note?.trim() || null,
+              excluded: r.excluded,
+            });
+            this.rememberAccount(r.parsed, r.accountId);
+            this.rememberCategory(r.parsed, r.categoryId);
+            if (r.parsed.balance != null && !balanced.has(r.accountId)) {
+              await this.syncBalance(r.accountId, r.parsed.balance);
+              balanced.add(r.accountId);
+            }
+            if (r.key) {
+              resolved.add(r.key);
+            }
+            saved++;
+          } catch {
+            // Skip the failed row and keep it queued for a retry.
+          }
+        }
+        if (saved > 0) {
+          await this.notifier.notifyInfo(`Added ${saved} expense${saved === 1 ? '' : 's'} from SMS.`);
+        }
+      }
+      this.removePending(resolved);
+    } finally {
+      this.reviewing = false;
+    }
+  }
+
+  /** Content key for dedup + resolution: date, amount, merchant and sender. */
+  private pendingKey(p: ParsedExpense): string {
+    return `${p.date}|${p.amount.toFixed(2)}|${categoryKey(p.merchant)}|${normalizeSender(p.sender)}`;
+  }
+
+  /** Add a detected expense to the queue unless an identical one is already there. */
+  private enqueue(parsed: ParsedExpense): void {
+    const key = this.pendingKey(parsed);
+    if (this.pending.some((x) => x.key === key)) {
+      return;
+    }
+    this.pending = [...this.pending, { key, parsed, addedAt: Date.now() }];
+    this.persistPending();
+  }
+
+  private removePending(keys: Iterable<string>): void {
+    const drop = new Set(keys);
+    if (drop.size === 0) {
+      return;
+    }
+    const before = this.pending.length;
+    this.pending = this.pending.filter((x) => !drop.has(x.key));
+    if (this.pending.length !== before) {
+      this.persistPending();
+    }
+  }
+
+  private loadPending(): PendingItem[] {
+    let items: PendingItem[] = [];
+    try {
+      items = JSON.parse(localStorage.getItem(PENDING_KEY) ?? '[]') as PendingItem[];
+    } catch {
+      items = [];
+    }
+    this._pendingCount.set(items.length);
+    return items;
+  }
+
+  private persistPending(): void {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(this.pending));
+    this._pendingCount.set(this.pending.length);
   }
 
   /**

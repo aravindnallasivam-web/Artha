@@ -89,6 +89,13 @@ import { SettingsStore } from './settings.store';
                 </ion-label>
               </ion-toggle>
             </ion-item>
+            @if (sms.pendingCount() > 0) {
+              <ion-item button detail="false" [disabled]="smsBusy()" (click)="reviewPending()">
+                <ion-icon name="list-outline" slot="start" color="medium"></ion-icon>
+                <ion-label>Pending expenses</ion-label>
+                <ion-note slot="end" color="primary">{{ sms.pendingCount() }}</ion-note>
+              </ion-item>
+            }
             <ion-item button detail="false" [disabled]="smsBusy()" (click)="scanSms()">
               <ion-icon name="search-outline" slot="start" color="medium"></ion-icon>
               <ion-label>Scan recent messages</ion-label>
@@ -207,6 +214,11 @@ export class SettingsPage implements OnInit {
       this.smsBusy.set(false);
       this.smsIgnoredCount.set(this.sms.ignoredCount());
     }
+  }
+
+  /** Open the persistent queue of detected-but-unattended expenses. */
+  async reviewPending(): Promise<void> {
+    await this.sms.reviewPending();
   }
 
   async onCurrencyChange(event: Event): Promise<void> {
