@@ -60,9 +60,13 @@ public sealed class ReportsController : ControllerBase
             }
         }
 
-        // Excluded transactions (refunds/transfers/settlements) don't count
-        // toward spending totals or breakdowns.
-        var counted = allItems.Where(e => !e.Excluded).ToList();
+        // Excluded transactions (refunds/transfers/settlements) and categories
+        // flagged ExcludeFromReports (e.g. Investments) don't count toward
+        // spending totals or breakdowns.
+        var excludedCategoryIds = ExcludedCategoryIds(categoriesById);
+        var counted = allItems
+            .Where(e => !e.Excluded && !excludedCategoryIds.Contains(e.CategoryId))
+            .ToList();
 
         var byCategory = counted
             .GroupBy(e => e.CategoryId)
@@ -115,13 +119,14 @@ public sealed class ReportsController : ControllerBase
 
         var monthSummaries = new Dictionary<int, (decimal Total, int Count)>();
         var byCategoryAccum = new Dictionary<string, (decimal Total, int Count)>();
+        var excludedCategoryIds = ExcludedCategoryIds(categoriesById);
 
         foreach (var shard in shardReads)
         {
             if (shard is null) continue;
             foreach (var expense in shard.Document.Items)
             {
-                if (expense.Excluded) continue;
+                if (expense.Excluded || excludedCategoryIds.Contains(expense.CategoryId)) continue;
                 var prevMonth = monthSummaries.GetValueOrDefault(expense.Date.Month);
                 monthSummaries[expense.Date.Month] = (prevMonth.Total + expense.Amount, prevMonth.Count + 1);
 
@@ -168,6 +173,12 @@ public sealed class ReportsController : ControllerBase
         var doc = await ctx.CategoryRepo.ReadAsync(DriveFileNames.Categories, cancellationToken);
         return (doc?.Document.Items ?? Array.Empty<Category>()).ToDictionary(c => c.Id);
     }
+
+    private static HashSet<string> ExcludedCategoryIds(Dictionary<string, Category> categoriesById) =>
+        categoriesById.Values
+            .Where(c => c.ExcludeFromReports)
+            .Select(c => c.Id)
+            .ToHashSet();
 
     private async Task<Context> OpenAsync(CancellationToken cancellationToken)
     {

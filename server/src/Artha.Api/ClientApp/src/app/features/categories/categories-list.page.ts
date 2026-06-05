@@ -114,7 +114,15 @@ import { CategoriesStore } from './categories.store';
                 >
                   <ion-icon [name]="cat.icon || 'pricetag'"></ion-icon>
                 </div>
-                <div class="cat-name">{{ cat.name }}</div>
+                <div class="cat-text">
+                  <div class="cat-name">{{ cat.name }}</div>
+                  @if (cat.excludeFromReports) {
+                    <span class="cat-flag">
+                      <ion-icon name="eye-off-outline"></ion-icon>
+                      Not in reports
+                    </span>
+                  }
+                </div>
 
                 @if (selecting()) {
                   <ion-icon
@@ -184,11 +192,16 @@ import { CategoriesStore } from './categories.store';
       width: 40px; height: 40px; border-radius: 12px; flex: none;
       display: flex; align-items: center; justify-content: center; font-size: 20px;
     }
+    .cat-text { flex: 1; min-width: 0; }
     .cat-name {
-      flex: 1; min-width: 0;
       font-weight: 600; font-size: 15px; color: var(--artha-text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .cat-flag {
+      display: inline-flex; align-items: center; gap: 4px; margin-top: 2px;
+      font-size: 12px; color: var(--artha-text-subtle);
+    }
+    .cat-flag ion-icon { font-size: 13px; }
     .check { font-size: 24px; color: var(--artha-accent); flex: none; }
     .check[name="ellipse-outline"] { color: var(--artha-text-subtle); }
 

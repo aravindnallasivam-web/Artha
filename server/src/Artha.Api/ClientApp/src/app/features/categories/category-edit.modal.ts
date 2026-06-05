@@ -8,6 +8,7 @@ import {
   IonIcon,
   IonSpinner,
   IonTitle,
+  IonToggle,
   IonToolbar,
   ModalController,
 } from '@ionic/angular/standalone';
@@ -28,6 +29,7 @@ import { CategoriesStore } from './categories.store';
     IonContent,
     IonIcon,
     IonSpinner,
+    IonToggle,
   ],
   template: `
     <ion-header>
@@ -114,6 +116,22 @@ import { CategoriesStore } from './categories.store';
             <ion-icon [name]="ic"></ion-icon>
           </button>
         }
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-text">
+          <span class="toggle-title">Exclude from reports</span>
+          <span class="toggle-hint">
+            Hide this category's expenses from report totals and charts — handy
+            for investments, transfers or savings.
+          </span>
+        </div>
+        <ion-toggle
+          [checked]="excludeFromReports()"
+          (ionChange)="excludeFromReports.set($event.detail.checked)"
+          [disabled]="saving()"
+          aria-label="Exclude from reports"
+        ></ion-toggle>
       </div>
 
       <button
@@ -206,6 +224,23 @@ import { CategoriesStore } from './categories.store';
       color: var(--artha-accent, #2f6df6);
     }
 
+    .toggle-row {
+      display: flex; align-items: center; gap: 12px;
+      margin-top: 24px; padding: 12px 14px;
+      border-radius: var(--artha-radius, 12px);
+      background: var(--artha-surface-2, #f3f4f6);
+    }
+    .toggle-text { flex: 1; min-width: 0; }
+    .toggle-title {
+      display: block; font-size: 14px; font-weight: 600;
+      color: var(--artha-text, #111);
+    }
+    .toggle-hint {
+      display: block; margin-top: 2px;
+      font-size: 12px; line-height: 1.35;
+      color: var(--artha-text-muted, #555);
+    }
+
     .save-btn {
       width: 100%; margin-top: 24px;
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -232,6 +267,7 @@ export class CategoryEditModal implements OnInit {
   protected readonly name = signal('');
   protected readonly color = signal<string | null>(CATEGORY_COLORS[10]);
   protected readonly icon = signal<string | null>(null);
+  protected readonly excludeFromReports = signal(false);
   protected readonly saving = signal(false);
 
   ngOnInit(): void {
@@ -239,6 +275,7 @@ export class CategoryEditModal implements OnInit {
       this.name.set(this.category.name);
       this.color.set(this.category.color);
       this.icon.set(this.category.icon);
+      this.excludeFromReports.set(this.category.excludeFromReports);
     }
   }
 
@@ -248,7 +285,12 @@ export class CategoryEditModal implements OnInit {
       return;
     }
     this.saving.set(true);
-    const payload = { name, color: this.color(), icon: this.icon() };
+    const payload = {
+      name,
+      color: this.color(),
+      icon: this.icon(),
+      excludeFromReports: this.excludeFromReports(),
+    };
     try {
       if (this.category) {
         await this.store.update(this.category.id, payload);

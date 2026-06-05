@@ -60,7 +60,8 @@ public sealed class CategoriesController : ControllerBase
             Name: request.Name.Trim(),
             Color: request.Color,
             Icon: request.Icon,
-            Archived: false);
+            Archived: false,
+            ExcludeFromReports: request.ExcludeFromReports);
 
         var next = new CategoryList(SchemaVersions.Current, list.Append(created).ToArray());
         await ctx.CategoryRepo.WriteAsync(DriveFileNames.Categories, next, existing?.ETag, cancellationToken);
@@ -99,6 +100,7 @@ public sealed class CategoriesController : ControllerBase
             Name = request.Name.Trim(),
             Color = request.Color,
             Icon = request.Icon,
+            ExcludeFromReports = request.ExcludeFromReports,
         };
 
         await ctx.CategoryRepo.WriteAsync(
@@ -280,7 +282,7 @@ public sealed class CategoriesController : ControllerBase
     }
 
     private static CategoryDto ToDto(Category c) =>
-        new(c.Id, c.Name, c.Color, c.Icon, c.Archived);
+        new(c.Id, c.Name, c.Color, c.Icon, c.Archived, c.ExcludeFromReports);
 
     private static ProblemDetails Problem400(string detail) => new()
     {

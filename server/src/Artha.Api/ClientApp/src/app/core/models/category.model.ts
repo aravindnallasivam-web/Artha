@@ -4,12 +4,15 @@ export interface Category {
   color: string | null;
   icon: string | null;
   archived: boolean;
+  /** When true, this category's expenses are left out of report totals. */
+  excludeFromReports: boolean;
 }
 
 export interface CategoryUpsertRequest {
   name: string;
   color: string | null;
   icon: string | null;
+  excludeFromReports: boolean;
 }
 
 /** Preset colour swatches offered in the category editor. */
