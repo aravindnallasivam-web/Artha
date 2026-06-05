@@ -55,9 +55,11 @@ export class BalanceSyncService {
     }
     this.saveOverride(account.id, { number: data.to, message: data.message });
 
-    // Permission to send.
+    // We need SEND_SMS to send the enquiry *and* READ_SMS to read the bank's
+    // reply. Request both up front — without read access we can send but never
+    // see the reply, so the balance would silently never update.
     let status = await SmsReader.checkPermissions().catch(() => null);
-    if (status?.send !== 'granted') {
+    if (status?.send !== 'granted' || status?.sms !== 'granted') {
       status = await SmsReader.requestPermissions().catch(() => null);
     }
     if (status?.send !== 'granted') {
@@ -72,9 +74,16 @@ export class BalanceSyncService {
       await this.notifier.notifyError('Could not send the balance SMS.');
       return;
     }
+
+    if (status?.sms !== 'granted') {
+      await this.notifier.notifyInfo(
+        'Enquiry sent. Allow SMS read access so Artha can read the reply and update the balance.',
+      );
+      return;
+    }
     await this.notifier.notifyInfo('Balance enquiry sent — waiting for the reply…');
 
-    const senders = new Set((preset?.senderIds ?? []).map((s) => s.toUpperCase()));
+    const senders = (preset?.senderIds ?? []).map((s) => normalizeSender(s));
     const balance = await this.pollForBalance(sentAt - 3000, senders);
     if (balance != null) {
       await this.applyBalance(account, balance);
@@ -84,7 +93,7 @@ export class BalanceSyncService {
     }
   }
 
-  private async pollForBalance(since: number, senders: Set<string>): Promise<number | null> {
+  private async pollForBalance(since: number, senders: string[]): Promise<number | null> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await delay(POLL_INTERVAL_MS);
@@ -98,8 +107,15 @@ export class BalanceSyncService {
         if (m.date < since) {
           continue;
         }
-        if (senders.size > 0 && !senders.has(normalizeSender(m.address))) {
-          continue;
+        // Match the reply sender loosely: DLT routing wraps the bank's id with
+        // prefixes/suffixes (e.g. "VM-HDFCBK-S" -> "HDFCBKS"), so accept any id
+        // that contains, or is contained by, a known sender id for the bank.
+        if (senders.length > 0) {
+          const norm = normalizeSender(m.address);
+          const matches = senders.some((id) => norm.includes(id) || id.includes(norm));
+          if (!matches) {
+            continue;
+          }
         }
         const balance = extractBalance(m.body);
         if (balance != null) {

@@ -27,8 +27,11 @@ const DEBIT_RE = /\b(debited|spent|sent|transferred|withdrawn|withdrawal|purchas
 const CREDIT_RE = /\b(credited|received|refund|reversal|deposited|salary|cashback)\b/i;
 // "A/c XX1234", "card ending 1234", "Acct no. 5678".
 const ACCOUNT_RE = /\b(?:a\/c|acct|account|card)\b[^\d]{0,12}(\d{3,4})\b/i;
-// "Avl Bal Rs.45,000", "Available Balance: INR 45000", "A/c Bal: Rs 45000".
-const BALANCE_RE = /bal(?:ance)?\s*(?:is|:|-)?\s*(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+// "Avl Bal Rs.45,000", "Available Balance: INR 45000", "A/c Bal: Rs 45000",
+// and currency-less forms like "Avbl Bal: 12,340.55" / "Avl Bal 5000". The
+// currency token is optional because many banks omit it in transaction alerts;
+// the amount must still sit right after "bal" so we never grab an a/c number.
+const BALANCE_RE = /bal(?:ance)?\s*(?:is|:|-)?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
 // Merchant after a connective keyword.
 const MERCHANT_RE = /(?:\bat\s+|\bto\s+|\bvpa\s+|\binfo[:\-]\s*|\btowards\s+|\bfor\s+)([A-Za-z0-9][A-Za-z0-9 ._@&'\-*]{1,39})/i;
 // Messages we never want to treat as a transaction.
