@@ -5,15 +5,17 @@ import {
   IonButton,
   IonButtons,
   IonContent,
+  IonDatetime,
+  IonDatetimeButton,
   IonHeader,
   IonIcon,
-  IonInput,
   IonItem,
-  IonLabel,
+  IonModal,
   IonNote,
   IonSelect,
   IonSelectOption,
   IonText,
+  IonTextarea,
   IonTitle,
   IonToggle,
   IonToolbar,
@@ -40,15 +42,17 @@ import { ParsedExpense } from './sms-parser';
     IonButton,
     IonButtons,
     IonContent,
+    IonDatetime,
+    IonDatetimeButton,
     IonHeader,
     IonIcon,
-    IonInput,
     IonItem,
-    IonLabel,
+    IonModal,
     IonNote,
     IonSelect,
     IonSelectOption,
     IonText,
+    IonTextarea,
     IonTitle,
     IonToggle,
     IonToolbar,
@@ -59,110 +63,165 @@ import { ParsedExpense } from './sms-parser';
         <ion-buttons slot="start">
           <ion-button (click)="dismiss()">Cancel</ion-button>
         </ion-buttons>
-        <ion-title>Log expense?</ion-title>
-        <ion-buttons slot="end">
-          <ion-button
-            strong="true"
-            [disabled]="!canSave() || saving()"
-            (click)="save()"
-          >Save</ion-button>
-        </ion-buttons>
+        <ion-title>{{ mode === 'edit' ? 'Edit expense' : 'Log expense?' }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="ion-padding">
-      <p class="lead">
-        Detected from a message by <strong>{{ parsed.sender || 'your bank' }}</strong>.
-      </p>
-
-      @if (duplicate) {
-        <div class="dupe" role="alert">
-          <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
-          <div>
-            <p class="dupe-title">Possible duplicate</p>
-            <p class="dupe-body">
-              An expense for the same amount is already logged on
-              {{ duplicate.date }}@if (duplicate.note) { — “{{ duplicate.note }}”}.
-              Save only if this is a separate transaction.
+    <ion-content>
+      <form (ngSubmit)="save()">
+        <div class="wrap">
+          @if (mode !== 'edit') {
+            <p class="lead">
+              Detected from a message by <strong>{{ parsed.sender || 'your bank' }}</strong>.
             </p>
+          }
+
+          @if (duplicate) {
+            <div class="dupe" role="alert">
+              <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+              <div>
+                <p class="dupe-title">Possible duplicate</p>
+                <p class="dupe-body">
+                  An expense for the same amount is already logged on
+                  {{ duplicate.date }}@if (duplicate.note) { — “{{ duplicate.note }}”}.
+                  Save only if this is a separate transaction.
+                </p>
+              </div>
+            </div>
+          }
+
+          <!-- Amount hero -->
+          <div class="amount">
+            <div class="amount-label">AMOUNT</div>
+            <div class="amount-row">
+              <span class="cur">{{ currencySymbol() }}</span>
+              <input
+                class="amount-input"
+                type="number"
+                inputmode="decimal"
+                step="0.01"
+                min="0"
+                placeholder="0"
+                [(ngModel)]="amount"
+                [ngModelOptions]="{ standalone: true }"
+                (focus)="selectAll($event)"
+                aria-label="Amount"
+              />
+            </div>
           </div>
+
+          <!-- Date -->
+          <div class="section-label">Date</div>
+          <div class="chips">
+            <button type="button" class="chip" [class.sel]="isToday()" (click)="setDate(0)">
+              Today
+            </button>
+            <button type="button" class="chip" [class.sel]="isYesterday()" (click)="setDate(1)">
+              Yesterday
+            </button>
+            <ion-datetime-button datetime="smsDatePicker" class="chip-dt"></ion-datetime-button>
+            <ion-modal [keepContentsMounted]="true">
+              <ng-template>
+                <ion-datetime
+                  id="smsDatePicker"
+                  presentation="date"
+                  [(ngModel)]="date"
+                  [ngModelOptions]="{ standalone: true }"
+                ></ion-datetime>
+              </ng-template>
+            </ion-modal>
+          </div>
+
+          <!-- Category + Account -->
+          <div class="section-label">Details</div>
+          <div class="card">
+            <ion-item lines="full">
+              <ion-select
+                label="Category"
+                labelPlacement="stacked"
+                interface="popover"
+                placeholder="Choose a category"
+                [(ngModel)]="categoryId"
+                [ngModelOptions]="{ standalone: true }"
+              >
+                @for (c of categories(); track c.id) {
+                  <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+            <ion-item lines="none">
+              <ion-select
+                label="Account"
+                labelPlacement="stacked"
+                interface="popover"
+                placeholder="Choose an account"
+                [(ngModel)]="accountId"
+                [ngModelOptions]="{ standalone: true }"
+              >
+                @for (a of accounts(); track a.id) {
+                  <ion-select-option [value]="a.id">{{ a.name }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+          </div>
+
+          <!-- Note -->
+          <div class="section-label">Note</div>
+          <div class="card">
+            <ion-item lines="none">
+              <ion-textarea
+                label="Optional"
+                labelPlacement="stacked"
+                rows="2"
+                autoGrow="true"
+                placeholder="What was this for?"
+                [(ngModel)]="note"
+                [ngModelOptions]="{ standalone: true }"
+              ></ion-textarea>
+            </ion-item>
+          </div>
+
+          <!-- Exclude -->
+          <div class="card">
+            <ion-item lines="none">
+              <ion-toggle [(ngModel)]="excluded" [ngModelOptions]="{ standalone: true }">
+                <div class="excl-title">Exclude from totals</div>
+                <div class="excl-sub">Refunds, transfers, settlements</div>
+              </ion-toggle>
+            </ion-item>
+          </div>
+
+          @if (categories().length === 0 || accounts().length === 0) {
+            <ion-text color="danger">
+              <p class="warn">Add at least one category and account before logging expenses.</p>
+            </ion-text>
+          }
+
+          @if (parsed.balance != null) {
+            <ion-note class="bal">
+              Balance in SMS: {{ parsed.balance | number: '1.0-2' }} — the account's balance will update to this.
+            </ion-note>
+          }
+
+          @if (mode !== 'edit') {
+            <ion-note class="raw">{{ parsed.raw }}</ion-note>
+          }
         </div>
-      }
 
-      <ion-item>
-        <ion-input
-          label="Amount"
-          labelPlacement="stacked"
-          type="number"
-          inputmode="decimal"
-          [(ngModel)]="amount"
-        ></ion-input>
-      </ion-item>
-
-      <ion-item>
-        <ion-input
-          label="Date"
-          labelPlacement="stacked"
-          type="date"
-          [(ngModel)]="date"
-        ></ion-input>
-      </ion-item>
-
-      <ion-item>
-        <ion-select
-          label="Category"
-          labelPlacement="stacked"
-          interface="action-sheet"
-          [(ngModel)]="categoryId"
-        >
-          @for (c of categories(); track c.id) {
-            <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
-          }
-        </ion-select>
-      </ion-item>
-
-      <ion-item>
-        <ion-select
-          label="Account"
-          labelPlacement="stacked"
-          interface="action-sheet"
-          [(ngModel)]="accountId"
-        >
-          @for (a of accounts(); track a.id) {
-            <ion-select-option [value]="a.id">{{ a.name }}</ion-select-option>
-          }
-        </ion-select>
-      </ion-item>
-
-      <ion-item>
-        <ion-input
-          label="Note"
-          labelPlacement="stacked"
-          type="text"
-          [(ngModel)]="note"
-        ></ion-input>
-      </ion-item>
-
-      <ion-item>
-        <ion-toggle [(ngModel)]="excluded">Exclude from spending totals</ion-toggle>
-      </ion-item>
-
-      @if (categories().length === 0 || accounts().length === 0) {
-        <ion-text color="danger">
-          <p class="warn">Add at least one category and account before logging expenses.</p>
-        </ion-text>
-      }
-
-      @if (parsed.balance != null) {
-        <ion-note class="bal">
-          Balance in SMS: {{ parsed.balance | number: '1.0-2' }} — the account's balance will update to this.
-        </ion-note>
-      }
-
-      <ion-note class="raw">{{ parsed.raw }}</ion-note>
+        <!-- Sticky save -->
+        <div class="save-bar">
+          <ion-button type="submit" expand="block" [disabled]="!canSave() || saving()">
+            <ion-icon name="save-outline" slot="start"></ion-icon>
+            {{ saving() ? 'Saving…' : (mode === 'edit' ? 'Save changes' : 'Add expense') }}
+          </ion-button>
+        </div>
+      </form>
     </ion-content>
   `,
   styles: [`
+    ion-content { --background: var(--artha-bg); }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 16px; }
+
     .lead { margin: 0 0 12px; font-size: 14px; color: var(--artha-text-muted); }
     .dupe {
       display: flex;
@@ -177,6 +236,62 @@ import { ParsedExpense } from './sms-parser';
     .dupe ion-icon { font-size: 20px; color: var(--artha-warning, #f59e0b); flex-shrink: 0; }
     .dupe-title { margin: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--artha-text); }
     .dupe-body { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--artha-text-muted); }
+
+    /* Amount hero */
+    .amount { text-align: center; padding: 6px 0 18px; }
+    .amount-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.2px;
+      color: var(--artha-text-subtle);
+    }
+    .amount-row {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      margin-top: 8px;
+    }
+    .cur { font-size: 26px; font-weight: 700; color: var(--artha-text-muted); }
+    .amount-input {
+      border: 0; outline: 0; background: transparent;
+      font-size: 46px; font-weight: 800; color: var(--artha-text);
+      width: 7ch; max-width: 60vw; text-align: center; padding: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .amount-input::placeholder { color: var(--artha-border-strong); }
+    .amount-input::-webkit-outer-spin-button,
+    .amount-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .amount-input { -moz-appearance: textfield; }
+
+    .section-label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+      color: var(--artha-text-subtle); margin: 16px 4px 8px;
+    }
+
+    /* Date chips */
+    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .chip {
+      border: 1px solid var(--artha-border); background: var(--artha-surface);
+      color: var(--artha-text-muted); font-size: 13px; font-weight: 600;
+      padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    }
+    .chip.sel {
+      background: var(--artha-accent); border-color: var(--artha-accent); color: #fff;
+    }
+    .chip-dt {
+      --background: var(--artha-surface);
+      --color: var(--artha-text-muted);
+      border: 1px solid var(--artha-border); border-radius: 999px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius);
+      box-shadow: var(--artha-shadow-sm);
+      overflow: hidden;
+    }
+    .card ion-item { --background: transparent; }
+    .excl-title { font-size: 14px; color: var(--artha-text); }
+    .excl-sub { font-size: 12px; color: var(--artha-text-muted); margin-top: 2px; }
+
     .bal { display: block; margin-top: 14px; font-size: 12.5px; color: var(--artha-accent); font-weight: 600; }
     .warn { font-size: 13px; }
     .raw {
@@ -189,6 +304,15 @@ import { ParsedExpense } from './sms-parser';
       border-radius: 8px;
       color: var(--artha-text-muted);
       white-space: pre-wrap;
+    }
+
+    /* Sticky save */
+    .save-bar {
+      position: sticky; bottom: 0;
+      background: var(--artha-bg);
+      box-shadow: 0 -1px 0 var(--artha-border);
+      padding: 12px 16px 14px;
+      max-width: 640px; margin: 0 auto;
     }
   `],
 })
@@ -249,7 +373,7 @@ export class SmsConfirmModal implements OnInit {
       await this.modalCtrl.dismiss(
         {
           amount: Number(this.amount),
-          date: this.date,
+          date: this.dateValue(),
           categoryId: this.categoryId,
           accountId: this.accountId,
           note: this.note?.trim() || null,
@@ -262,7 +386,7 @@ export class SmsConfirmModal implements OnInit {
     this.saving.set(true);
     try {
       await this.expensesStore.add({
-        date: this.date,
+        date: this.dateValue(),
         amount: Number(this.amount),
         categoryId: this.categoryId,
         accountId: this.accountId,
@@ -283,5 +407,51 @@ export class SmsConfirmModal implements OnInit {
 
   protected dismiss(): void {
     void this.modalCtrl.dismiss(null, 'cancel');
+  }
+
+  /** Currency symbol for the selected account, e.g. ₹ / $ / €. */
+  protected currencySymbol(): string {
+    const acc = this.accountsStore.byId()[this.accountId];
+    const code = acc?.currency || 'INR';
+    try {
+      const parts = new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: code,
+      }).formatToParts(0);
+      return parts.find((p) => p.type === 'currency')?.value ?? code;
+    } catch {
+      return code;
+    }
+  }
+
+  protected selectAll(event: Event): void {
+    (event.target as HTMLInputElement | null)?.select();
+  }
+
+  protected isToday(): boolean {
+    return this.dateValue() === this.today();
+  }
+
+  protected isYesterday(): boolean {
+    return this.dateValue() === this.daysAgo(1);
+  }
+
+  protected setDate(days: number): void {
+    this.date = this.daysAgo(days);
+  }
+
+  /** The bound date trimmed to YYYY-MM-DD (ion-datetime can emit a full ISO). */
+  private dateValue(): string {
+    return (this.date ?? '').slice(0, 10);
+  }
+
+  private daysAgo(days: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  private today(): string {
+    return new Date().toISOString().slice(0, 10);
   }
 }
