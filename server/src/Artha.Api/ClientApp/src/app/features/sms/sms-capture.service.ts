@@ -739,10 +739,14 @@ export class SmsCaptureService {
 
   private resolveAccountId(parsed: ParsedExpense): string {
     const accounts = this.accountsStore.items().filter((a) => !a.archived);
-    // 1) A mapping the user taught us by confirming a prior SMS.
-    const mapped = this.accountMap()[accountKey(parsed)];
-    if (mapped && accounts.some((a) => a.id === mapped)) {
-      return mapped;
+    // 1) A mapping the user taught us by confirming a prior SMS — try the
+    //    card/account hint first (most specific), then the sender.
+    const map = this.accountMap();
+    for (const key of accountKeys(parsed)) {
+      const mapped = map[key];
+      if (mapped && accounts.some((a) => a.id === mapped)) {
+        return mapped;
+      }
     }
     // 2) Heuristic: the account's last-4 appears in an account name.
     if (parsed.accountHint) {
@@ -764,30 +768,42 @@ export class SmsCaptureService {
   }
 
   private rememberAccount(parsed: ParsedExpense, accountId: string): void {
-    const key = accountKey(parsed);
-    if (!key) {
+    const keys = accountKeys(parsed);
+    if (keys.length === 0) {
       return;
     }
     const map = this.accountMap();
-    if (map[key] === accountId) {
-      return;
+    let changed = false;
+    for (const key of keys) {
+      if (map[key] !== accountId) {
+        map[key] = accountId;
+        changed = true;
+      }
     }
-    map[key] = accountId;
-    localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
+    if (changed) {
+      localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
+    }
   }
 }
 
 /**
- * Stable key for "which account does this SMS belong to": the mentioned
- * account/card last-4 when present, otherwise the normalised sender. The last-4
- * is the most reliable discriminator across a bank's many sender routes.
+ * Learning keys for "which account does this SMS belong to", most specific
+ * first: the mentioned account/card last-4, then the normalised sender. We
+ * store and look up under *both* so a correction taught by one message type
+ * (e.g. a debit alert that carries a last-4) also applies to others that don't
+ * (e.g. a UPI alert from the same account) — otherwise the hint-less ones keep
+ * falling back to the default account.
  */
-function accountKey(p: ParsedExpense): string {
+function accountKeys(p: ParsedExpense): string[] {
+  const keys: string[] = [];
   if (p.accountHint) {
-    return `h:${p.accountHint}`;
+    keys.push(`h:${p.accountHint}`);
   }
   const sender = normalizeSender(p.sender);
-  return sender ? `s:${sender}` : '';
+  if (sender) {
+    keys.push(`s:${sender}`);
+  }
+  return keys;
 }
 
 /** Strip the telecom operator prefix (e.g. "AD-HDFCBK" -> "HDFCBK"). */
