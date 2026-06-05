@@ -16,6 +16,7 @@ import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SettingsStore } from '../settings/settings.store';
+import { SmsCaptureService } from '../sms/sms-capture.service';
 
 interface CategorySlice {
   id: string;
@@ -74,6 +75,20 @@ interface CategorySlice {
               Welcome back 👋
             }
           </p>
+
+          <!-- Pending SMS expenses -->
+          @if (sms.isSupported() && sms.pendingCount() > 0) {
+            <button type="button" class="pending-card" (click)="reviewPending()">
+              <span class="pending-badge">{{ sms.pendingCount() }}</span>
+              <span class="pending-text">
+                <span class="pending-title">
+                  {{ sms.pendingCount() === 1 ? 'expense' : 'expenses' }} from SMS waiting
+                </span>
+                <span class="pending-sub">Tap to review — save or dismiss each</span>
+              </span>
+              <ion-icon class="pending-chevron" name="chevron-forward" aria-hidden="true"></ion-icon>
+            </button>
+          }
 
           <!-- Balance hero -->
           <section class="balance">
@@ -243,6 +258,37 @@ interface CategorySlice {
       font-weight: 500;
       color: var(--artha-text-muted);
     }
+
+    /* ====== Pending SMS card ====== */
+    .pending-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      text-align: left;
+      padding: 14px 16px;
+      border: 1px solid var(--artha-accent);
+      border-radius: var(--artha-radius);
+      background: var(--artha-accent-tint, #eaf1ff);
+      cursor: pointer;
+      box-shadow: var(--artha-shadow-sm);
+    }
+    .pending-card:active { transform: translateY(1px); }
+    .pending-badge {
+      flex: none;
+      min-width: 30px; height: 30px; padding: 0 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 999px;
+      background: var(--artha-accent); color: #fff;
+      font-size: 14px; font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+    .pending-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .pending-title {
+      font-size: 14px; font-weight: 700; color: var(--artha-text);
+    }
+    .pending-sub { font-size: 12px; color: var(--artha-text-muted); }
+    .pending-chevron { flex: none; font-size: 18px; color: var(--artha-accent); }
 
     /* ====== Balance hero ====== */
     .balance {
@@ -545,6 +591,7 @@ export class DashboardComponent implements OnInit {
   private readonly categoriesStore = inject(CategoriesStore);
   private readonly accountsStore = inject(AccountsStore);
   protected readonly settingsStore = inject(SettingsStore);
+  protected readonly sms = inject(SmsCaptureService);
   private readonly session = inject(SessionService);
 
   protected readonly currentUser = this.session.currentUser;
@@ -614,6 +661,11 @@ export class DashboardComponent implements OnInit {
     if (!this.settingsStore.settings()) {
       void this.settingsStore.load();
     }
+  }
+
+  /** Open the persistent queue of detected-but-unattended SMS expenses. */
+  protected async reviewPending(): Promise<void> {
+    await this.sms.reviewPending();
   }
 
   protected categoryName(id: string): string {
