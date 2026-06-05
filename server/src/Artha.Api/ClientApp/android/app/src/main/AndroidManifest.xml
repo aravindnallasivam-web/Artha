@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- Send a balance-enquiry SMS to the bank when the user taps "Sync balance". -->
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Read the active SIMs so the user can pick which one sends the
+         balance-enquiry SMS on a dual-SIM phone. Requested on demand. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Post a notification when a bank SMS arrives while the app is closed. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

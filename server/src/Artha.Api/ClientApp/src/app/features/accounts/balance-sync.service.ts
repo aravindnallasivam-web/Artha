@@ -12,6 +12,9 @@ import { BalanceSyncModal } from './balance-sync.modal';
 interface EnquiryOverride {
   number: string;
   message: string;
+  /** Chosen SIM (subscription id) for this account, or null for the default SIM.
+      Device-specific, so it stays in localStorage and is never synced. */
+  subscriptionId?: number | null;
 }
 
 const OVERRIDE_PREFIX = 'artha.banksync.';
@@ -43,17 +46,26 @@ export class BalanceSyncService {
     const override = this.loadOverride(account.id);
     const to = override?.number ?? preset?.enquiryNumber ?? '';
     const message = override?.message ?? preset?.enquiryKeyword ?? '';
+    const subscriptionId = override?.subscriptionId ?? null;
 
     const modal = await this.modalCtrl.create({
       component: BalanceSyncModal,
-      componentProps: { bankName: preset?.name ?? account.name, to, message },
+      componentProps: { bankName: preset?.name ?? account.name, to, message, subscriptionId },
     });
     await modal.present();
-    const { role, data } = await modal.onWillDismiss<{ to: string; message: string }>();
+    const { role, data } = await modal.onWillDismiss<{
+      to: string;
+      message: string;
+      subscriptionId: number | null;
+    }>();
     if (role !== 'send' || !data) {
       return;
     }
-    this.saveOverride(account.id, { number: data.to, message: data.message });
+    this.saveOverride(account.id, {
+      number: data.to,
+      message: data.message,
+      subscriptionId: data.subscriptionId ?? null,
+    });
 
     // We need SEND_SMS to send the enquiry *and* READ_SMS to read the bank's
     // reply. Request both up front — without read access we can send but never
@@ -69,7 +81,11 @@ export class BalanceSyncService {
 
     const sentAt = Date.now();
     try {
-      await SmsReader.sendSms({ to: data.to, body: data.message });
+      await SmsReader.sendSms({
+        to: data.to,
+        body: data.message,
+        subscriptionId: data.subscriptionId ?? undefined,
+      });
     } catch {
       await this.notifier.notifyError('Could not send the balance SMS.');
       return;
