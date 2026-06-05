@@ -23,6 +23,7 @@ import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.s
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
 import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
+import { SmsMappingsModal } from '../sms/sms-mappings.modal';
 import { SettingsStore } from './settings.store';
 
 @Component({
@@ -101,6 +102,13 @@ import { SettingsStore } from './settings.store';
               <ion-label>Scan recent messages</ion-label>
               @if (smsBusy()) { <ion-spinner slot="end"></ion-spinner> }
             </ion-item>
+            @if (smsMappingCount() > 0) {
+              <ion-item button (click)="manageMappings()">
+                <ion-icon name="git-merge-outline" slot="start" color="medium"></ion-icon>
+                <ion-label>Learned mappings</ion-label>
+                <ion-note slot="end">{{ smsMappingCount() }}</ion-note>
+              </ion-item>
+            }
             @if (smsIgnoredCount() > 0) {
               <ion-item button (click)="manageIgnored()">
                 <ion-icon name="close-outline" slot="start" color="medium"></ion-icon>
@@ -164,11 +172,20 @@ export class SettingsPage implements OnInit {
   protected readonly smsEnabled = signal(false);
   protected readonly smsBusy = signal(false);
   protected readonly smsIgnoredCount = signal(0);
+  protected readonly smsMappingCount = signal(0);
 
   ngOnInit(): void {
     void this.store.load();
     this.smsEnabled.set(this.sms.isEnabled());
     this.smsIgnoredCount.set(this.sms.ignoredCount());
+    this.smsMappingCount.set(this.sms.mappingCount());
+  }
+
+  async manageMappings(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: SmsMappingsModal });
+    await modal.present();
+    await modal.onWillDismiss();
+    this.smsMappingCount.set(this.sms.mappingCount());
   }
 
   async manageIgnored(): Promise<void> {

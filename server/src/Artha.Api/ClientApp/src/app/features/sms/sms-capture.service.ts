@@ -39,6 +39,25 @@ interface PendingItem {
   addedAt: number;
 }
 
+/** A learned "this SMS → this account" rule, for display in settings. */
+export interface AccountMapping {
+  /** Raw storage key (e.g. "h:1234" or "s:HDFCBK"). */
+  key: string;
+  /** Human-readable description of what the rule matches. */
+  label: string;
+  accountId: string;
+  accountName: string;
+}
+
+/** A learned "this merchant → this category" rule, for display in settings. */
+export interface CategoryMapping {
+  /** Raw storage key — the normalised merchant. */
+  key: string;
+  merchant: string;
+  categoryId: string;
+  categoryName: string;
+}
+
 /**
  * Coordinates SMS-based expense capture (Android only):
  *  - asks for the SMS permission,
@@ -784,6 +803,62 @@ export class SmsCaptureService {
       localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
     }
   }
+
+  // ----- Learned mappings (for the settings viewer) -----
+
+  /** Total number of learned account + category rules. */
+  mappingCount(): number {
+    return Object.keys(this.accountMap()).length + Object.keys(this.categoryMap()).length;
+  }
+
+  /** Ensure account/category names are available before listing mappings. */
+  async loadReferenceData(): Promise<void> {
+    await this.ensureStores();
+  }
+
+  /** Learned SMS→account rules, resolved to current account names. */
+  accountMappings(): AccountMapping[] {
+    const byId = this.accountsStore.byId();
+    return Object.entries(this.accountMap())
+      .map(([key, accountId]) => ({
+        key,
+        label: describeAccountKey(key),
+        accountId,
+        accountName: byId[accountId]?.name ?? 'Deleted account',
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  /** Learned merchant→category rules, resolved to current category names. */
+  categoryMappings(): CategoryMapping[] {
+    const byId = this.categoriesStore.byId();
+    return Object.entries(this.categoryMap())
+      .map(([key, categoryId]) => ({
+        key,
+        merchant: key,
+        categoryId,
+        categoryName: byId[categoryId]?.name ?? 'Deleted category',
+      }))
+      .sort((a, b) => a.merchant.localeCompare(b.merchant));
+  }
+
+  /** Forget a learned account rule. */
+  forgetAccountMapping(key: string): void {
+    const map = this.accountMap();
+    if (key in map) {
+      delete map[key];
+      localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
+    }
+  }
+
+  /** Forget a learned category rule. */
+  forgetCategoryMapping(key: string): void {
+    const map = this.categoryMap();
+    if (key in map) {
+      delete map[key];
+      localStorage.setItem(CATEGORY_MAP_KEY, JSON.stringify(map));
+    }
+  }
 }
 
 /**
@@ -804,6 +879,17 @@ function accountKeys(p: ParsedExpense): string[] {
     keys.push(`s:${sender}`);
   }
   return keys;
+}
+
+/** Human-readable description of an account-mapping key for the settings list. */
+function describeAccountKey(key: string): string {
+  if (key.startsWith('h:')) {
+    return `Card / A/c ending ${key.slice(2)}`;
+  }
+  if (key.startsWith('s:')) {
+    return `Messages from ${key.slice(2)}`;
+  }
+  return key;
 }
 
 /** Strip the telecom operator prefix (e.g. "AD-HDFCBK" -> "HDFCBK"). */
