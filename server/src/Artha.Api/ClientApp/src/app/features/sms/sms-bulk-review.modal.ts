@@ -276,12 +276,15 @@ export class SmsBulkReviewModal implements OnInit {
         initialDate: row.date,
         initialNote: row.note ?? '',
         initialExcluded: row.excluded,
+        canDismiss: this.queueMode,
       },
     });
     await modal.present();
     const { role, data } = await modal.onWillDismiss<Partial<SmsCandidateRow>>();
     if (role === 'edited' && data) {
       this.patch(i, { ...data, selected: true });
+    } else if (role === 'dismiss') {
+      this.dropRow(i);
     }
   }
 
@@ -307,6 +310,11 @@ export class SmsBulkReviewModal implements OnInit {
   /** Drop a single pending item from the queue without logging it. */
   protected dismissRow(event: Event, i: number): void {
     event.stopPropagation();
+    this.dropRow(i);
+  }
+
+  /** Remove row `i` from the list and mark its queue item to be forgotten. */
+  private dropRow(i: number): void {
     const row = this.rows()[i];
     if (row?.key) {
       this.dismissedKeys.add(row.key);

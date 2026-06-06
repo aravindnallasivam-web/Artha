@@ -61,20 +61,26 @@ import { ParsedExpense } from './sms-parser';
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-button (click)="dismiss()">Cancel</ion-button>
+          <ion-button (click)="dismiss()">{{ canDismiss ? 'Back' : 'Cancel' }}</ion-button>
         </ion-buttons>
         <ion-title>{{ mode === 'edit' ? 'Edit expense' : 'Log expense?' }}</ion-title>
+        @if (canDismiss) {
+          <ion-buttons slot="end">
+            <ion-button color="danger" (click)="discard()">Dismiss</ion-button>
+          </ion-buttons>
+        }
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
       <form (ngSubmit)="save()">
         <div class="wrap">
-          @if (mode !== 'edit') {
-            <p class="lead">
-              Detected from a message by <strong>{{ parsed.sender || 'your bank' }}</strong>.
-            </p>
-          }
+          <p class="lead">
+            Detected from a message by <strong>{{ parsed.sender || 'your bank' }}</strong>.
+          </p>
+
+          <!-- Original SMS, so you can see what's being logged. -->
+          <ion-note class="raw">{{ parsed.raw }}</ion-note>
 
           @if (duplicate) {
             <div class="dupe" role="alert">
@@ -202,10 +208,6 @@ import { ParsedExpense } from './sms-parser';
               Balance in SMS: {{ parsed.balance | number: '1.0-2' }} — the account's balance will update to this.
             </ion-note>
           }
-
-          @if (mode !== 'edit') {
-            <ion-note class="raw">{{ parsed.raw }}</ion-note>
-          }
         </div>
 
         <!-- Sticky save -->
@@ -296,7 +298,7 @@ import { ParsedExpense } from './sms-parser';
     .warn { font-size: 13px; }
     .raw {
       display: block;
-      margin-top: 16px;
+      margin: 0 0 4px;
       padding: 10px 12px;
       font-size: 12px;
       line-height: 1.4;
@@ -341,6 +343,9 @@ export class SmsConfirmModal implements OnInit {
   @Input() initialDate?: string;
   @Input() initialNote?: string;
   @Input() initialExcluded?: boolean;
+  /** When true (opened from the pending queue), show a Dismiss action that
+      drops the item without logging it (dismisses with role 'dismiss'). */
+  @Input() canDismiss = false;
 
   protected amount = 0;
   protected date = '';
@@ -407,6 +412,11 @@ export class SmsConfirmModal implements OnInit {
 
   protected dismiss(): void {
     void this.modalCtrl.dismiss(null, 'cancel');
+  }
+
+  /** Drop this detected expense from the queue without logging it. */
+  protected discard(): void {
+    void this.modalCtrl.dismiss(null, 'dismiss');
   }
 
   /** Currency symbol for the selected account, e.g. ₹ / $ / €. */

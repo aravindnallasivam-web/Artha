@@ -524,6 +524,7 @@ export class SmsCaptureService {
           duplicate: this.findDuplicate(parsed, existing),
           categoryId: this.resolveCategoryId(parsed),
           accountId: this.resolveAccountId(parsed),
+          canDismiss: true,
         },
       });
       await modal.present();
@@ -538,6 +539,9 @@ export class SmsCaptureService {
         if (parsed.balance != null) {
           await this.syncBalance(data.accountId, parsed.balance);
         }
+        this.removePending([this.pendingKey(parsed)]);
+      } else if (role === 'dismiss') {
+        // User chose not to log it — drop it from the queue.
         this.removePending([this.pendingKey(parsed)]);
       }
       // On cancel/close we deliberately keep the item in the queue.
