@@ -36,6 +36,36 @@ export class BalanceSyncService {
     return Capacitor.getPlatform() === 'android';
   }
 
+  /** The SIM (subscription id) pinned for this account's enquiry, or null. */
+  rememberedSim(accountId: string): number | null {
+    return this.loadOverride(accountId)?.subscriptionId ?? null;
+  }
+
+  /**
+   * Friendly labels for the active SIMs, keyed by subscription id, so the
+   * account screen can show which SIM an enquiry uses. Empty when not on
+   * Android or phone access hasn't been granted.
+   */
+  async simLabels(): Promise<Record<number, string>> {
+    if (!this.isSupported()) {
+      return {};
+    }
+    try {
+      const { permissionGranted, sims } = await SmsReader.getSimCards();
+      if (!permissionGranted) {
+        return {};
+      }
+      const map: Record<number, string> = {};
+      for (const s of sims) {
+        const name = s.carrierName || s.displayName || '';
+        map[s.subscriptionId] = name ? `SIM ${s.slotIndex + 1} · ${name}` : `SIM ${s.slotIndex + 1}`;
+      }
+      return map;
+    } catch {
+      return {};
+    }
+  }
+
   async syncBalance(account: Account): Promise<void> {
     if (!this.isSupported()) {
       await this.notifier.notifyError('Balance sync works on Android only.');
