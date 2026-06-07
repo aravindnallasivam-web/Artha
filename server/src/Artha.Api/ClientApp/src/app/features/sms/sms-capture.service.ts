@@ -30,6 +30,9 @@ const IGNORED_KEY = 'artha.sms.ignoredSenders';
 // Persistent queue of detected-but-unattended expenses. Items survive app
 // restarts and stay until the user saves or dismisses them.
 const PENDING_KEY = 'artha.sms.pending';
+// When on, a detected expense whose vendor (category) and account are already
+// learned is logged automatically and the user is just notified.
+const AUTO_ADD_KEY = 'artha.sms.autoAdd';
 
 /** A detected expense waiting in the persistent queue. */
 interface PendingItem {
@@ -275,11 +278,15 @@ export class SmsCaptureService {
       .filter((m) => !this.isIgnored(m.address))
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
-    // Add everything detected to the persistent queue (deduped), then surface
-    // the backlog as one reviewable list. Items the user doesn't act on stay
-    // queued for next time instead of being lost.
+    // Add everything detected to the persistent queue (deduped). Auto-log the
+    // ones whose vendor + account are already learned (notifying the user),
+    // then surface whatever is left as the reviewable backlog.
     for (const p of parsed) {
       this.enqueue(p);
+    }
+    const added = await this.autoAddPending();
+    if (added.length > 0) {
+      await this.notifyAutoAdded(added);
     }
     await this.presentQueue();
   }
@@ -457,10 +464,18 @@ export class SmsCaptureService {
     if (!parsed) {
       return;
     }
-    // Queue it (never lost), then — the app is open, so the user is here —
-    // pop the single confirm right away.
+    // Queue it (never lost). If the vendor + account are already learned, log
+    // it automatically and just notify; otherwise pop the single confirm since
+    // the app is open and the user is here.
     this.enqueue(parsed);
-    void this.ensureStores().then(() => this.openSingleConfirm(parsed));
+    void (async () => {
+      await this.ensureStores();
+      if (await this.tryAutoAdd(parsed)) {
+        await this.notifyAutoAdded([parsed]);
+        return;
+      }
+      await this.openSingleConfirm(parsed);
+    })();
   }
 
   private getLastSeen(): number {
@@ -690,6 +705,126 @@ export class SmsCaptureService {
   private persistPending(): void {
     localStorage.setItem(PENDING_KEY, JSON.stringify(this.pending));
     this._pendingCount.set(this.pending.length);
+  }
+
+  // ----- Auto-add (log known vendors without approval) -----
+
+  /** Whether known-vendor expenses are logged automatically. Default on. */
+  isAutoAddEnabled(): boolean {
+    return localStorage.getItem(AUTO_ADD_KEY) !== '0';
+  }
+
+  setAutoAdd(enabled: boolean): void {
+    localStorage.setItem(AUTO_ADD_KEY, enabled ? '1' : '0');
+  }
+
+  /**
+   * Auto-log every pending item whose vendor (category) and account are already
+   * learned and which isn't a likely duplicate. Returns the ones added.
+   */
+  private async autoAddPending(): Promise<ParsedExpense[]> {
+    if (!this.isAutoAddEnabled()) {
+      return [];
+    }
+    await this.ensureStores();
+    const items = [...this.pending];
+    if (items.length === 0) {
+      return [];
+    }
+    const existing = await this.fetchExisting([
+      ...new Set(items.map((i) => monthOf(i.parsed.date))),
+    ]);
+    const added: ParsedExpense[] = [];
+    for (const item of items) {
+      if (await this.tryAutoAdd(item.parsed, existing)) {
+        added.push(item.parsed);
+      }
+    }
+    return added;
+  }
+
+  /**
+   * Log a single detected expense automatically if its vendor + account are
+   * already learned and it isn't a duplicate. Returns true if it was added.
+   */
+  private async tryAutoAdd(parsed: ParsedExpense, existing?: Expense[]): Promise<boolean> {
+    if (!this.isAutoAddEnabled()) {
+      return false;
+    }
+    const categoryId = this.learnedCategoryId(parsed);
+    const accountId = this.learnedAccountId(parsed);
+    if (!categoryId || !accountId) {
+      return false;
+    }
+    const logged = existing ?? (await this.fetchExisting([monthOf(parsed.date)]));
+    if (this.findDuplicate(parsed, logged)) {
+      return false;
+    }
+    try {
+      await this.expensesStore.add({
+        date: parsed.date,
+        amount: parsed.amount,
+        categoryId,
+        accountId,
+        note: parsed.merchant ?? parsed.sender ?? null,
+        excluded: false,
+      });
+    } catch {
+      return false;
+    }
+    // Reinforce the mappings and sync the balance, then clear from the queue.
+    this.rememberAccount(parsed, accountId);
+    this.rememberCategory(parsed, categoryId);
+    if (parsed.balance != null) {
+      await this.syncBalance(accountId, parsed.balance);
+    }
+    this.removePending([this.pendingKey(parsed)]);
+    return true;
+  }
+
+  /** A category the user previously taught for this merchant, or null. */
+  private learnedCategoryId(parsed: ParsedExpense): string | null {
+    const key = categoryKey(parsed.merchant);
+    if (!key) {
+      return null;
+    }
+    const mapped = this.categoryMap()[key];
+    const active = this.categoriesStore.items().filter((c) => !c.archived);
+    return mapped && active.some((c) => c.id === mapped) ? mapped : null;
+  }
+
+  /** An account confidently known for this SMS (learned, or the only account). */
+  private learnedAccountId(parsed: ParsedExpense): string | null {
+    const accounts = this.accountsStore.items().filter((a) => !a.archived);
+    const map = this.accountMap();
+    for (const key of accountKeys(parsed)) {
+      const mapped = map[key];
+      if (mapped && accounts.some((a) => a.id === mapped)) {
+        return mapped;
+      }
+    }
+    // With a single account there's nothing to disambiguate.
+    return accounts.length === 1 ? accounts[0].id : null;
+  }
+
+  /** Toast the user about expenses logged automatically. */
+  private async notifyAutoAdded(added: ParsedExpense[]): Promise<void> {
+    if (added.length === 1) {
+      const p = added[0];
+      const name = p.merchant ?? p.sender ?? 'expense';
+      await this.notifier.notifyInfo(`Expense added: ${this.formatAmount(p.amount)} · ${name}`);
+    } else if (added.length > 1) {
+      await this.notifier.notifyInfo(`Added ${added.length} expenses automatically from SMS.`);
+    }
+  }
+
+  private formatAmount(amount: number): string {
+    const currency = this.settingsStore.currency() || 'INR';
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+    } catch {
+      return amount.toLocaleString();
+    }
   }
 
   /**

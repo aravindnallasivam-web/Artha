@@ -90,6 +90,22 @@ import { SettingsStore } from './settings.store';
                 </ion-label>
               </ion-toggle>
             </ion-item>
+            @if (smsEnabled()) {
+              <ion-item>
+                <ion-toggle
+                  labelPlacement="start"
+                  justify="space-between"
+                  [checked]="smsAutoAdd()"
+                  (ionChange)="onAutoAddToggle($event)"
+                >
+                  <ion-label class="ion-text-wrap">
+                    <h2>Auto-add known expenses</h2>
+                    <p>When the vendor's category and account are already learned, log it
+                      automatically and just notify you — no approval needed.</p>
+                  </ion-label>
+                </ion-toggle>
+              </ion-item>
+            }
             @if (sms.pendingCount() > 0) {
               <ion-item button detail="false" [disabled]="smsBusy()" (click)="reviewPending()">
                 <ion-icon name="list-outline" slot="start" color="medium"></ion-icon>
@@ -173,12 +189,20 @@ export class SettingsPage implements OnInit {
   protected readonly smsBusy = signal(false);
   protected readonly smsIgnoredCount = signal(0);
   protected readonly smsMappingCount = signal(0);
+  protected readonly smsAutoAdd = signal(true);
 
   ngOnInit(): void {
     void this.store.load();
     this.smsEnabled.set(this.sms.isEnabled());
     this.smsIgnoredCount.set(this.sms.ignoredCount());
     this.smsMappingCount.set(this.sms.mappingCount());
+    this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+  }
+
+  onAutoAddToggle(event: Event): void {
+    const checked = (event as CustomEvent<{ checked: boolean }>).detail.checked;
+    this.sms.setAutoAdd(checked);
+    this.smsAutoAdd.set(checked);
   }
 
   async manageMappings(): Promise<void> {
