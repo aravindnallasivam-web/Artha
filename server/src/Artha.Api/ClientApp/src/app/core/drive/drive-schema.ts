@@ -131,3 +131,15 @@ export function shardsNewestFirst(manifest: Manifest): { month: YearMonth; shard
 export function emptyManifest(): Manifest {
   return { schemaVersion: SCHEMA_VERSION, shards: [], createdAt: new Date().toISOString() };
 }
+
+/**
+ * Fresh entity id, e.g. newId('cat') -> 'cat-9f8e...'. Mirrors the server's
+ * `{prefix}-{Guid:N}` (32 hex chars, no dashes).
+ */
+export function newId(prefix: string): string {
+  const uuid =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${uuid.replace(/-/g, '')}`;
+}
