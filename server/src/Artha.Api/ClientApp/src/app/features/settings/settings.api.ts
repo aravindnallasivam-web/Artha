@@ -1,19 +1,18 @@
-import { HttpClient } from '@angular/common/http';
+// Thin pass-through to the Drive-backed service. Kept as `SettingsApi` so the
+// store's injection point is unchanged after the serverless cutover.
 import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../environments/environment';
 import { Settings, SettingsUpdateRequest } from '../../core/models/settings.model';
+import { SettingsDriveService } from './settings.drive';
 
 @Injectable({ providedIn: 'root' })
 export class SettingsApi {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/api/settings`;
+  private readonly drive = inject(SettingsDriveService);
 
   get(): Promise<Settings> {
-    return firstValueFrom(this.http.get<Settings>(this.baseUrl));
+    return this.drive.get();
   }
 
   put(request: SettingsUpdateRequest): Promise<Settings> {
-    return firstValueFrom(this.http.put<Settings>(this.baseUrl, request));
+    return this.drive.put(request);
   }
 }

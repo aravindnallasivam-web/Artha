@@ -10,14 +10,11 @@ import {
   IonSpinner,
   IonTitle,
   IonToolbar,
-  ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
-import { ImportResultResponse } from '../../core/models/import.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
-import { ExpenseImportModal } from './expense-import.modal';
 import { ExpensesStore } from './expenses.store';
 
 type ViewMode = 'list' | 'day' | 'month';
@@ -62,9 +59,6 @@ const TODAY_ISO = toIsoDate(new Date());
       <ion-toolbar>
         <ion-title>Expenses</ion-title>
         <ion-buttons slot="end">
-          <ion-button (click)="openImport()" aria-label="Import expenses">
-            <ion-icon slot="icon-only" name="cloud-upload-outline"></ion-icon>
-          </ion-button>
           <ion-button (click)="add()" aria-label="Add expense">
             <ion-icon slot="icon-only" name="add"></ion-icon>
           </ion-button>
@@ -965,7 +959,6 @@ export class ExpensesListPage implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly notifier = inject(ConflictNotifierService);
-  private readonly modalCtrl = inject(ModalController);
 
   protected readonly weekdays = WEEKDAYS;
 
@@ -1254,33 +1247,6 @@ export class ExpensesListPage implements OnInit {
 
   protected add(): void {
     void this.router.navigate(['/expenses', 'new']);
-  }
-
-  protected async openImport(): Promise<void> {
-    const modal = await this.modalCtrl.create({ component: ExpenseImportModal });
-    await modal.present();
-
-    const { role, data } = await modal.onWillDismiss<ImportResultResponse>();
-    if (role !== 'imported' || !data) {
-      return;
-    }
-
-    // New categories/accounts may have been created, and expenses added across
-    // months — force-refresh the relevant stores so the UI reflects the import.
-    await Promise.all([
-      this.categoriesStore.load(/* includeArchived */ true, /* force */ true),
-      this.accountsStore.load(/* includeArchived */ true, /* force */ true),
-      this.loadMonth(/* force */ true),
-    ]);
-
-    const parts = [`Imported ${data.importedCount} expense${data.importedCount === 1 ? '' : 's'}.`];
-    if (data.createdCategories.length > 0) {
-      parts.push(`Created ${data.createdCategories.length} categor${data.createdCategories.length === 1 ? 'y' : 'ies'}.`);
-    }
-    if (data.createdAccounts.length > 0) {
-      parts.push(`Created ${data.createdAccounts.length} account${data.createdAccounts.length === 1 ? '' : 's'}.`);
-    }
-    await this.notifier.notifyInfo(parts.join(' '));
   }
 
   protected edit(id: string): void {

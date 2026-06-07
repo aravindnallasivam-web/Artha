@@ -35,10 +35,9 @@
             </intent-filter>
 
             <!--
-                OAuth deep link: the bridge page at
-                https://<deployed-app>/auth/callback/mobile bounces to
-                com.artha.app://auth/callback?code=...&state=... which
-                this filter routes back into the app.
+                OAuth deep link (serverless): the Android OAuth client
+                redirects straight to com.artha.app://auth/callback?code=...
+                &state=..., which this filter routes back into the app.
             -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />

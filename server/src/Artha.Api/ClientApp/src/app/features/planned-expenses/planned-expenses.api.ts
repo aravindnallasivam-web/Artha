@@ -1,29 +1,26 @@
-import { HttpClient } from '@angular/common/http';
+// Thin pass-through to the Drive-backed service. Kept as `PlannedExpensesApi`
+// so the store's injection point is unchanged after the serverless cutover.
 import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../environments/environment';
 import { PlannedExpense, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import { PlannedExpensesDriveService } from './planned-expenses.drive';
 
 @Injectable({ providedIn: 'root' })
 export class PlannedExpensesApi {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/api/planned-expenses`;
+  private readonly drive = inject(PlannedExpensesDriveService);
 
   list(includeArchived = false): Promise<PlannedExpense[]> {
-    const params: Record<string, string> = {};
-    if (includeArchived) params['includeArchived'] = 'true';
-    return firstValueFrom(this.http.get<PlannedExpense[]>(this.baseUrl, { params }));
+    return this.drive.list(includeArchived);
   }
 
   create(request: PlannedExpenseUpsertRequest): Promise<PlannedExpense> {
-    return firstValueFrom(this.http.post<PlannedExpense>(this.baseUrl, request));
+    return this.drive.create(request);
   }
 
   update(id: string, request: PlannedExpenseUpsertRequest): Promise<PlannedExpense> {
-    return firstValueFrom(this.http.put<PlannedExpense>(`${this.baseUrl}/${id}`, request));
+    return this.drive.update(id, request);
   }
 
   remove(id: string): Promise<void> {
-    return firstValueFrom(this.http.delete<void>(`${this.baseUrl}/${id}`));
+    return this.drive.remove(id);
   }
 }

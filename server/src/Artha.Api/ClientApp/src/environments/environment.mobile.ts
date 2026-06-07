@@ -1,24 +1,25 @@
-// Mobile (Capacitor) build environment.
+// Mobile (Capacitor) build environment — SERVERLESS.
 //
-// When the app runs inside a Capacitor WebView (iOS / Android) it cannot
-// use same-origin relative URLs — there is no ASP.NET host serving the
-// SPA from the same scheme. All API calls must point at the deployed
-// Artha backend over HTTPS.
+// The app talks to Google Drive directly; there is no Artha backend. apiBaseUrl
+// is retained only for legacy references and is unused.
 //
-// Replace the apiBaseUrl below with your deployed DigitalOcean App
-// Platform URL (e.g. https://artha-abc12.ondigitalocean.app) before
-// building the mobile binary.
-//
-// CORS for capacitor://localhost and ionic://localhost is already
-// configured in server/src/Artha.Api/Program.cs.
+// IMPORTANT — Google Cloud Console setup for the serverless build:
+//   1. Create an *Android* OAuth client (package com.artha.app + your signing
+//      SHA-1). Android clients use PKCE with NO client secret, which is what
+//      lets the code->token exchange run on-device.
+//   2. Put that client's ID in `clientId` below.
+//   3. Register `nativeRedirectUri` as an allowed redirect for the app; it must
+//      match the custom-scheme intent filter in AndroidManifest.xml.
 export const environment = {
   production: true,
   version: '1.0.0',
-  apiBaseUrl: 'https://arthaexpense-qrts6.ondigitalocean.app',
+  apiBaseUrl: '',
   google: {
     clientId: '952436597649-j9gosps5n1ukkm1907fu8bl06toptdb6.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
     redirectPath: '/auth/callback',
+    // Native deep-link the OAuth response returns to (no server bridge).
+    nativeRedirectUri: 'com.artha.app://auth/callback',
     scopes: [
       'openid',
       'email',
