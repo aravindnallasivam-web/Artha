@@ -10,6 +10,7 @@ import {
   IonNote,
   IonSelect,
   IonSelectOption,
+  IonSkeletonText,
   IonTitle,
   IonToolbar,
   ModalController,
@@ -60,6 +61,7 @@ interface NamedRef {
     IonNote,
     IonSelect,
     IonSelectOption,
+    IonSkeletonText,
     IonTitle,
     IonToolbar,
   ],
@@ -78,22 +80,43 @@ interface NamedRef {
           </ion-button>
         </ion-buttons>
       </ion-toolbar>
-      <ion-toolbar class="sub">
-        <div class="bar">
-          <span class="summary">
-            {{ rows().length }} found · {{ selectedCount() }} selected ·
-            <span class="num">{{ selectedTotal() | currency: currency : 'symbol' : '1.0-0' }}</span>
-          </span>
-          <button type="button" class="select-all" (click)="toggleAll()">
-            <ion-checkbox [checked]="allSelected()" (click)="$event.preventDefault()"></ion-checkbox>
-            <span>Select all</span>
-          </button>
-        </div>
-      </ion-toolbar>
+      @if (!loading()) {
+        <ion-toolbar class="sub">
+          <div class="bar">
+            <span class="summary">
+              {{ rows().length }} found · {{ selectedCount() }} selected ·
+              <span class="num">{{ selectedTotal() | currency: currencyCode() : 'symbol' : '1.0-0' }}</span>
+            </span>
+            <button type="button" class="select-all" (click)="toggleAll()">
+              <ion-checkbox [checked]="allSelected()" (click)="$event.preventDefault()"></ion-checkbox>
+              <span>Select all</span>
+            </button>
+          </div>
+        </ion-toolbar>
+      }
     </ion-header>
 
     <ion-content class="bg">
-      @if (rows().length === 0) {
+      @if (loading()) {
+        <div class="list">
+          @for (n of skeletonRows; track n) {
+            <div class="row skel">
+              <ion-skeleton-text [animated]="true" class="sk-pick"></ion-skeleton-text>
+              <div class="body">
+                <div class="line1">
+                  <ion-skeleton-text [animated]="true" style="width: 45%"></ion-skeleton-text>
+                  <ion-skeleton-text [animated]="true" style="width: 20%"></ion-skeleton-text>
+                </div>
+                <ion-skeleton-text [animated]="true" style="width: 60%; margin-top: 6px"></ion-skeleton-text>
+                <div class="selects">
+                  <ion-skeleton-text [animated]="true" style="height: 32px; border-radius: 10px"></ion-skeleton-text>
+                  <ion-skeleton-text [animated]="true" style="height: 32px; border-radius: 10px"></ion-skeleton-text>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      } @else if (rows().length === 0) {
         <p class="empty">No bank expense messages detected.</p>
       } @else {
         <div class="list">
@@ -108,7 +131,7 @@ interface NamedRef {
               <div class="body" (click)="editRow(i)">
                 <div class="line1">
                   <span class="merchant">{{ row.note || row.parsed.sender || 'Expense' }}</span>
-                  <span class="amount num">{{ row.amount | currency: currency : 'symbol' : '1.0-0' }}</span>
+                  <span class="amount num">{{ row.amount | currency: currencyCode() : 'symbol' : '1.0-0' }}</span>
                 </div>
                 <div class="line2">
                   {{ row.date }} · {{ row.parsed.sender }}
@@ -128,7 +151,7 @@ interface NamedRef {
                   [value]="row.categoryId"
                   (ionChange)="setCategory(i, $event)"
                 >
-                  @for (c of categories; track c.id) {
+                  @for (c of categoryOptions(); track c.id) {
                     <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
                   }
                 </ion-select>
@@ -139,7 +162,7 @@ interface NamedRef {
                   [value]="row.accountId"
                   (ionChange)="setAccount(i, $event)"
                 >
-                  @for (a of accounts; track a.id) {
+                  @for (a of accountOptions(); track a.id) {
                     <ion-select-option [value]="a.id">{{ a.name }}</ion-select-option>
                   }
                 </ion-select>
@@ -212,21 +235,45 @@ interface NamedRef {
       font-size: 12.5px; max-width: 100%;
     }
     .hint { display: block; padding: 0 16px 24px; font-size: 12px; color: var(--artha-text-subtle); }
+
+    /* Skeleton loader */
+    .row.skel { grid-template-areas: "pick body"; align-items: stretch; }
+    .sk-pick { grid-area: pick; width: 20px; height: 20px; border-radius: 6px; margin-top: 2px; }
+    .row.skel .body { grid-area: body; }
+    .row.skel .line1 { display: flex; justify-content: space-between; gap: 10px; }
+    .row.skel .selects { margin-top: 8px; }
+    .row.skel ion-skeleton-text { --border-radius: 6px; }
   `],
 })
 export class SmsBulkReviewModal implements OnInit {
   private readonly modalCtrl = inject(ModalController);
   private readonly sms = inject(SmsCaptureService);
 
-  @Input({ required: true }) candidates: SmsCandidateRow[] = [];
+  @Input() candidates: SmsCandidateRow[] = [];
   @Input() categories: NamedRef[] = [];
   @Input() accounts: NamedRef[] = [];
   @Input() currency = 'INR';
   /** Queue mode: the list is the persistent pending queue, so rows carry a
       `key` and gain a per-row Dismiss action. */
   @Input() queueMode = false;
+  /**
+   * Queue path: resolves to the rows + reference data once the (slow) duplicate
+   * lookup finishes. Passing this lets the modal open instantly and show a
+   * skeleton while the data loads, instead of the caller blocking first.
+   */
+  @Input() dataPromise?: Promise<{
+    candidates: SmsCandidateRow[];
+    categories: NamedRef[];
+    accounts: NamedRef[];
+    currency: string;
+  }>;
 
   protected readonly rows = signal<SmsCandidateRow[]>([]);
+  protected readonly categoryOptions = signal<NamedRef[]>([]);
+  protected readonly accountOptions = signal<NamedRef[]>([]);
+  protected readonly currencyCode = signal('INR');
+  protected readonly loading = signal(false);
+  protected readonly skeletonRows = [0, 1, 2, 3];
   /** Queue keys the user explicitly dismissed/ignored, returned to the caller
       so they can be dropped from the persistent queue. */
   private readonly dismissedKeys = new Set<string>();
@@ -241,7 +288,32 @@ export class SmsBulkReviewModal implements OnInit {
   );
 
   ngOnInit(): void {
-    this.rows.set(this.candidates.map((c) => ({ ...c })));
+    if (this.dataPromise) {
+      this.loading.set(true);
+      this.dataPromise
+        .then((d) => this.applyData(d))
+        .catch(() => undefined)
+        .finally(() => this.loading.set(false));
+    } else {
+      this.applyData({
+        candidates: this.candidates,
+        categories: this.categories,
+        accounts: this.accounts,
+        currency: this.currency,
+      });
+    }
+  }
+
+  private applyData(d: {
+    candidates: SmsCandidateRow[];
+    categories: NamedRef[];
+    accounts: NamedRef[];
+    currency: string;
+  }): void {
+    this.rows.set(d.candidates.map((c) => ({ ...c })));
+    this.categoryOptions.set(d.categories);
+    this.accountOptions.set(d.accounts);
+    this.currencyCode.set(d.currency);
   }
 
   protected toggle(i: number, event: Event): void {

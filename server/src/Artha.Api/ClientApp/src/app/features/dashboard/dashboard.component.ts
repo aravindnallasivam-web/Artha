@@ -7,7 +7,7 @@ import {
   IonContent,
   IonHeader,
   IonIcon,
-  IonSpinner,
+  IonSkeletonText,
   IonTitle,
   IonToolbar,
 } from '@ionic/angular/standalone';
@@ -38,7 +38,7 @@ interface CategorySlice {
     IonContent,
     IonHeader,
     IonIcon,
-    IonSpinner,
+    IonSkeletonText,
     IonTitle,
     IonToolbar,
   ],
@@ -63,8 +63,21 @@ interface CategorySlice {
     <ion-content>
       <div class="page">
         @if (loading()) {
-          <div class="loading">
-            <ion-spinner></ion-spinner>
+          <div class="skeleton" aria-busy="true" aria-label="Loading">
+            <ion-skeleton-text [animated]="true" class="sk-greeting"></ion-skeleton-text>
+            <div class="sk-balance">
+              <ion-skeleton-text [animated]="true" style="width: 40%; height: 12px"></ion-skeleton-text>
+              <ion-skeleton-text [animated]="true" style="width: 55%; height: 34px; margin-top: 14px"></ion-skeleton-text>
+              <ion-skeleton-text [animated]="true" style="width: 30%; height: 12px; margin-top: 10px"></ion-skeleton-text>
+            </div>
+            <div class="sk-stats">
+              <ion-skeleton-text [animated]="true" class="sk-tile"></ion-skeleton-text>
+              <ion-skeleton-text [animated]="true" class="sk-tile"></ion-skeleton-text>
+            </div>
+            <div class="sk-cards">
+              <ion-skeleton-text [animated]="true" class="sk-card"></ion-skeleton-text>
+              <ion-skeleton-text [animated]="true" class="sk-card"></ion-skeleton-text>
+            </div>
           </div>
         } @else {
           <!-- Greeting -->
@@ -250,6 +263,20 @@ interface CategorySlice {
       gap: 24px;
     }
     .loading { display: flex; justify-content: center; padding: 48px; }
+
+    /* Skeleton loader (mirrors the real layout) */
+    .skeleton { display: flex; flex-direction: column; gap: 24px; }
+    .skeleton ion-skeleton-text { --border-radius: 10px; margin: 0; }
+    .sk-greeting { width: 38%; height: 14px; }
+    .sk-balance {
+      border-radius: var(--artha-radius-lg); padding: 20px 22px 22px;
+      background: var(--artha-surface-2); display: flex; flex-direction: column;
+    }
+    .sk-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .sk-tile { height: 92px; --border-radius: var(--artha-radius); }
+    .sk-cards { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+    .sk-card { height: 280px; --border-radius: var(--artha-radius); }
+    @media (max-width: 900px) { .sk-cards { grid-template-columns: 1fr; } }
 
     /* ====== Greeting ====== */
     .greeting {

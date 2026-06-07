@@ -583,36 +583,15 @@ export class SmsCaptureService {
     }
     this.reviewing = true;
     try {
-      await this.ensureStores();
       const items = [...this.pending];
-      const existing = await this.fetchExisting([
-        ...new Set(items.map((i) => monthOf(i.parsed.date))),
-      ]);
-      const candidates: SmsCandidateRow[] = items.map((i) => {
-        const p = i.parsed;
-        const duplicate = this.findDuplicate(p, existing);
-        return {
-          key: i.key,
-          parsed: p,
-          duplicate,
-          selected: !duplicate,
-          amount: p.amount,
-          date: p.date,
-          categoryId: this.resolveCategoryId(p),
-          accountId: this.resolveAccountId(p),
-          note: p.merchant ?? p.sender ?? null,
-          excluded: false,
-        };
-      });
-
+      // Open the modal immediately with a skeleton; build the rows (which needs
+      // a network read to flag duplicates) in the background so tapping the
+      // queue feels instant instead of freezing until the fetch finishes.
       const modal = await this.modalCtrl.create({
         component: SmsBulkReviewModal,
         componentProps: {
-          candidates,
-          categories: this.namedCategories(),
-          accounts: this.namedAccounts(),
-          currency: this.settingsStore.currency(),
           queueMode: true,
+          dataPromise: this.buildQueueData(items),
         },
       });
       await modal.present();
@@ -662,6 +641,41 @@ export class SmsCaptureService {
     } finally {
       this.reviewing = false;
     }
+  }
+
+  /** Build the queue rows + reference data (the part that needs a network read). */
+  private async buildQueueData(items: PendingItem[]): Promise<{
+    candidates: SmsCandidateRow[];
+    categories: { id: string; name: string }[];
+    accounts: { id: string; name: string }[];
+    currency: string;
+  }> {
+    await this.ensureStores();
+    const existing = await this.fetchExisting([
+      ...new Set(items.map((i) => monthOf(i.parsed.date))),
+    ]);
+    const candidates: SmsCandidateRow[] = items.map((i) => {
+      const p = i.parsed;
+      const duplicate = this.findDuplicate(p, existing);
+      return {
+        key: i.key,
+        parsed: p,
+        duplicate,
+        selected: !duplicate,
+        amount: p.amount,
+        date: p.date,
+        categoryId: this.resolveCategoryId(p),
+        accountId: this.resolveAccountId(p),
+        note: p.merchant ?? p.sender ?? null,
+        excluded: false,
+      };
+    });
+    return {
+      candidates,
+      categories: this.namedCategories(),
+      accounts: this.namedAccounts(),
+      currency: this.settingsStore.currency(),
+    };
   }
 
   /** Content key for dedup + resolution: date, amount, merchant and sender. */
