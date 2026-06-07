@@ -4,7 +4,8 @@ public sealed record PlannedExpenseUpsertRequest(
     string Name,
     decimal Amount,
     string? CategoryId,
-    int? DayOfMonth);
+    int? DayOfMonth,
+    string Cycle = "monthly");
 
 public sealed record PlannedExpenseDto(
     string Id,
@@ -12,4 +13,5 @@ public sealed record PlannedExpenseDto(
     decimal Amount,
     string? CategoryId,
     int? DayOfMonth,
-    bool Archived);
+    bool Archived,
+    string Cycle);

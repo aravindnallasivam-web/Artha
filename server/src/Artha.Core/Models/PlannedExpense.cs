@@ -1,10 +1,11 @@
 namespace Artha.Core.Models;
 
 /// <summary>
-/// A predefined recurring monthly expense used for planning/budgeting only
-/// (e.g. Rent, Broadband). It is NOT a transaction — it never creates an
-/// <see cref="Expense"/>. The amount is a fixed monthly figure; reports compare
-/// the sum of active planned expenses against actual spending for a month.
+/// A predefined recurring expense used for planning/budgeting only (e.g. Rent,
+/// Broadband, Insurance). It is NOT a transaction — it never creates an
+/// <see cref="Expense"/>. <see cref="Amount"/> is the figure per billing
+/// <see cref="Cycle"/> ("monthly" or "yearly"); reports normalise a yearly
+/// figure to a monthly one (Amount / 12) when comparing against actual spend.
 /// </summary>
 public sealed record PlannedExpense(
     string Id,
@@ -12,4 +13,6 @@ public sealed record PlannedExpense(
     decimal Amount,
     string? CategoryId,
     int? DayOfMonth,
-    bool Archived);
+    bool Archived,
+    // Billing cycle; trailing optional so existing stored items default to monthly.
+    string Cycle = "monthly");

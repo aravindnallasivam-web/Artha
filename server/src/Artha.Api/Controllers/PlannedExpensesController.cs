@@ -62,7 +62,8 @@ public sealed class PlannedExpensesController : ControllerBase
             Amount: request.Amount,
             CategoryId: string.IsNullOrWhiteSpace(request.CategoryId) ? null : request.CategoryId,
             DayOfMonth: request.DayOfMonth,
-            Archived: false);
+            Archived: false,
+            Cycle: NormalizeCycle(request.Cycle));
 
         var next = new PlannedExpenseList(SchemaVersions.Current, list.Append(created).ToArray());
         await ctx.PlannedRepo.WriteAsync(DriveFileNames.PlannedExpenses, next, existing?.ETag, cancellationToken);
@@ -103,6 +104,7 @@ public sealed class PlannedExpensesController : ControllerBase
             Amount = request.Amount,
             CategoryId = string.IsNullOrWhiteSpace(request.CategoryId) ? null : request.CategoryId,
             DayOfMonth = request.DayOfMonth,
+            Cycle = NormalizeCycle(request.Cycle),
         };
 
         await ctx.PlannedRepo.WriteAsync(
@@ -168,7 +170,11 @@ public sealed class PlannedExpensesController : ControllerBase
     }
 
     private static PlannedExpenseDto ToDto(PlannedExpense p) =>
-        new(p.Id, p.Name, p.Amount, p.CategoryId, p.DayOfMonth, p.Archived);
+        new(p.Id, p.Name, p.Amount, p.CategoryId, p.DayOfMonth, p.Archived, NormalizeCycle(p.Cycle));
+
+    /// <summary>Only "monthly" or "yearly" are valid; anything else means monthly.</summary>
+    private static string NormalizeCycle(string? cycle) =>
+        string.Equals(cycle, "yearly", StringComparison.OrdinalIgnoreCase) ? "yearly" : "monthly";
 
     private static ProblemDetails Problem400(string detail) => new()
     {

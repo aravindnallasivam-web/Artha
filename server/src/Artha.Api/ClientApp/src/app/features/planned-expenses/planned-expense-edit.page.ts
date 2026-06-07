@@ -1,3 +1,4 @@
+import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -17,7 +18,7 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import { PlannedCycle, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
 import { CategoriesStore } from '../categories/categories.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
 
@@ -25,6 +26,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
   selector: 'artha-planned-expense-edit',
   standalone: true,
   imports: [
+    DecimalPipe,
     ReactiveFormsModule,
     IonBackButton,
     IonButton,
@@ -66,8 +68,20 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           </ion-item>
 
           <ion-item>
+            <ion-select
+              label="Billing cycle"
+              labelPlacement="floating"
+              formControlName="cycle"
+              interface="popover"
+            >
+              <ion-select-option value="monthly">Monthly</ion-select-option>
+              <ion-select-option value="yearly">Yearly</ion-select-option>
+            </ion-select>
+          </ion-item>
+
+          <ion-item>
             <ion-input
-              label="Monthly amount"
+              [label]="form.controls.cycle.value === 'yearly' ? 'Yearly amount' : 'Monthly amount'"
               labelPlacement="floating"
               type="number"
               inputmode="decimal"
@@ -75,6 +89,9 @@ import { PlannedExpensesStore } from './planned-expenses.store';
               formControlName="amount"
             ></ion-input>
           </ion-item>
+          @if (form.controls.cycle.value === 'yearly' && form.controls.amount.value) {
+            <p class="hint">≈ {{ +form.controls.amount.value / 12 | number: '1.0-0' }} / month in reports.</p>
+          }
 
           <ion-item>
             <ion-select
@@ -116,6 +133,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
   `,
   styles: [`
     .actions { margin-top: 24px; }
+    .hint { margin: 6px 4px 0; font-size: 12.5px; color: var(--artha-text-muted, #666); }
   `],
 })
 export class PlannedExpenseEditPage implements OnInit {
@@ -133,6 +151,7 @@ export class PlannedExpenseEditPage implements OnInit {
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(60)]],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
+    cycle: ['monthly' as PlannedCycle, Validators.required],
     categoryId: [null as string | null],
     dayOfMonth: [null as number | null, [Validators.min(1), Validators.max(31)]],
   });
@@ -155,6 +174,7 @@ export class PlannedExpenseEditPage implements OnInit {
           this.form.patchValue({
             name: item.name,
             amount: item.amount,
+            cycle: item.cycle,
             categoryId: item.categoryId,
             dayOfMonth: item.dayOfMonth,
           });
@@ -172,6 +192,7 @@ export class PlannedExpenseEditPage implements OnInit {
     const payload: PlannedExpenseUpsertRequest = {
       name: (raw.name ?? '').trim(),
       amount: Number(raw.amount),
+      cycle: raw.cycle,
       categoryId: raw.categoryId || null,
       dayOfMonth: raw.dayOfMonth != null && raw.dayOfMonth !== ('' as unknown as number)
         ? Number(raw.dayOfMonth)

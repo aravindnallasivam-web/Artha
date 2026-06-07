@@ -92,7 +92,11 @@ public sealed class ReportsController : ControllerBase
             Currency: currency,
             Total: counted.Sum(e => e.Amount),
             Count: counted.Count,
-            PlannedTotal: planned.Sum(p => p.Amount),
+            // A yearly planned expense contributes its monthly share (Amount / 12).
+            PlannedTotal: planned.Sum(p =>
+                string.Equals(p.Cycle, "yearly", StringComparison.OrdinalIgnoreCase)
+                    ? p.Amount / 12m
+                    : p.Amount),
             PlannedCount: planned.Count,
             ByCategory: byCategory));
     }

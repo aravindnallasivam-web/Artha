@@ -26,7 +26,7 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { PlannedExpense } from '../../core/models/planned-expense.model';
+import { PlannedExpense, monthlyEquivalent } from '../../core/models/planned-expense.model';
 import { CategoriesStore } from '../categories/categories.store';
 import { SettingsStore } from '../settings/settings.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
@@ -97,11 +97,16 @@ import { PlannedExpensesStore } from './planned-expenses.store';
                   @if (item.dayOfMonth) {
                     <p>Due day {{ item.dayOfMonth }}</p>
                   }
+                  @if (item.cycle === 'yearly') {
+                    <p>Yearly · ≈ {{ monthlyEq(item) | currency: settings.currency() }}/mo</p>
+                  }
                   @if (item.archived) {
                     <ion-note color="medium"> · archived</ion-note>
                   }
                 </ion-label>
-                <ion-note slot="end">{{ item.amount | currency: settings.currency() }}</ion-note>
+                <ion-note slot="end">
+                  {{ item.amount | currency: settings.currency() }}{{ item.cycle === 'yearly' ? ' /yr' : ' /mo' }}
+                </ion-note>
               </ion-item>
               @if (!item.archived) {
                 <ion-item-options side="end">
@@ -154,6 +159,10 @@ export class PlannedExpensesListPage implements OnInit {
   protected categoryName(categoryId: string | null): string | null {
     if (!categoryId) return null;
     return this.categories.byId()[categoryId]?.name ?? null;
+  }
+
+  protected monthlyEq(item: PlannedExpense): number {
+    return monthlyEquivalent(item);
   }
 
   add(): void {

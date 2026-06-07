@@ -1,5 +1,9 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { PlannedExpense, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import {
+  PlannedExpense,
+  PlannedExpenseUpsertRequest,
+  monthlyEquivalent,
+} from '../../core/models/planned-expense.model';
 import { PlannedExpensesApi } from './planned-expenses.api';
 
 @Injectable({ providedIn: 'root' })
@@ -25,9 +29,10 @@ export class PlannedExpensesStore {
     }
     return map;
   });
-  // Total fixed monthly outlay across active planned expenses.
+  // Total monthly outlay across active planned expenses, with yearly bills
+  // spread across 12 months so the figure is comparable to monthly spend.
   readonly plannedTotal = computed(() =>
-    this.active().reduce((sum, p) => sum + p.amount, 0),
+    this.active().reduce((sum, p) => sum + monthlyEquivalent(p), 0),
   );
 
   async load(includeArchived = false, force = false): Promise<void> {
