@@ -113,7 +113,7 @@ interface CategorySlice {
               </a>
             </div>
             <p class="balance-value num">
-              {{ expensesStore.totalAmount() | currency: currency() : 'symbol' : '1.2-2' }}
+              {{ totalSpent() | currency: currency() : 'symbol' : '1.2-2' }}
             </p>
             <p class="balance-meta">
               {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
@@ -631,16 +631,32 @@ export class DashboardComponent implements OnInit {
     this.expensesStore.items().slice(0, 8),
   );
 
-  protected readonly expenseCount = computed(() =>
-    this.expensesStore.items().filter((e) => !e.excluded).length,
+  /** Category ids the user flagged "Exclude from reports" (e.g. Investments). */
+  private readonly excludedCategoryIds = computed(
+    () => new Set(this.categoriesStore.items().filter((c) => c.excludeFromReports).map((c) => c.id)),
   );
+
+  /** Expenses that count toward spending: not excluded per-expense, and not in
+      an excluded category. Used for every total/breakdown on the dashboard. */
+  private readonly counted = computed(() => {
+    const excludedCats = this.excludedCategoryIds();
+    return this.expensesStore
+      .items()
+      .filter((e) => !e.excluded && !excludedCats.has(e.categoryId));
+  });
+
+  protected readonly totalSpent = computed(() =>
+    this.counted().reduce((sum, e) => sum + e.amount, 0),
+  );
+
+  protected readonly expenseCount = computed(() => this.counted().length);
 
   protected readonly accountCount = computed(() =>
     this.accountsStore.items().filter((a) => !a.archived).length,
   );
 
   protected readonly dailyAverage = computed(() => {
-    const total = this.expensesStore.totalAmount();
+    const total = this.totalSpent();
     if (total <= 0) return 0;
     const now = new Date();
     const dayOfMonth = now.getDate();
@@ -648,12 +664,11 @@ export class DashboardComponent implements OnInit {
   });
 
   protected readonly breakdown = computed<CategorySlice[]>(() => {
-    const total = this.expensesStore.totalAmount();
+    const total = this.totalSpent();
     if (total <= 0) return [];
 
     const byCat = new Map<string, number>();
-    for (const e of this.expensesStore.items()) {
-      if (e.excluded) continue;
+    for (const e of this.counted()) {
       byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
     }
 
