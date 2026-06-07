@@ -15,7 +15,7 @@ export const environment = {
   version: '1.0.0',
   apiBaseUrl: '',
   google: {
-    clientId: '952436597649-j9gosps5n1ukkm1907fu8bl06toptdb6.apps.googleusercontent.com',
+    clientId: '952436597649-6bpd2mli17eg30falj66bqpt8p5svvso.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
     redirectPath: '/auth/callback',
     // Native deep-link the OAuth response returns to (no server bridge).
