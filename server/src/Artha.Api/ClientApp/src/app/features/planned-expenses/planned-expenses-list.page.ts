@@ -1,13 +1,10 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, computed, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   AlertController,
   IonCard,
   IonCardContent,
-  IonCardHeader,
-  IonCardSubtitle,
-  IonCardTitle,
   IonContent,
   IonFab,
   IonFabButton,
@@ -38,9 +35,6 @@ import { PlannedExpensesStore } from './planned-expenses.store';
     CurrencyPipe,
     IonCard,
     IonCardContent,
-    IonCardHeader,
-    IonCardSubtitle,
-    IonCardTitle,
     IonContent,
     IonFab,
     IonFabButton,
@@ -66,13 +60,31 @@ import { PlannedExpensesStore } from './planned-expenses.store';
     </ion-header>
 
     <ion-content class="ion-padding">
-      <ion-card>
-        <ion-card-header>
-          <ion-card-subtitle>Planned per month</ion-card-subtitle>
-          <ion-card-title>{{ store.plannedTotal() | currency: settings.currency() }}</ion-card-title>
-        </ion-card-header>
+      <ion-card class="summary">
         <ion-card-content>
-          {{ store.active().length }} predefined expense(s) — fixed monthly budget.
+          <div class="sum-row">
+            <div class="sum-cell">
+              <div class="sum-label">Per month</div>
+              <div class="sum-value">
+                {{ store.plannedTotal() | currency: settings.currency() : 'symbol' : '1.0-0' }}
+              </div>
+            </div>
+            <div class="sum-divider"></div>
+            <div class="sum-cell">
+              <div class="sum-label">Per year</div>
+              <div class="sum-value">
+                {{ annualTotal() | currency: settings.currency() : 'symbol' : '1.0-0' }}
+              </div>
+            </div>
+          </div>
+          <div class="sum-foot">
+            {{ store.active().length }} bill{{ store.active().length === 1 ? '' : 's' }} committed
+            @if (monthlyBillsTotal() > 0 && yearlyBillsTotal() > 0) {
+              ·
+              {{ monthlyBillsTotal() | currency: settings.currency() : 'symbol' : '1.0-0' }}/mo recurring +
+              {{ yearlyBillsTotal() | currency: settings.currency() : 'symbol' : '1.0-0' }}/yr annual
+            }
+          </div>
         </ion-card-content>
       </ion-card>
 
@@ -135,6 +147,21 @@ import { PlannedExpensesStore } from './planned-expenses.store';
       display: flex; align-items: center; justify-content: center;
       padding: 32px; color: var(--ion-color-medium); text-align: center;
     }
+    .summary .sum-row { display: flex; align-items: stretch; }
+    .sum-cell { flex: 1; text-align: center; }
+    .sum-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+      color: var(--ion-color-medium);
+    }
+    .sum-value {
+      margin-top: 4px; font-size: 24px; font-weight: 800; letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .sum-divider { width: 1px; background: var(--artha-border, rgba(0,0,0,0.08)); margin: 4px 0; }
+    .sum-foot {
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--artha-border, rgba(0,0,0,0.08));
+      font-size: 12.5px; color: var(--ion-color-medium); text-align: center; line-height: 1.4;
+    }
   `],
 })
 export class PlannedExpensesListPage implements OnInit {
@@ -144,6 +171,21 @@ export class PlannedExpensesListPage implements OnInit {
   private readonly router = inject(Router);
   private readonly alertCtrl = inject(AlertController);
   private readonly notifier = inject(ConflictNotifierService);
+
+  /** Total committed per year: monthly-equivalent total × 12. */
+  protected readonly annualTotal = computed(() => this.store.plannedTotal() * 12);
+  /** Sum of true monthly-cycle bills (their per-month amount). */
+  protected readonly monthlyBillsTotal = computed(() =>
+    this.store.active()
+      .filter((p) => p.cycle === 'monthly')
+      .reduce((sum, p) => sum + p.amount, 0),
+  );
+  /** Sum of true yearly-cycle bills (their per-year amount). */
+  protected readonly yearlyBillsTotal = computed(() =>
+    this.store.active()
+      .filter((p) => p.cycle === 'yearly')
+      .reduce((sum, p) => sum + p.amount, 0),
+  );
 
   ngOnInit(): void {
     void this.store.load();
