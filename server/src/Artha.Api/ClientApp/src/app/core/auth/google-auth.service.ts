@@ -92,20 +92,19 @@ export class GoogleAuthService {
     if (this.mobileListenerAttached || !Capacitor.isNativePlatform()) return;
     this.mobileListenerAttached = true;
 
-    void App.addListener('appUrlOpen', async (event) => {
-      try {
-        const url = new URL(event.url);
-        if (url.protocol !== 'com.artha.app:') return;
-        // For a custom-scheme URL like `com.artha.app://auth/callback?...`,
-        // the URL parser treats "auth" as the host and "/callback" as the
-        // pathname. Match against host + pathname so the guard sees the full
-        // "auth/callback" — checking url.pathname alone (which is just
-        // "/callback") would reject every real callback and strand the user
-        // on the login screen.
-        if (!`${url.host}${url.pathname}`.replace(/\/$/, '').endsWith('auth/callback')) return;
+    // The OAuth response comes back on the configured redirect scheme (the
+    // reversed-client-id custom scheme for Android/iOS clients). Match by that
+    // scheme rather than a hardcoded one, and pull code/state from the raw
+    // query so we don't depend on URL parsing of non-standard schemes.
+    const redirectScheme = environment.google.nativeRedirectUri.split(':')[0].toLowerCase() + ':';
 
-        const code = url.searchParams.get('code');
-        const state = url.searchParams.get('state');
+    void App.addListener('appUrlOpen', async (event) => {
+      if (!event.url.toLowerCase().startsWith(redirectScheme)) return;
+      try {
+        const queryStart = event.url.indexOf('?');
+        const params = new URLSearchParams(queryStart >= 0 ? event.url.slice(queryStart + 1) : '');
+        const code = params.get('code');
+        const state = params.get('state');
         if (!code || !state) return;
 
         await this.completeLogin(code, state);

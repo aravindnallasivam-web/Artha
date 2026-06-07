@@ -19,7 +19,9 @@ export const environment = {
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
     redirectPath: '/auth/callback',
     // Native deep-link the OAuth response returns to (no server bridge).
-    nativeRedirectUri: 'com.artha.app://auth/callback',
+    // Android/iOS clients must use the reversed-client-id custom scheme.
+    nativeRedirectUri:
+      'com.googleusercontent.apps.952436597649-6bpd2mli17eg30falj66bqpt8p5svvso:/oauth2redirect',
     scopes: [
       'openid',
       'email',

@@ -54,6 +54,7 @@
 			<string>com.artha.app.oauth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>com.googleusercontent.apps.952436597649-6bpd2mli17eg30falj66bqpt8p5svvso</string>
 				<string>com.artha.app</string>
 			</array>
 		</dict>

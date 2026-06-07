@@ -8,7 +8,8 @@ export const environment = {
     clientId: '952436597649-6bpd2mli17eg30falj66bqpt8p5svvso.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
     redirectPath: '/auth/callback',
-    nativeRedirectUri: 'com.artha.app://auth/callback',
+    nativeRedirectUri:
+      'com.googleusercontent.apps.952436597649-6bpd2mli17eg30falj66bqpt8p5svvso:/oauth2redirect',
     scopes: [
       'openid',
       'email',
