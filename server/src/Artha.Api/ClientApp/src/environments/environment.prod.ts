@@ -1,5 +1,6 @@
 export const environment = {
   production: true,
+  version: '1.0.0',
   // Prod: same-origin deployment behind DO App Platform routes
   // (SPA at /, API at /api). Empty string => relative URLs.
   apiBaseUrl: '',

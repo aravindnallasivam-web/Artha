@@ -1,5 +1,6 @@
 export const environment = {
   production: false,
+  version: '1.0.0',
   // Same-origin in dev too: Angular's dev server proxies /api/* to the .NET API
   // running on http://localhost:5239 (see proxy.conf.json + angular.json).
   apiBaseUrl: '',

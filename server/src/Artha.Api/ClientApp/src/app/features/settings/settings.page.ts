@@ -1,5 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import {
   IonContent,
   IonHeader,
@@ -20,6 +22,7 @@ import {
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
+import { environment } from '../../../environments/environment';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
 import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
@@ -158,6 +161,15 @@ import { SettingsStore } from './settings.store';
             <ion-label color="danger">Sign out</ion-label>
           </ion-item>
         </ion-list>
+
+        <ion-list inset="true">
+          <ion-list-header><ion-label>About</ion-label></ion-list-header>
+          <ion-item lines="none">
+            <ion-icon name="information-circle-outline" slot="start" color="medium"></ion-icon>
+            <ion-label>Version</ion-label>
+            <ion-note slot="end">{{ appVersion() }}</ion-note>
+          </ion-item>
+        </ion-list>
       }
     </ion-content>
   `,
@@ -190,6 +202,7 @@ export class SettingsPage implements OnInit {
   protected readonly smsIgnoredCount = signal(0);
   protected readonly smsMappingCount = signal(0);
   protected readonly smsAutoAdd = signal(true);
+  protected readonly appVersion = signal(environment.version);
 
   ngOnInit(): void {
     void this.store.load();
@@ -197,6 +210,20 @@ export class SettingsPage implements OnInit {
     this.smsIgnoredCount.set(this.sms.ignoredCount());
     this.smsMappingCount.set(this.sms.mappingCount());
     this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+    void this.loadVersion();
+  }
+
+  /** On a device, show the real installed version + build number. */
+  private async loadVersion(): Promise<void> {
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
+    try {
+      const info = await App.getInfo();
+      this.appVersion.set(`${info.version} (build ${info.build})`);
+    } catch {
+      // Keep the web fallback from the environment.
+    }
   }
 
   onAutoAddToggle(event: Event): void {
