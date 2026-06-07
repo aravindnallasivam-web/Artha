@@ -1,259 +1,124 @@
 # Artha
 
-A personal expense-management workspace built on the principle of **data sovereignty**: your expense data lives in your own Google Drive, not on our servers.
+A personal expense-management app built on **data sovereignty**: your data lives
+in *your* Google Drive, and the app talks to Drive directly. There is no Artha
+backend — nothing sits between your device and your data.
 
 ## Stack
 
 | Layer | Tech |
 |---|---|
-| Backend | ASP.NET Core Web API on **.NET 10** |
-| Web client | **Angular 21** (standalone components, signals, zoneless) |
-| Mobile client | **Ionic + Capacitor** wrapping the same Angular codebase (iOS + Android) |
-| Auth | **Google Sign-In** (OAuth 2.0 / OIDC with PKCE) |
-| Storage | **Per-user Google Drive** (`drive.appdata` scope, JSON files) |
+| App | **Angular 21** (standalone, signals, zoneless) + **Ionic + Capacitor** (Android / iOS) |
+| Auth | **Google Sign-In** — OAuth 2.0 / OIDC with **PKCE, no client secret** (installed-app flow) |
+| Storage | **Your Google Drive** (`drive.appdata` scope) — plain JSON files |
+| Networking | **CapacitorHttp** straight to the Google Drive REST API (native, CORS-free) |
+
+Serverless and mobile-first: the WebView reads and writes the Drive `appDataFolder`
+itself. The app can only see data it created — the `drive.appdata` scope is
+private to Artha.
 
 ## Repository layout
 
-Single .NET app — the API and the Angular SPA ship as one process.
-
 ```
-/server                              ASP.NET Core 10 solution
-  Artha.slnx
-  global.json
-  Directory.Build.props
-  Directory.Packages.props           (Central Package Management)
-  Dockerfile                         multi-stage: Node 22 + .NET 10 -> single image
+/server/src/Artha.Api/ClientApp        the app (path kept for Capacitor/CI stability)
+  capacitor.config.ts                  appId = com.artha.app
+  android/  ios/                        native projects
   /src
-    Artha.Api                        composition root, controllers, DI wiring
-      /ClientApp                     Angular 21 + Ionic 8 + Capacitor 8
-        capacitor.config.ts          appId = com.artha.app
-        proxy.conf.json              dev: /api/* proxied to .NET on :5239
-        /src
-          /environments              environment.ts / environment.prod.ts
-          /app
-            app.config.ts            provideRouter, provideHttpClient, interceptors
-            app.routes.ts            lazy-loaded standalone routes
-            /core/auth               pkce, session, google-auth, guard, interceptor
-            /features/auth           login, callback components
-            /features/dashboard      placeholder post-login screen
-      /wwwroot                       (populated at publish time from ClientApp/dist)
-    Artha.Core                       domain models, DTOs, interfaces
-    Artha.Auth                       Google OIDC exchange, JWT issuer, token store
-    Artha.Drive                      (M2) Drive client + appdata repository
-    Artha.Infrastructure             Serilog, caching, options helpers
-  /tests                             xunit + FluentAssertions + NSubstitute
-/.do/app.yaml                        DigitalOcean App Platform spec
-/scripts/deploy-do.sh                One-command deploy via doctl + .env
-/.env.example                        Template for local deploy secrets
+    /environments                      environment.ts / .prod.ts / .mobile.ts
+    /app
+      /core
+        /auth                          pkce, session, guard, google-auth, google-oauth
+        /drive                         the Drive layer (see below)
+        /models                        Expense, Category, Account, PlannedExpense, …
+      /features                        expenses, categories, accounts, planned, reports,
+                                       settings, sms, dashboard
 /.github/workflows
+  android.yml                          builds the debug APK artifact
+  ci.yml                               type-checks + builds the SPA
 ```
 
-At runtime the single .NET process serves both:
+### The Drive layer (`src/app/core/drive`)
+
+Everything that was server-side now runs on-device here:
+
+| File | Role |
+|---|---|
+| `drive-rest.client.ts` | Drive v3 REST over `appDataFolder` (CapacitorHttp) |
+| `app-data.repository.ts` | typed read/write + `headRevisionId` optimistic concurrency + schema guard |
+| `drive-schema.ts` | file names, document shapes, monthly-shard helpers |
+| `drive-bootstrap.service.ts` | first-run seeding (accounts/categories/settings/manifest) |
+| `google-token.store.ts` | durable Google token storage + silent refresh (no secret) |
+
+Each feature has a `*.drive.ts` service (the former controller logic). The
+`*.api.ts` files are thin pass-throughs to those, so feature stores are unaware
+of the transport.
+
+### Drive file layout (per user, in `appDataFolder`)
 
 ```
-GET /api/*    -> ASP.NET Core controllers
-GET /*        -> Angular static files (with SPA fallback to /index.html)
+manifest.json                  index of expense shards
+settings.json                  currency, locale, first-run flag
+categories.json                category list
+accounts.json                  financial accounts
+planned-expenses.json          recurring/budget items
+expenses-YYYY-MM.json          one shard per month
 ```
 
-## Milestones
+## How sign-in works (serverless)
 
-| | Scope | Status |
-|---|---|---|
-| **M1** | Solution scaffold + Google login end-to-end (web) | ✅ Done |
-| **M2** | Drive integration + Expense CRUD (web) | Planned |
-| **M3** | Categories + monthly reports | Planned |
-| **M4** | Capacitor iOS + Android builds | Done (scaffold + auth deep link) |
-| **M5** | Financial accounts + expense linkage | Done |
-| **M6** | Responsive desktop layout (side nav above 768px) | Done |
-| **M5** | Polish: settings, multi-currency, Apple Sign-In, export | Planned |
+1. The app generates a PKCE `code_verifier` / `code_challenge` and opens Google's
+   authorize URL (scopes `openid email profile drive.appdata`) in the system
+   browser.
+2. Google redirects to `com.artha.app://auth/callback?code=…` — caught by the
+   app's deep-link handler (no server bridge).
+3. The app exchanges the code for tokens **directly at Google's token endpoint
+   with no client secret** (`GoogleOAuthService`), and stores the access +
+   refresh tokens (`GoogleTokenStore`).
+4. The user profile comes from the returned `id_token`. The session is
+   long-lived; the access token refreshes silently in the background.
+5. Every Drive call attaches `Authorization: Bearer <access token>`.
+
+## Google Cloud Console setup (required)
+
+The token exchange runs on-device, so it needs an **installed-app** OAuth client:
+
+1. APIs & Services → Credentials → **Create OAuth client ID** → type **Android**
+   (package `com.artha.app` + your signing SHA-1). Enable the **Drive API**.
+2. Put the client ID in
+   [`environment.mobile.ts`](server/src/Artha.Api/ClientApp/src/environments/environment.mobile.ts)
+   → `google.clientId`.
+3. Allow the redirect `com.artha.app://auth/callback` (`google.nativeRedirectUri`).
+   It must match the `<intent-filter>` already in `AndroidManifest.xml`.
+
+> Android/iOS OAuth clients use PKCE **without** a secret — that's what makes the
+> serverless exchange possible. (A "Web" client would require a secret and can't
+> be used from a public mobile binary.)
 
 ## Local development
 
-### Prerequisites
-
-- .NET 10 SDK
-- Node.js 22 + npm 10
-- A Google Cloud Console project with an **OAuth 2.0 Web client ID** and **Drive API** enabled
-
-### Configure secrets (one-time)
+Prerequisites: **Node.js 22 + npm 10**. (No .NET, no server.)
 
 ```bash
-cd server/src/Artha.Api
-dotnet user-secrets set "GoogleAuth:ClientSecret" "<your-google-web-client-secret>"
-dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -base64 48)"
-```
-
-The **Client ID** is already in `appsettings.json` (it's public). In Google Cloud Console, add this **authorized redirect URI** to your Web OAuth client:
-
-```
-http://localhost:4200/auth/callback
-```
-
-### Run
-
-Two terminals, but you only need to remember one command in each:
-
-```bash
-# Terminal 1 — Angular dev server (HMR + dev-mode /api proxy to the .NET port)
 cd server/src/Artha.Api/ClientApp
-npm start                                  # http://localhost:4200
-
-# Terminal 2 — .NET API
-cd server
-dotnet run --project src/Artha.Api          # http://localhost:5239
+npm ci
+npm start            # ng serve at http://localhost:4200
 ```
 
-Open <http://localhost:4200> → "Sign in with Google" → land on the dashboard. The Angular dev server proxies `/api/*` calls to the .NET process automatically (see `ClientApp/proxy.conf.json`).
+Note: the OAuth flow targets the native custom-scheme redirect, so end-to-end
+sign-in is exercised on a device/emulator, not the browser dev server.
 
-To preview the **production single-process build** locally:
+### Build & run on Android
 
 ```bash
-cd server
-dotnet publish src/Artha.Api -c Release -o /tmp/artha-publish
-cd /tmp/artha-publish
-Jwt__SigningKey="$(openssl rand -base64 48)" \
-GoogleAuth__ClientSecret="<your-secret>" \
-ASPNETCORE_URLS=http://localhost:8088 \
-dotnet Artha.Api.dll
-# now everything is at http://localhost:8088 — SPA at /, API at /api/*
+cd server/src/Artha.Api/ClientApp
+npm run cap:sync            # ng build --configuration mobile && cap sync
+npm run cap:open:android    # Android Studio → run on device/emulator
 ```
+
+A debug APK is also produced by the `android.yml` GitHub Action on every push.
 
 ### Tests
 
 ```bash
-cd server && dotnet test                                 # xunit (server)
-cd server/src/Artha.Api/ClientApp && npm test            # vitest (SPA)
+cd server/src/Artha.Api/ClientApp && npm test    # vitest
 ```
-
-## How the auth flow works
-
-1. Client generates PKCE `code_verifier` and `code_challenge`, redirects to Google's authorize endpoint with scopes `openid email profile drive.appdata`.
-2. Google redirects back to `/auth/callback?code=...&state=...`.
-3. Client POSTs `{ code, codeVerifier, redirectUri }` to `/api/auth/google`.
-4. Server exchanges the code with Google for an access token + refresh token, validates the returned ID token, encrypts and stores the Drive tokens server-side (keyed by user id), and issues an Artha session JWT.
-5. Client stores the JWT in `localStorage` (web) and attaches it as `Authorization: Bearer …` on subsequent API calls.
-6. Drive tokens never leave the server — the server proxies all Drive operations on behalf of the user.
-
-## Hosting on DigitalOcean App Platform
-
-The repo is wired for DO App Platform with both components on **one domain** (no CORS in production). Spec lives at `.do/app.yaml`.
-
-```
-https://<your-app>.ondigitalocean.app
-├── /             →  Angular SPA (static site, free tier)
-└── /api/*        →  .NET 10 API (Basic web service, ~$5/mo)
-```
-
-### Fast path: one command via `doctl` + `.env`
-
-If you have [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/) installed, the whole deploy is one command:
-
-```bash
-cp .env.example .env
-# edit .env — fill in GOOGLE_CLIENT_SECRET and JWT_SIGNING_KEY
-#   (Client ID is already in .do/app.yaml; it's public and safe to commit.)
-#   Generate JWT_SIGNING_KEY with: openssl rand -base64 48
-
-doctl auth init                  # one-time; paste an API token from
-                                 # https://cloud.digitalocean.com/account/api/tokens
-./scripts/deploy-do.sh           # creates (or updates) the app, waits for it to deploy
-```
-
-The script renders a temp copy of `.do/app.yaml` with your secrets substituted in (file is `chmod 600` and deleted on exit), then runs `doctl apps create --spec` (or `apps update` if the app already exists).
-
-When it finishes it prints the app URL — add `<that-url>/auth/callback` to your Google OAuth client's authorized redirect URIs and you're done.
-
-### Manual path (dashboard clicks)
-
-If you'd rather use the DO web UI:
-
-1. **Create a Google OAuth Web client** in Google Cloud Console (APIs & Services → Credentials):
-   - Enable the **Google Drive API** on the project.
-   - Add **Authorized redirect URI**: `https://<your-app>.ondigitalocean.app/auth/callback`
-     (you can update this after step 4 — for now use a placeholder and come back).
-   - Copy the **Client ID** and **Client secret**.
-
-2. **The Client ID is already wired in** at `.do/app.yaml`, `server/src/Artha.Api/appsettings.json`, and `server/src/Artha.Api/ClientApp/src/environments/{environment.ts,environment.prod.ts}`. If you create a different OAuth client, update all four — they each contain the same `952436597649-…` Client ID string.
-
-3. **Generate a JWT signing key** — any random string of 32+ characters. Example:
-   ```bash
-   openssl rand -base64 48
-   ```
-
-4. **Create the app** on DigitalOcean — either path:
-
-   **A. Dashboard** (easiest):
-   - Apps → **Create App** → choose **GitHub** as source → pick `aravindnallasivam-web/Artha` → branch `main`.
-   - DO will auto-detect `.do/app.yaml`. Click "Edit Plan" if you want to confirm the components.
-   - Before first deploy, go to **Settings → Components → `api` → Environment Variables** and set:
-     - `GoogleAuth__ClientId` (encrypted) — your Google Web Client ID
-     - `GoogleAuth__ClientSecret` (encrypted) — your Google Web Client secret
-     - `Jwt__SigningKey` (encrypted) — the random string from step 3
-
-   **B. CLI** (if you have `doctl` installed):
-   ```bash
-   doctl apps create --spec .do/app.yaml
-   doctl apps update <APP_ID> --spec .do/app.yaml
-   # then set secrets in the dashboard, or via `doctl apps update` with --env
-   ```
-
-5. **After first deploy**, copy the app's URL (e.g. `https://artha-abc12.ondigitalocean.app`) and:
-   - Update the Google OAuth client's redirect URI to `https://artha-abc12.ondigitalocean.app/auth/callback`.
-   - (Optional) point a custom domain at the app in **Settings → Domains** — DO will issue a Let's Encrypt cert automatically.
-
-### What gets billed
-
-| Component | Plan | Monthly |
-|---|---|---|
-| `api` web service | `apps-s-1vcpu-0.5gb` | ~$5 |
-| `web` static site | Free tier | $0 |
-| Bandwidth | First 100 GB free | $0 (typical) |
-
-You can scale the API up later (`apps-s-1vcpu-1gb`, etc.) without changing anything in this repo — just edit the plan in the dashboard.
-
-### Pushing changes
-
-Once the app is created, every push to `main` triggers a deploy automatically (`deploy_on_push: true` in the spec). Build logs show in **Activity → Deployments**.
-
-## Mobile (M4 — Capacitor)
-
-The Capacitor scaffold is committed: `appId = com.artha.app`, `webDir = dist/client/browser`, both `ios/` and `android/` native projects are present.
-
-### 1. Point the mobile bundle at your deployed API
-
-Edit [`src/environments/environment.mobile.ts`](server/src/Artha.Api/ClientApp/src/environments/environment.mobile.ts) and set `apiBaseUrl` to your deployed DigitalOcean URL (e.g. `https://artha-abc12.ondigitalocean.app`). Same-origin won't work on mobile — the WebView serves from `capacitor://localhost`, so all API calls must be absolute. CORS for `capacitor://localhost` and `ionic://localhost` is already allowed in `Program.cs`.
-
-### 2. Build the mobile web bundle + sync
-
-```bash
-cd server/src/Artha.Api/ClientApp
-npm run cap:sync       # = ng build --configuration mobile && cap sync
-```
-
-This swaps `environment.ts` → `environment.mobile.ts`, writes the Angular output to `dist/client/browser`, and copies it into both native projects.
-
-### 3. Open in your native IDE
-
-```bash
-npm run cap:open:ios       # Xcode (macOS only)
-npm run cap:open:android   # Android Studio
-```
-
-From there, run on a simulator or device. Capacitor 8 uses Swift Package Manager for iOS plugins — **no CocoaPods step required**.
-
-### Auth on mobile (M4.3 — done)
-
-The web flow uses a same-origin redirect to `/auth/callback`. The mobile flow can't, because the WebView serves from `capacitor://localhost` and Google's Web OAuth client only accepts HTTPS redirect URIs. Mobile reuses the same Web OAuth client + same backend, with one extra hop:
-
-1. App generates PKCE + state, calls `@capacitor/browser`'s `Browser.open(...)` with the Google authorize URL — redirect_uri set to `https://<your-app>/auth/callback/mobile`.
-2. User completes Google sign-in in SFSafariViewController (iOS) / Chrome Custom Tabs (Android).
-3. Google redirects to the bridge page (`/auth/callback/mobile`) which runs `window.location.replace('com.artha.app://auth/callback?code=…&state=…')`.
-4. The OS routes that custom URL back into the Artha app via the registered URL scheme (iOS: `CFBundleURLTypes` in `Info.plist`; Android: `<intent-filter>` with `android:scheme="com.artha.app"` in `AndroidManifest.xml`).
-5. `@capacitor/app`'s `appUrlOpen` listener (registered at app startup via `provideAppInitializer`) catches the deep link, calls the existing `POST /api/auth/google` endpoint with the code, persists the JWT via the existing `SessionService` (localStorage), dismisses the system browser, and navigates to `/dashboard`.
-
-**One-time setup** before the mobile build can complete sign-in:
-
-1. In **Google Cloud Console → APIs & Services → Credentials**, edit your existing Web OAuth client and add `https://<your-deployed-app>/auth/callback/mobile` to **Authorized redirect URIs**.
-2. Edit [`src/environments/environment.mobile.ts`](server/src/Artha.Api/ClientApp/src/environments/environment.mobile.ts) and set `apiBaseUrl` to your deployed URL — that's what the redirect URI in step 1 is built from.
-
-The `com.artha.app://` URL scheme is already registered in both native manifests; no additional Google client config is needed.
