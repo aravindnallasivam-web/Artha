@@ -357,12 +357,18 @@ export class SmsBulkReviewModal implements OnInit {
       this.patch(i, { ...data, selected: true });
     } else if (role === 'dismiss') {
       this.dropRow(i);
+    } else if (role === 'ignore') {
+      this.ignoreSenderAt(i);
     }
   }
 
   /** Ignore this sender from now on and drop its rows from the list. */
   protected ignore(event: Event, i: number): void {
     event.stopPropagation();
+    this.ignoreSenderAt(i);
+  }
+
+  private ignoreSenderAt(i: number): void {
     const sender = this.rows()[i]?.parsed.sender;
     if (!sender) {
       return;

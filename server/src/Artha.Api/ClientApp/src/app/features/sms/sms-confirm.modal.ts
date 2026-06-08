@@ -77,6 +77,9 @@ import { ParsedExpense } from './sms-parser';
         <div class="wrap">
           <p class="lead">
             Detected from a message by <strong>{{ parsed.sender || 'your bank' }}</strong>.
+            @if (parsed.sender) {
+              <button type="button" class="ignore-link" (click)="ignoreSender()">Ignore sender</button>
+            }
           </p>
 
           <!-- Original SMS, so you can see what's being logged. -->
@@ -225,6 +228,10 @@ import { ParsedExpense } from './sms-parser';
     .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 16px; }
 
     .lead { margin: 0 0 12px; font-size: 14px; color: var(--artha-text-muted); }
+    .ignore-link {
+      margin-left: 8px; padding: 0; background: none; border: 0; cursor: pointer;
+      color: var(--artha-negative); font-size: 13px; font-weight: 600; text-decoration: underline;
+    }
     .dupe {
       display: flex;
       gap: 10px;
@@ -417,6 +424,11 @@ export class SmsConfirmModal implements OnInit {
   /** Drop this detected expense from the queue without logging it. */
   protected discard(): void {
     void this.modalCtrl.dismiss(null, 'dismiss');
+  }
+
+  /** Stop prompting for this sender; the caller adds it to the ignore list. */
+  protected ignoreSender(): void {
+    void this.modalCtrl.dismiss(null, 'ignore');
   }
 
   /** Currency symbol for the selected account, e.g. ₹ / $ / €. */

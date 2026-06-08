@@ -1,5 +1,6 @@
 import { Injectable, effect, inject } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
+import { Keyboard, KeyboardResize } from '@capacitor/keyboard';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { Style, StatusBar } from '@capacitor/status-bar';
 import { ThemeService } from '../theme/theme.service';
@@ -43,6 +44,7 @@ export class NativeUiService {
     this.initialized = true;
 
     await this.applyStatusBarTheme(this.theme.isDark());
+    await this.setupKeyboard();
 
     // launchAutoHide is off in capacitor.config.ts, so we own the exact moment
     // the splash disappears — only after the first paint of the SPA.
@@ -50,6 +52,29 @@ export class NativeUiService {
       await SplashScreen.hide();
     } catch {
       // Splash already dismissed (e.g. a very fast cold start) — non-fatal.
+    }
+  }
+
+  /**
+   * Resize the WebView when the keyboard shows (so bottom-anchored save bars
+   * stay above it), and toggle a `keyboard-open` class on <body> so the layout
+   * can hide the tab bar and collapse its clearance while typing.
+   */
+  private async setupKeyboard(): Promise<void> {
+    try {
+      await Keyboard.setResizeMode({ mode: KeyboardResize.Native });
+    } catch {
+      // Resize mode not settable on this surface — non-fatal.
+    }
+    try {
+      await Keyboard.addListener('keyboardWillShow', () =>
+        document.body.classList.add('keyboard-open'),
+      );
+      await Keyboard.addListener('keyboardWillHide', () =>
+        document.body.classList.remove('keyboard-open'),
+      );
+    } catch {
+      // Keyboard plugin unavailable on this surface — non-fatal.
     }
   }
 

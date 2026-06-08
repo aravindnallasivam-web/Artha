@@ -558,10 +558,24 @@ export class SmsCaptureService {
       } else if (role === 'dismiss') {
         // User chose not to log it — drop it from the queue.
         this.removePending([this.pendingKey(parsed)]);
+      } else if (role === 'ignore') {
+        // Ignore this sender from now on, and clear any of its queued items.
+        this.ignoreSender(parsed.sender);
+        this.dropPendingFromIgnoredSenders();
       }
       // On cancel/close we deliberately keep the item in the queue.
     } finally {
       this.confirming = false;
+    }
+  }
+
+  /** Remove every queued item whose sender is now on the ignore list. */
+  private dropPendingFromIgnoredSenders(): void {
+    const keys = this.pending
+      .filter((item) => this.isSenderIgnored(item.parsed.sender))
+      .map((item) => item.key);
+    if (keys.length > 0) {
+      this.removePending(keys);
     }
   }
 
