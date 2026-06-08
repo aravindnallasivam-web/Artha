@@ -6,7 +6,7 @@ import { AppDataRepository } from '../../core/drive/app-data.repository';
 import { DriveBootstrap } from '../../core/drive/drive-bootstrap.service';
 import { badRequest, notFound } from '../../core/drive/drive-errors';
 import { DRIVE_FILES, LoanList, SCHEMA_VERSION, newId } from '../../core/drive/drive-schema';
-import { Loan, LoanUpsertRequest } from '../../core/models/loan.model';
+import { Loan, LoanPaymentInput, LoanUpsertRequest } from '../../core/models/loan.model';
 
 @Injectable({ providedIn: 'root' })
 export class LoansDriveService {
@@ -25,7 +25,7 @@ export class LoansDriveService {
 
     const existing = await this.repo.read<LoanList>(DRIVE_FILES.loans);
     const list = existing?.document.items ?? [];
-    const created: Loan = { id: newId('loan'), archived: false, ...normalize(request) };
+    const created: Loan = { id: newId('loan'), archived: false, payments: [], ...normalize(request) };
     await this.repo.write<LoanList>(
       DRIVE_FILES.loans,
       { schemaVersion: SCHEMA_VERSION, items: [...list, created] },
@@ -70,6 +70,54 @@ export class LoansDriveService {
     );
   }
 
+  async addPayment(loanId: string, payment: LoanPaymentInput): Promise<Loan> {
+    if (!(payment.amount > 0)) {
+      throw badRequest('Payment amount must be greater than zero.');
+    }
+    if (!/^\d{4}-\d{2}-\d{2}/.test(payment.date)) {
+      throw badRequest('A valid payment date is required.');
+    }
+    await this.bootstrap.ensureInitialized();
+    return this.mutate(loanId, (loan) => ({
+      ...loan,
+      payments: [
+        ...(loan.payments ?? []),
+        {
+          id: newId('pay'),
+          date: payment.date,
+          amount: payment.amount,
+          type: payment.type === 'prepayment' ? 'prepayment' : 'emi',
+          note: payment.note?.trim() ? payment.note.trim() : null,
+        },
+      ],
+    }));
+  }
+
+  async deletePayment(loanId: string, paymentId: string): Promise<Loan> {
+    await this.bootstrap.ensureInitialized();
+    return this.mutate(loanId, (loan) => ({
+      ...loan,
+      payments: (loan.payments ?? []).filter((p) => p.id !== paymentId),
+    }));
+  }
+
+  /** Read the list, transform one loan, write it back, and return the result. */
+  private async mutate(loanId: string, fn: (loan: Loan) => Loan): Promise<Loan> {
+    const existing = await this.repo.read<LoanList>(DRIVE_FILES.loans);
+    const list = [...(existing?.document.items ?? [])];
+    const idx = list.findIndex((l) => l.id === loanId);
+    if (idx < 0) {
+      throw notFound();
+    }
+    list[idx] = fn(list[idx]);
+    await this.repo.write<LoanList>(
+      DRIVE_FILES.loans,
+      { schemaVersion: SCHEMA_VERSION, items: list },
+      existing?.etag,
+    );
+    return list[idx];
+  }
+
   private validate(r: LoanUpsertRequest): void {
     if (!r.name?.trim()) {
       throw badRequest('Name is required.');
@@ -89,7 +137,7 @@ export class LoansDriveService {
   }
 }
 
-function normalize(r: LoanUpsertRequest): Omit<Loan, 'id' | 'archived'> {
+function normalize(r: LoanUpsertRequest): Omit<Loan, 'id' | 'archived' | 'payments'> {
   return {
     name: r.name.trim(),
     lender: r.lender?.trim() ? r.lender.trim() : null,

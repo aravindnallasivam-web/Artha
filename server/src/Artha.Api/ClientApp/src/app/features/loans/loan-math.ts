@@ -6,7 +6,7 @@
 // exactly on zero. Outstanding/progress are derived from how many EMIs have
 // fallen due since the start date.
 
-import { Loan } from '../../core/models/loan.model';
+import { Loan, LoanPayment } from '../../core/models/loan.model';
 
 export interface ScheduleRow {
   index: number; // 1..termMonths
@@ -21,13 +21,22 @@ export interface LoanStats {
   emi: number;
   totalPayable: number;
   totalInterest: number;
-  paidCount: number; // EMIs fallen due so far
+  paidCount: number; // EMIs paid (recorded), or fallen due if none recorded
   outstanding: number; // remaining principal now
   principalPaid: number;
   progress: number; // 0..1 of principal paid
   payoffDate: string | null;
   nextDueDate: string | null;
   closed: boolean;
+  /** True when outstanding comes from real recorded payments (vs estimated). */
+  tracked: boolean;
+}
+
+export interface LedgerRow {
+  payment: LoanPayment;
+  interest: number; // interest portion of this payment
+  principal: number; // principal portion
+  balance: number; // remaining after this payment
 }
 
 export function monthlyRate(annualPercent: number): number {
@@ -70,14 +79,64 @@ export function buildSchedule(loan: Loan): ScheduleRow[] {
   return rows;
 }
 
-/** Derived figures for "now" (EMIs due up to today drive the outstanding). */
+/**
+ * Apply recorded payments chronologically to derive each payment's
+ * interest/principal split and the running balance. An 'emi' payment accrues a
+ * month's interest first; a 'prepayment' goes entirely to principal.
+ */
+export function paymentLedger(loan: Loan): LedgerRow[] {
+  const r = monthlyRate(loan.annualInterestRate);
+  const sorted = [...(loan.payments ?? [])].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+  );
+  let balance = loan.principal;
+  const rows: LedgerRow[] = [];
+  for (const payment of sorted) {
+    let interest = 0;
+    let principal: number;
+    if (payment.type === 'prepayment') {
+      principal = payment.amount;
+    } else {
+      interest = balance * r;
+      principal = payment.amount - interest;
+    }
+    balance -= principal;
+    if (balance < 0) {
+      // Overpayment closes the loan; trim the principal to land on zero.
+      principal += balance;
+      balance = 0;
+    }
+    rows.push({ payment, interest, principal, balance });
+  }
+  return rows;
+}
+
+/**
+ * Derived figures for "now". When payments are recorded they drive the
+ * outstanding balance; otherwise it's estimated from EMIs due since the start.
+ */
 export function loanStats(loan: Loan, today: Date = new Date()): LoanStats {
   const schedule = buildSchedule(loan);
   const emi = computeEmi(loan.principal, loan.annualInterestRate, loan.termMonths);
   const totalInterest = schedule.reduce((s, row) => s + row.interest, 0);
-  const paidCount = clamp(elapsedInstallments(loan.startDate, today), 0, loan.termMonths);
-  const outstanding = paidCount <= 0 ? loan.principal : schedule[paidCount - 1].balance;
+  const payments = loan.payments ?? [];
+
+  let outstanding: number;
+  let paidCount: number;
+  let tracked: boolean;
+  if (payments.length > 0) {
+    const ledger = paymentLedger(loan);
+    outstanding = ledger.length ? ledger[ledger.length - 1].balance : loan.principal;
+    paidCount = payments.filter((p) => p.type !== 'prepayment').length;
+    tracked = true;
+  } else {
+    paidCount = clamp(elapsedInstallments(loan.startDate, today), 0, loan.termMonths);
+    outstanding = paidCount <= 0 ? loan.principal : schedule[paidCount - 1].balance;
+    tracked = false;
+  }
+
   const principalPaid = loan.principal - outstanding;
+  const closed = outstanding <= 1 || paidCount >= loan.termMonths;
 
   return {
     emi,
@@ -86,10 +145,11 @@ export function loanStats(loan: Loan, today: Date = new Date()): LoanStats {
     paidCount,
     outstanding,
     principalPaid,
-    progress: loan.principal > 0 ? principalPaid / loan.principal : 0,
+    progress: loan.principal > 0 ? clamp(principalPaid / loan.principal, 0, 1) : 0,
     payoffDate: schedule.length ? schedule[schedule.length - 1].date : null,
-    nextDueDate: paidCount < loan.termMonths ? schedule[paidCount].date : null,
-    closed: paidCount >= loan.termMonths,
+    nextDueDate: closed ? null : addMonths(loan.startDate, Math.min(paidCount, loan.termMonths - 1)),
+    closed,
+    tracked,
   };
 }
 

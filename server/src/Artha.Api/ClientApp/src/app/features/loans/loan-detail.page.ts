@@ -11,10 +11,13 @@ import {
   IonSpinner,
   IonTitle,
   IonToolbar,
+  ModalController,
 } from '@ionic/angular/standalone';
+import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Loan } from '../../core/models/loan.model';
 import { SettingsStore } from '../settings/settings.store';
-import { ScheduleRow, buildSchedule, loanStats } from './loan-math';
+import { LedgerRow, ScheduleRow, buildSchedule, loanStats, paymentLedger } from './loan-math';
+import { LoanPaymentModal } from './loan-payment.modal';
 import { LoansStore } from './loans.store';
 
 @Component({
@@ -65,8 +68,15 @@ import { LoansStore } from './loans.store';
               {{ stats().principalPaid | currency: cur() : 'symbol' : '1.0-0' }} of
               {{ l.principal | currency: cur() : 'symbol' : '1.0-0' }} repaid
               ({{ stats().progress * 100 | number: '1.0-0' }}%)
+              @if (!stats().tracked && !stats().closed) { <span class="est">· estimated</span> }
             </div>
           </section>
+
+          @if (!stats().closed) {
+            <ion-button expand="block" class="pay-btn" (click)="recordPayment()">
+              <ion-icon name="add" slot="start"></ion-icon> Record payment
+            </ion-button>
+          }
 
           <!-- KPI grid -->
           <section class="kpis">
@@ -84,6 +94,31 @@ import { LoansStore } from './loans.store';
               </span>
             </div>
           </section>
+
+          <!-- Recorded payments -->
+          @if (payments().length > 0) {
+            <div class="section-label">Payments</div>
+            <div class="pays">
+              @for (row of payments(); track row.payment.id) {
+                <div class="pay-row">
+                  <div class="pay-main">
+                    <span class="pay-amt num">{{ row.payment.amount | currency: cur() : 'symbol' : '1.0-0' }}</span>
+                    @if (row.payment.type === 'prepayment') { <span class="tag tag-pre">Prepayment</span> }
+                  </div>
+                  <div class="pay-meta">
+                    {{ row.payment.date | date: 'MMM d, y' }}
+                    @if (row.payment.type === 'emi') {
+                      · {{ row.principal | currency: cur() : 'symbol' : '1.0-0' }} principal
+                      + {{ row.interest | currency: cur() : 'symbol' : '1.0-0' }} interest
+                    }
+                  </div>
+                  <button type="button" class="pay-del" (click)="deletePayment(row.payment.id)" aria-label="Remove payment">
+                    <ion-icon name="trash-outline"></ion-icon>
+                  </button>
+                </div>
+              }
+            </div>
+          }
 
           <!-- Amortization schedule -->
           <div class="section-label">Amortization schedule</div>
@@ -128,6 +163,29 @@ import { LoansStore } from './loans.store';
     .bar { height: 10px; border-radius: 999px; background: var(--artha-accent-tint); overflow: hidden; margin: 14px 0 8px; }
     .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--artha-accent), var(--artha-accent-hover)); }
     .hero-foot { font-size: 12.5px; color: var(--artha-text-muted); }
+    .est { color: var(--artha-text-subtle); font-style: italic; }
+    .pay-btn { --border-radius: var(--artha-radius); margin: 0; }
+
+    /* Payments list */
+    .pays {
+      background: var(--artha-surface); border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius); box-shadow: var(--artha-shadow-sm); overflow: hidden;
+    }
+    .pay-row {
+      display: grid; grid-template-columns: 1fr auto; align-items: center;
+      gap: 4px 10px; padding: 11px 14px; border-top: 1px solid var(--artha-border);
+    }
+    .pay-row:first-child { border-top: none; }
+    .pay-main { display: flex; align-items: center; gap: 8px; }
+    .pay-amt { font-size: 15px; font-weight: 700; color: var(--artha-text); }
+    .tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .tag-pre { background: var(--artha-positive-tint); color: var(--artha-positive); }
+    .pay-meta { grid-column: 1; font-size: 11.5px; color: var(--artha-text-muted); }
+    .pay-del {
+      grid-row: 1 / span 2; grid-column: 2; background: transparent; border: 0; cursor: pointer;
+      color: var(--artha-text-subtle); font-size: 18px; padding: 6px; display: flex; align-items: center;
+    }
+    .pay-del:active { color: var(--artha-negative); }
 
     .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .kpi {
@@ -163,6 +221,8 @@ export class LoanDetailPage implements OnInit {
   private readonly store = inject(LoansStore);
   private readonly settings = inject(SettingsStore);
   private readonly route = inject(ActivatedRoute);
+  private readonly modalCtrl = inject(ModalController);
+  private readonly notifier = inject(ConflictNotifierService);
 
   protected readonly loadingState = signal(true);
   private readonly loanId = signal<string | null>(null);
@@ -178,6 +238,11 @@ export class LoanDetailPage implements OnInit {
   protected readonly stats = computed(() => {
     const l = this.loan();
     return l ? loanStats(l) : loanStats(EMPTY_LOAN);
+  });
+  /** Recorded payments, newest first, with interest/principal split. */
+  protected readonly payments = computed<LedgerRow[]>(() => {
+    const l = this.loan();
+    return l ? [...paymentLedger(l)].reverse() : [];
   });
 
   async ngOnInit(): Promise<void> {
@@ -195,9 +260,38 @@ export class LoanDetailPage implements OnInit {
   protected cur(): string {
     return this.settings.currency() || 'USD';
   }
+
+  async recordPayment(): Promise<void> {
+    const l = this.loan();
+    if (!l) return;
+    const modal = await this.modalCtrl.create({
+      component: LoanPaymentModal,
+      componentProps: { emi: this.stats().emi },
+      breakpoints: [0, 0.85],
+      initialBreakpoint: 0.85,
+    });
+    await modal.present();
+    const { role, data } = await modal.onWillDismiss();
+    if (role !== 'save' || !data) return;
+    try {
+      await this.store.addPayment(l.id, data);
+    } catch {
+      await this.notifier.notifyError('Could not record payment.');
+    }
+  }
+
+  async deletePayment(paymentId: string): Promise<void> {
+    const l = this.loan();
+    if (!l) return;
+    try {
+      await this.store.deletePayment(l.id, paymentId);
+    } catch {
+      await this.notifier.notifyError('Could not remove payment.');
+    }
+  }
 }
 
 const EMPTY_LOAN: Loan = {
   id: '', name: '', lender: null, principal: 0, annualInterestRate: 0,
-  termMonths: 1, startDate: '2000-01-01', accountId: null, archived: false,
+  termMonths: 1, startDate: '2000-01-01', accountId: null, payments: [], archived: false,
 };

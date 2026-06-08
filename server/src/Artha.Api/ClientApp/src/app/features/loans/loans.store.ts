@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Loan, LoanUpsertRequest } from '../../core/models/loan.model';
+import { Loan, LoanPaymentInput, LoanUpsertRequest } from '../../core/models/loan.model';
 import { loanStats } from './loan-math';
 import { LoansApi } from './loans.api';
 
@@ -75,5 +75,17 @@ export class LoansStore {
   async remove(id: string): Promise<void> {
     await this.api.remove(id);
     await this.load(this._includeArchived(), /* force */ true);
+  }
+
+  async addPayment(loanId: string, payment: LoanPaymentInput): Promise<Loan> {
+    const updated = await this.api.addPayment(loanId, payment);
+    this._items.update((items) => items.map((l) => (l.id === loanId ? updated : l)));
+    return updated;
+  }
+
+  async deletePayment(loanId: string, paymentId: string): Promise<Loan> {
+    const updated = await this.api.deletePayment(loanId, paymentId);
+    this._items.update((items) => items.map((l) => (l.id === loanId ? updated : l)));
+    return updated;
   }
 }
