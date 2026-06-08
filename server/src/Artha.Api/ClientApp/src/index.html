@@ -9,6 +9,19 @@
        and home indicator. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!-- Apply the saved theme before first paint to avoid a light/dark flash.
+       Mirrors ThemeService: 'dark', or 'system' resolving to a dark OS. -->
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('artha.theme') || 'system';
+        var dark = pref === 'dark' ||
+          (pref === 'system' && window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('ion-palette-dark');
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
 </head>
 <body>
   <app-root></app-root>

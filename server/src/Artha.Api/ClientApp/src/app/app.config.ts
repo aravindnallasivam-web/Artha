@@ -13,6 +13,7 @@ import { authInterceptor } from './core/auth/auth.interceptor';
 import { GoogleAuthService } from './core/auth/google-auth.service';
 import { SessionService } from './core/auth/session.service';
 import { NativeUiService } from './core/native/native-ui.service';
+import { ThemeService } from './core/theme/theme.service';
 import { SmsCaptureService } from './features/sms/sms-capture.service';
 import { routes } from './app.routes';
 
@@ -36,6 +37,9 @@ export const appConfig: ApplicationConfig = {
       const googleAuth = inject(GoogleAuthService);
       const nativeUi = inject(NativeUiService);
       const smsCapture = inject(SmsCaptureService);
+      // Construct the theme service early so the chosen Light/Dark/System
+      // palette is applied to <html> as the app boots.
+      inject(ThemeService);
       await session.restoreFromNativeIfNeeded();
       googleAuth.initializeMobileAuthListener();
       await nativeUi.initialize();

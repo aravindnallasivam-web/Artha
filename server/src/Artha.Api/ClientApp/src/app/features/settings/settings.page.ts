@@ -10,6 +10,8 @@ import {
   IonLabel,
   IonList,
   IonNote,
+  IonSegment,
+  IonSegmentButton,
   IonSelect,
   IonSelectOption,
   IonSpinner,
@@ -20,6 +22,7 @@ import {
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
+import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { environment } from '../../../environments/environment';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
@@ -39,6 +42,8 @@ import { SettingsStore } from './settings.store';
     IonLabel,
     IonList,
     IonNote,
+    IonSegment,
+    IonSegmentButton,
     IonSelect,
     IonSelectOption,
     IonSpinner,
@@ -85,6 +90,29 @@ import { SettingsStore } from './settings.store';
               }
             </ion-select>
           </ion-item>
+        </ion-list>
+
+        <p class="section-title">Appearance</p>
+        <ion-list inset="true" class="card">
+          <ion-item lines="none">
+            <span class="icon-chip chip-accent" slot="start">
+              <ion-icon name="contrast-outline"></ion-icon>
+            </span>
+            <ion-label>Theme</ion-label>
+          </ion-item>
+          <div class="seg-wrap">
+            <ion-segment [value]="theme.preference()" (ionChange)="onThemeChange($event)">
+              <ion-segment-button value="system">
+                <ion-label>System</ion-label>
+              </ion-segment-button>
+              <ion-segment-button value="light">
+                <ion-label>Light</ion-label>
+              </ion-segment-button>
+              <ion-segment-button value="dark">
+                <ion-label>Dark</ion-label>
+              </ion-segment-button>
+            </ion-segment>
+          </div>
         </ion-list>
 
         @if (sms.isSupported()) {
@@ -230,6 +258,8 @@ import { SettingsStore } from './settings.store';
       background: var(--artha-surface);
     }
     ion-list.card + ion-list.card { margin-top: 12px; }
+    .seg-wrap { padding: 0 14px 12px; }
+    .seg-wrap ion-segment { --background: var(--artha-surface-2); }
     ion-list.card ion-item {
       --background: transparent;
       --padding-start: 14px;
@@ -279,6 +309,7 @@ export class SettingsPage implements OnInit {
   protected readonly store = inject(SettingsStore);
   protected readonly session = inject(SessionService);
   protected readonly sms = inject(SmsCaptureService);
+  protected readonly theme = inject(ThemeService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
@@ -394,6 +425,13 @@ export class SettingsPage implements OnInit {
       await this.notifier.notifyInfo(`Currency changed to ${value}.`);
     } catch (err) {
       await this.notifier.notifyError('Could not update currency.');
+    }
+  }
+
+  onThemeChange(event: Event): void {
+    const value = (event as CustomEvent<{ value: ThemePreference }>).detail?.value;
+    if (value) {
+      this.theme.setPreference(value);
     }
   }
 
