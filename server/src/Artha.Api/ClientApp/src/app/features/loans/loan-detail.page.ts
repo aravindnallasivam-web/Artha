@@ -15,9 +15,10 @@ import {
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Loan } from '../../core/models/loan.model';
+import { ExpensesStore } from '../expenses/expenses.store';
 import { SettingsStore } from '../settings/settings.store';
 import { LedgerRow, ScheduleRow, buildSchedule, loanStats, paymentLedger } from './loan-math';
-import { LoanPaymentModal } from './loan-payment.modal';
+import { LoanPaymentModal, LoanPaymentResult } from './loan-payment.modal';
 import { LoansStore } from './loans.store';
 
 @Component({
@@ -223,6 +224,7 @@ export class LoanDetailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly modalCtrl = inject(ModalController);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly expenses = inject(ExpensesStore);
 
   protected readonly loadingState = signal(true);
   private readonly loanId = signal<string | null>(null);
@@ -266,15 +268,27 @@ export class LoanDetailPage implements OnInit {
     if (!l) return;
     const modal = await this.modalCtrl.create({
       component: LoanPaymentModal,
-      componentProps: { emi: this.stats().emi },
-      breakpoints: [0, 0.85],
-      initialBreakpoint: 0.85,
+      componentProps: { emi: this.stats().emi, defaultAccountId: l.accountId },
+      breakpoints: [0, 0.9],
+      initialBreakpoint: 0.9,
     });
     await modal.present();
-    const { role, data } = await modal.onWillDismiss();
+    const { role, data } = await modal.onWillDismiss<LoanPaymentResult>();
     if (role !== 'save' || !data) return;
     try {
-      await this.store.addPayment(l.id, data);
+      await this.store.addPayment(l.id, data.payment);
+      // Optionally mirror the payment into the expense ledger.
+      if (data.expense) {
+        const label = data.payment.type === 'prepayment' ? 'Prepayment' : 'EMI';
+        await this.expenses.add({
+          date: data.payment.date,
+          amount: data.payment.amount,
+          categoryId: data.expense.categoryId,
+          accountId: data.expense.accountId,
+          note: `${label} · ${l.name}`,
+          excluded: false,
+        });
+      }
     } catch {
       await this.notifier.notifyError('Could not record payment.');
     }
