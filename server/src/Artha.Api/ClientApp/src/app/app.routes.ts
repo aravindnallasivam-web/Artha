@@ -94,6 +94,26 @@ export const routes: Routes = [
           import('./features/accounts/account-edit.page').then((m) => m.AccountEditPage),
       },
       {
+        path: 'loans',
+        loadComponent: () =>
+          import('./features/loans/loans-list.page').then((m) => m.LoansListPage),
+      },
+      {
+        path: 'loans/new',
+        loadComponent: () =>
+          import('./features/loans/loan-edit.page').then((m) => m.LoanEditPage),
+      },
+      {
+        path: 'loans/:id/edit',
+        loadComponent: () =>
+          import('./features/loans/loan-edit.page').then((m) => m.LoanEditPage),
+      },
+      {
+        path: 'loans/:id',
+        loadComponent: () =>
+          import('./features/loans/loan-detail.page').then((m) => m.LoanDetailPage),
+      },
+      {
         path: 'categories',
         loadComponent: () =>
           import('./features/categories/categories-list.page').then((m) => m.CategoriesListPage),

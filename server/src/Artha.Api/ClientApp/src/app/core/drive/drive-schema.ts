@@ -9,6 +9,7 @@
 import { Account } from '../models/account.model';
 import { Category } from '../models/category.model';
 import { Expense } from '../models/expense.model';
+import { Loan } from '../models/loan.model';
 import { PlannedExpense } from '../models/planned-expense.model';
 
 /** Current on-disk schema version. Bump in lockstep with a migration. */
@@ -21,6 +22,7 @@ export const DRIVE_FILES = {
   accounts: 'accounts.json',
   settings: 'settings.json',
   plannedExpenses: 'planned-expenses.json',
+  loans: 'loans.json',
 } as const;
 
 /** Default Cash account seeded for every user (mirror DefaultAccountId). */
@@ -54,6 +56,10 @@ export interface AccountList extends SchemaVersioned {
 
 export interface PlannedExpenseList extends SchemaVersioned {
   items: PlannedExpense[];
+}
+
+export interface LoanList extends SchemaVersioned {
+  items: Loan[];
 }
 
 export interface SettingsDocument extends SchemaVersioned {
