@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch splash: the Artha mark centred on a white background. Used both as
+     the cold-start window background and by the Capacitor SplashScreen plugin
+     (androidScaleType: CENTER), so the logo shows at a fixed size on white. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item
+        android:width="200dp"
+        android:height="200dp"
+        android:gravity="center"
+        android:drawable="@drawable/splash_logo" />
+</layer-list>

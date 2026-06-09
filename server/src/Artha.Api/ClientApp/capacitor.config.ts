@@ -20,7 +20,10 @@ const config: CapacitorConfig = {
       fadeOutDuration: 300,
       backgroundColor: '#ffffff',
       showSpinner: false,
-      androidScaleType: 'CENTER_CROP',
+      // The logo splash is a centred layer-list on a white field; draw it at a
+      // fixed size (no crop) with the plugin's white background filling around.
+      androidScaleType: 'CENTER',
+      androidSplashResourceName: 'splash_screen',
     },
     StatusBar: {
       // Don't draw the web view under the status bar on Android; the bar gets a
