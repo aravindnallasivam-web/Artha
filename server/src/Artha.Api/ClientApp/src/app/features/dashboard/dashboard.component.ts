@@ -136,6 +136,11 @@ interface AccountBalance {
                 @if (dailyAverage() > 0) { · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day }
               </p>
             }
+            @if (expensesStore.incomeTotal() > 0) {
+              <p class="hero-income">
+                + {{ expensesStore.incomeTotal() | currency: currency() : 'symbol' : '1.0-0' }} received this month
+              </p>
+            }
           </section>
 
           <!-- 2 · Quick stats -->
@@ -236,8 +241,8 @@ interface AccountBalance {
                           {{ expense.date | date: 'EEE, MMM d' }}@if (expense.note) { · {{ expense.note }} }
                         </p>
                       </div>
-                      <span class="activity-amount num">
-                        {{ expense.amount | currency: expense.currency : 'symbol' : '1.0-0' }}
+                      <span class="activity-amount num" [class.income]="expense.type === 'income'">
+                        {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-0' }}
                       </span>
                     </li>
                   }
@@ -313,6 +318,7 @@ interface AccountBalance {
     .hero-value { margin: 8px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -0.025em; color: var(--artha-text); }
     .hero-meta { margin: 12px 0 0; font-size: 12.5px; color: var(--artha-text-muted); }
     .hero-meta .over { color: var(--artha-negative); font-weight: 700; }
+    .hero-income { margin: 6px 0 0; font-size: 12.5px; font-weight: 600; color: var(--artha-positive); }
 
     /* progress bar */
     .bar { width: 100%; height: 6px; border-radius: 999px; background: var(--artha-surface-2); overflow: hidden; }
@@ -387,6 +393,7 @@ interface AccountBalance {
     .activity-meta { margin: 2px 0 0; font-size: 11.5px; color: var(--artha-text-muted);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .activity-amount { font-size: 13.5px; font-weight: 700; color: var(--artha-text); }
+    .activity-amount.income { color: var(--artha-positive); }
 
     /* empty states */
     .empty {
@@ -436,7 +443,9 @@ export class DashboardComponent implements OnInit {
 
   private readonly counted = computed(() => {
     const excludedCats = this.excludedCategoryIds();
-    return this.expensesStore.items().filter((e) => !e.excluded && !excludedCats.has(e.categoryId));
+    return this.expensesStore
+      .items()
+      .filter((e) => e.type !== 'income' && !e.excluded && !excludedCats.has(e.categoryId));
   });
 
   protected readonly totalSpent = computed(() => this.counted().reduce((s, e) => s + e.amount, 0));

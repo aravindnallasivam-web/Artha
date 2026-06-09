@@ -49,7 +49,9 @@ export class ReportsDriveService {
       }
     }
 
-    const counted = items.filter((e) => !e.excluded && !excluded.has(e.categoryId));
+    const counted = items.filter(
+      (e) => e.type !== 'income' && !e.excluded && !excluded.has(e.categoryId),
+    );
     const byCategory = breakdown(counted, categoriesById);
 
     const planned = (await this.repo.read<PlannedExpenseList>(DRIVE_FILES.plannedExpenses))?.document.items.filter(
@@ -88,7 +90,7 @@ export class ReportsDriveService {
         continue;
       }
       for (const e of shard.document.items) {
-        if (e.excluded || excluded.has(e.categoryId)) {
+        if (e.type === 'income' || e.excluded || excluded.has(e.categoryId)) {
           continue;
         }
         const m = Number(e.date.slice(5, 7));

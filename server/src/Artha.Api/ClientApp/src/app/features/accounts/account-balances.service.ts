@@ -19,7 +19,11 @@ import {
 export class AccountBalancesService {
   private readonly repo = inject(AppDataRepository);
 
-  /** Map of accountId -> all-time spent (non-excluded). */
+  /**
+   * Map of accountId -> all-time net outflow (non-excluded): expenses add,
+   * income subtracts. So balance = openingBalance - netOutflow, i.e.
+   * openingBalance - expenses + income.
+   */
   async spendByAccount(): Promise<Map<string, number>> {
     const spend = new Map<string, number>();
     const manifestDoc = await this.repo.read<Manifest>(DRIVE_FILES.manifest);
@@ -37,7 +41,8 @@ export class AccountBalancesService {
           continue;
         }
         const acc = e.accountId || DEFAULT_ACCOUNT_ID;
-        spend.set(acc, (spend.get(acc) ?? 0) + e.amount);
+        const delta = e.type === 'income' ? -e.amount : e.amount;
+        spend.set(acc, (spend.get(acc) ?? 0) + delta);
       }
     }
     return spend;

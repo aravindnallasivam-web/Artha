@@ -260,8 +260,8 @@ const TODAY_ISO = toIsoDate(new Date());
                               @if (expense.note) { · {{ expense.note }} }
                             </p>
                           </div>
-                          <span class="row-amount num">
-                            {{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
+                          <span class="row-amount num" [class.income]="expense.type === 'income'">
+                            {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
                           </span>
                           <button
                             type="button"
@@ -337,8 +337,8 @@ const TODAY_ISO = toIsoDate(new Date());
                             @if (expense.note) { · {{ expense.note }} }
                           </p>
                         </div>
-                        <span class="row-amount num">
-                          {{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
+                        <span class="row-amount num" [class.income]="expense.type === 'income'">
+                          {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
                         </span>
                         <button
                           type="button"
@@ -710,6 +710,7 @@ const TODAY_ISO = toIsoDate(new Date());
       font-size: 14px; font-weight: 600;
       color: var(--artha-text);
     }
+    .row-amount.income { color: var(--artha-positive); }
     .row-delete {
       width: 28px; height: 28px;
       border: 0; background: transparent;
@@ -1019,11 +1020,11 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly monthTotal = computed(() =>
-    this.monthExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
+    this.monthExpenses().reduce((sum, e) => (countsAsSpend(e) ? sum + e.amount : sum), 0),
   );
 
   protected readonly monthCount = computed(() =>
-    this.monthExpenses().filter((e) => !e.excluded).length,
+    this.monthExpenses().filter(countsAsSpend).length,
   );
 
   protected readonly dailyAverage = computed(() => {
@@ -1044,7 +1045,7 @@ export class ExpensesListPage implements OnInit {
         groups.set(e.date, g);
       }
       g.items.push(e);
-      if (!e.excluded) g.total += e.amount;
+      if (countsAsSpend(e)) g.total += e.amount;
     }
     return Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date));
   });
@@ -1057,7 +1058,7 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly selectedDayTotal = computed(() =>
-    this.selectedDayExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
+    this.selectedDayExpenses().reduce((sum, e) => (countsAsSpend(e) ? sum + e.amount : sum), 0),
   );
 
   protected readonly calendar = computed<CalendarCell[]>(() => {
@@ -1065,7 +1066,7 @@ export class ExpensesListPage implements OnInit {
     const month = this.viewMonth();
     const totals = new Map<string, { total: number; count: number }>();
     for (const g of this.dayGroups()) {
-      totals.set(g.date, { total: g.total, count: g.items.filter((e) => !e.excluded).length });
+      totals.set(g.date, { total: g.total, count: g.items.filter(countsAsSpend).length });
     }
 
     // Build a 6-row grid starting on Sunday for visual consistency.
@@ -1266,6 +1267,11 @@ export class ExpensesListPage implements OnInit {
     const prefix = monthPrefix(this.viewYear(), this.viewMonth());
     await this.expensesStore.load(prefix, prefix, force);
   }
+}
+
+/** Whether a transaction counts toward spending totals (not income, not excluded). */
+function countsAsSpend(e: Expense): boolean {
+  return !e.excluded && e.type !== 'income';
 }
 
 function monthPrefix(year: number, month: number): string {

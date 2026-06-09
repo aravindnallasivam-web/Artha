@@ -11,7 +11,10 @@ import {
   IonHeader,
   IonIcon,
   IonItem,
+  IonLabel,
   IonModal,
+  IonSegment,
+  IonSegmentButton,
   IonSelect,
   IonSelectOption,
   IonSpinner,
@@ -22,6 +25,7 @@ import {
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
+import { TransactionType } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from './expenses.store';
@@ -40,7 +44,10 @@ import { ExpensesStore } from './expenses.store';
     IonHeader,
     IonIcon,
     IonItem,
+    IonLabel,
     IonModal,
+    IonSegment,
+    IonSegmentButton,
     IonSelect,
     IonSelectOption,
     IonSpinner,
@@ -55,7 +62,9 @@ import { ExpensesStore } from './expenses.store';
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/expenses"></ion-back-button>
         </ion-buttons>
-        <ion-title>{{ mode() === 'edit' ? 'Edit expense' : 'New expense' }}</ion-title>
+        <ion-title>
+          {{ mode() === 'edit' ? 'Edit ' : 'New ' }}{{ isIncome() ? 'income' : 'expense' }}
+        </ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -65,11 +74,17 @@ import { ExpensesStore } from './expenses.store';
       } @else {
         <form [formGroup]="form" (ngSubmit)="save()">
           <div class="wrap">
+            <!-- Expense / Income -->
+            <ion-segment class="type-seg" [value]="form.controls.type.value" (ionChange)="onTypeChange($event)">
+              <ion-segment-button value="expense"><ion-label>Expense</ion-label></ion-segment-button>
+              <ion-segment-button value="income"><ion-label>Income</ion-label></ion-segment-button>
+            </ion-segment>
+
             <!-- Amount hero -->
-            <div class="amount">
+            <div class="amount" [class.amount--income]="isIncome()">
               <div class="amount-label">AMOUNT</div>
               <div class="amount-row">
-                <span class="cur">{{ currencySymbol() }}</span>
+                <span class="cur">{{ isIncome() ? '+' : '' }}{{ currencySymbol() }}</span>
                 <input
                   class="amount-input"
                   type="number"
@@ -166,7 +181,7 @@ import { ExpensesStore } from './expenses.store';
           <div class="save-bar">
             <ion-button type="submit" expand="block" [disabled]="form.invalid || saving()">
               <ion-icon name="save-outline" slot="start"></ion-icon>
-              {{ saving() ? 'Saving…' : (mode() === 'edit' ? 'Save changes' : 'Add expense') }}
+              {{ saving() ? 'Saving…' : (mode() === 'edit' ? 'Save changes' : (isIncome() ? 'Add income' : 'Add expense')) }}
             </ion-button>
           </div>
         </form>
@@ -178,8 +193,12 @@ import { ExpensesStore } from './expenses.store';
     .state { display: flex; justify-content: center; padding: 48px; }
     .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 16px; }
 
+    .type-seg { margin: 6px 0 4px; }
+
     /* Amount hero */
     .amount { text-align: center; padding: 14px 0 22px; }
+    .amount--income .amount-input,
+    .amount--income .cur { color: var(--artha-positive); }
     .amount-label {
       font-size: 11px; font-weight: 600; letter-spacing: 1.2px;
       color: var(--artha-text-subtle);
@@ -268,7 +287,19 @@ export class ExpenseEditPage implements OnInit {
     accountId: [DEFAULT_ACCOUNT_ID, Validators.required],
     note: [''],
     excluded: [false],
+    type: ['expense' as TransactionType, Validators.required],
   });
+
+  protected isIncome(): boolean {
+    return this.form.controls.type.value === 'income';
+  }
+
+  protected onTypeChange(event: Event): void {
+    const value = (event as CustomEvent<{ value: TransactionType }>).detail?.value;
+    if (value) {
+      this.form.patchValue({ type: value });
+    }
+  }
 
   private editingId: string | null = null;
 
@@ -297,6 +328,7 @@ export class ExpenseEditPage implements OnInit {
             accountId: expense.accountId || DEFAULT_ACCOUNT_ID,
             note: expense.note ?? '',
             excluded: expense.excluded ?? false,
+            type: expense.type ?? 'expense',
           });
         }
       } else {
@@ -325,6 +357,7 @@ export class ExpenseEditPage implements OnInit {
       accountId: raw.accountId,
       note: raw.note?.trim() || null,
       excluded: raw.excluded,
+      type: raw.type,
     };
     try {
       if (this.editingId) {

@@ -27,7 +27,17 @@ export class ExpensesStore {
   readonly loading = this._loading.asReadonly();
   readonly error = this._error.asReadonly();
   readonly totalAmount = computed(() =>
-    this._items().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
+    this._items().reduce(
+      (sum, e) => (e.excluded || e.type === 'income' ? sum : sum + e.amount),
+      0,
+    ),
+  );
+  /** Total money received (income) over the loaded range. */
+  readonly incomeTotal = computed(() =>
+    this._items().reduce(
+      (sum, e) => (!e.excluded && e.type === 'income' ? sum + e.amount : sum),
+      0,
+    ),
   );
 
   async load(from?: string, to?: string, force = false): Promise<void> {

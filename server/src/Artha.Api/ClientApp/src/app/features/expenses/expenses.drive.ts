@@ -100,6 +100,7 @@ export class ExpensesDriveService {
       accountId,
       note: request.note?.trim() ? request.note.trim() : null,
       excluded: request.excluded,
+      type: request.type === 'income' ? 'income' : 'expense',
       createdAt: now,
       updatedAt: now,
     };
@@ -132,6 +133,7 @@ export class ExpensesDriveService {
       note: request.note?.trim() ? request.note.trim() : null,
       updatedAt: new Date().toISOString(),
       excluded: request.excluded,
+      type: request.type ?? expense.type ?? 'expense',
     };
 
     if (ymCompare(oldMonth, newMonth) === 0) {
@@ -248,11 +250,12 @@ function parseYearMonth(raw: string): YearMonth | null {
   return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
 }
 
-/** Legacy rows may lack accountId/excluded — surface sane defaults. */
+/** Legacy rows may lack accountId/excluded/type — surface sane defaults. */
 function normalizeExpense(e: Expense): Expense {
   return {
     ...e,
     accountId: e.accountId || DEFAULT_ACCOUNT_ID,
     excluded: e.excluded ?? false,
+    type: e.type === 'income' ? 'income' : 'expense',
   };
 }
