@@ -180,9 +180,10 @@ export class SmsCaptureService {
     if (status?.sms === 'granted') {
       await this.startWatching();
       // Fast path first: if we were opened by tapping a notification, show its
-      // confirm dialog straight away before the slower full catch-up scan.
-      await this.handlePendingNotification();
-      await this.catchUp();
+      // confirm dialog straight away before the slower full catch-up scan, and
+      // don't also auto-open the whole backlog list on top of it.
+      const handled = await this.handlePendingNotification();
+      await this.catchUp(/* present */ !handled);
     }
   }
 
@@ -192,36 +193,37 @@ export class SmsCaptureService {
    * natively. Grab it and open the confirm dialog immediately — no inbox
    * re-scan and no duplicate-check round-trip — so the screen appears fast.
    */
-  private async handlePendingNotification(): Promise<void> {
+  private async handlePendingNotification(): Promise<boolean> {
     if (!this.isEnabled()) {
-      return;
+      return false;
     }
     let pending: SmsMessage | null = null;
     try {
       pending = (await SmsReader.consumePendingSms()).message;
     } catch {
-      return;
+      return false;
     }
     if (!pending) {
-      return;
+      return false;
     }
     // Advance the watermark so the catch-up scan won't re-offer this same SMS.
     if (pending.date) {
       this.setLastSeen(Math.max(this.getLastSeen(), pending.date + 1));
     }
     if (this.isIgnored(pending.address)) {
-      return;
+      return false;
     }
     const parsed = parseExpenseSms(pending);
     if (!parsed) {
-      return;
+      return false;
     }
     // Keep it in the queue first (so it's never lost), then — since the user
     // tapped the notification to deal with it now — open the polished single
-    // confirm for this one straight away.
+    // confirm for this one straight away (fast path: no duplicate-check read).
     this.enqueue(parsed);
     await this.ensureStores();
-    await this.openSingleConfirm(parsed);
+    await this.openSingleConfirm(parsed, /* skipDuplicateCheck */ true);
+    return true;
   }
 
   /** Turn capture on: request permission, persist the flag, start watching. */
@@ -256,7 +258,7 @@ export class SmsCaptureService {
    * foregrounded, so messages that arrive while Artha is backgrounded/closed
    * are picked up here the next time the app opens or resumes.
    */
-  async catchUp(): Promise<void> {
+  async catchUp(present = true): Promise<void> {
     if (!this.isEnabled()) {
       return;
     }
@@ -288,7 +290,12 @@ export class SmsCaptureService {
     if (added.length > 0) {
       await this.notifyAutoAdded(added);
     }
-    await this.presentQueue();
+    // Skip auto-opening the backlog when a notification was just handled — the
+    // user asked for that one expense, not the whole list. The pending badge
+    // still reflects anything left for them to review later.
+    if (present) {
+      await this.presentQueue();
+    }
   }
 
   private bindResume(): void {
@@ -298,8 +305,8 @@ export class SmsCaptureService {
     this.resumeBound = true;
     void App.addListener('resume', () => {
       void (async () => {
-        await this.handlePendingNotification();
-        await this.catchUp();
+        const handled = await this.handlePendingNotification();
+        await this.catchUp(/* present */ !handled);
       })();
     });
   }
@@ -524,19 +531,22 @@ export class SmsCaptureService {
    * the live path and notification taps). Saving logs it and clears it from the
    * queue; closing leaves it queued so it can be handled later from the backlog.
    */
-  private async openSingleConfirm(parsed: ParsedExpense): Promise<void> {
+  private async openSingleConfirm(parsed: ParsedExpense, skipDuplicateCheck = false): Promise<void> {
     // If a dialog is already up, leave this one queued — it'll surface later.
     if (this.confirming || this.reviewing) {
       return;
     }
     this.confirming = true;
     try {
-      const existing = await this.fetchExisting([monthOf(parsed.date)]);
+      // On the notification fast-path we skip the duplicate-check Drive read so
+      // the confirm dialog appears immediately (a freshly-detected SMS is very
+      // unlikely to be already logged).
+      const existing = skipDuplicateCheck ? [] : await this.fetchExisting([monthOf(parsed.date)]);
       const modal = await this.modalCtrl.create({
         component: SmsConfirmModal,
         componentProps: {
           parsed,
-          duplicate: this.findDuplicate(parsed, existing),
+          duplicate: skipDuplicateCheck ? null : this.findDuplicate(parsed, existing),
           categoryId: this.resolveCategoryId(parsed),
           accountId: this.resolveAccountId(parsed),
           canDismiss: true,
