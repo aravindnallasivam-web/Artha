@@ -30,7 +30,7 @@ import { Component, OnInit, signal } from '@angular/core';
       align-items: center;
       justify-content: center;
       gap: 6px;
-      background: #ffffff;
+      background: var(--artha-bg, #ffffff);
       opacity: 1;
       transition: opacity 0.35s ease;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -46,21 +46,16 @@ import { Component, OnInit, signal } from '@angular/core';
       font-size: 34px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      color: #0f172a;
+      color: var(--artha-text, #0f172a);
     }
     .slogan {
       margin: 0;
       font-size: 15px;
-      color: #64748b;
+      color: var(--artha-text-muted, #64748b);
     }
     @keyframes splash-pop {
       from { transform: scale(0.85); opacity: 0; }
       to   { transform: scale(1); opacity: 1; }
-    }
-    @media (prefers-color-scheme: dark) {
-      .splash { background: #0b1220; }
-      .name { color: #f1f5f9; }
-      .slogan { color: #94a3b8; }
     }
     @media (prefers-reduced-motion: reduce) {
       .logo { animation: none; }

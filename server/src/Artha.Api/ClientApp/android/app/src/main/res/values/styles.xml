@@ -18,8 +18,8 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash_screen</item>
-        <!-- Android 12+ system splash: white field; the (new) launcher icon is
-             shown as the splash icon by default. -->
-        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/ic_launcher_background</item>
+        <!-- Android 12+ system splash: theme-aware background (values-night); the
+             (new) launcher icon is shown as the splash icon by default. -->
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/splash_background</item>
     </style>
 </resources>
