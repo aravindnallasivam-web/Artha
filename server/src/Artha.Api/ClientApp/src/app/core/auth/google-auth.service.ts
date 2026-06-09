@@ -6,6 +6,7 @@ import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { environment } from '../../../environments/environment';
 import { DriveBootstrap } from '../drive/drive-bootstrap.service';
+import { DriveCache } from '../drive/drive-cache.service';
 import { GoogleTokenStore } from '../drive/google-token.store';
 import { LoginResponse } from './auth.models';
 import { GoogleOAuthService } from './google-oauth.service';
@@ -32,6 +33,7 @@ export class GoogleAuthService {
   private readonly googleOAuth = inject(GoogleOAuthService);
   private readonly googleTokens = inject(GoogleTokenStore);
   private readonly bootstrap = inject(DriveBootstrap);
+  private readonly cache = inject(DriveCache);
   private mobileListenerAttached = false;
 
   /**
@@ -154,6 +156,7 @@ export class GoogleAuthService {
     // Local-only sign-out: drop the Google tokens, reset the first-run guard,
     // and clear the session. (Tokens can be fully revoked from the user's
     // Google account settings.)
+    await this.cache.clear();
     await this.googleTokens.clear();
     this.bootstrap.reset();
     this.session.clear();

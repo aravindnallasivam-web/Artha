@@ -1,14 +1,14 @@
-// Typed JSON wrapper over the Drive REST client.
+// Typed JSON wrapper over the local-first DriveCache.
 //
-// Port of AppDataRepository.cs. Each well-known file (manifest, settings,
-// categories, …) is read/written through this layer, which adds:
-//   - a schema-version forward-guard, and
-//   - optimistic concurrency via the file's headRevisionId (ETag).
+// Each well-known file (manifest, settings, categories, …) is read/written
+// through this layer, which adds a schema-version forward-guard. The cache
+// serves reads from a local copy instantly and pushes writes to Drive in the
+// background, so this stays a thin, synchronous-feeling API for the stores.
 //
 // It is generic over the document type T, so one class serves every file.
 
 import { Injectable, inject } from '@angular/core';
-import { DriveConflictError, DriveRestClient } from './drive-rest.client';
+import { DriveCache } from './drive-cache.service';
 import { SCHEMA_VERSION, SchemaVersioned } from './drive-schema';
 
 export interface RepositoryDocument<T> {
@@ -19,37 +19,27 @@ export interface RepositoryDocument<T> {
 
 @Injectable({ providedIn: 'root' })
 export class AppDataRepository {
-  private readonly drive = inject(DriveRestClient);
+  private readonly cache = inject(DriveCache);
 
   async read<T>(fileName: string): Promise<RepositoryDocument<T> | null> {
-    const result = await this.drive.getByName(fileName);
+    const result = await this.cache.read(fileName);
     if (!result) {
       return null;
     }
     const document = result.content as T;
     guardSchemaVersion(document, fileName);
-    return { document, fileId: result.fileId, etag: result.headRevisionId };
+    return { document, fileId: '', etag: result.etag };
   }
 
   /**
-   * Create if absent, otherwise overwrite. When ifMatchEtag is supplied and no
-   * longer matches the stored revision, a DriveConflictError is thrown so the
-   * caller can re-read and retry. Returns the new ETag.
+   * Create or overwrite the file. The write lands in the local cache
+   * immediately and is synced to Drive in the background. The ifMatchEtag
+   * argument is accepted for call-site compatibility but no longer enforced
+   * (the cache reconciles with Drive using last-write-wins). Returns the
+   * last-known ETag.
    */
-  async write<T>(fileName: string, document: T, ifMatchEtag?: string | null): Promise<string> {
-    const existing = await this.drive.getMetaByName(fileName);
-
-    if (!existing) {
-      const created = await this.drive.create(fileName, document);
-      return created.headRevisionId;
-    }
-
-    if (ifMatchEtag && existing.headRevisionId !== ifMatchEtag) {
-      throw new DriveConflictError(fileName, existing.headRevisionId);
-    }
-
-    const updated = await this.drive.update(existing.id, document);
-    return updated.headRevisionId;
+  async write<T>(fileName: string, document: T, _ifMatchEtag?: string | null): Promise<string> {
+    return this.cache.write(fileName, document);
   }
 }
 

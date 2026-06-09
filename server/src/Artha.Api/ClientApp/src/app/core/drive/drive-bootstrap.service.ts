@@ -9,6 +9,7 @@ import { Injectable, inject } from '@angular/core';
 import { Account } from '../models/account.model';
 import { Category } from '../models/category.model';
 import { AppDataRepository } from './app-data.repository';
+import { DriveCache } from './drive-cache.service';
 import { DriveRestClient } from './drive-rest.client';
 import {
   AccountList,
@@ -25,6 +26,7 @@ import {
 export class DriveBootstrap {
   private readonly repo = inject(AppDataRepository);
   private readonly drive = inject(DriveRestClient);
+  private readonly cache = inject(DriveCache);
 
   private done = false;
   private inFlight: Promise<void> | null = null;
@@ -47,7 +49,12 @@ export class DriveBootstrap {
   }
 
   private async run(): Promise<void> {
-    // Fast path: accounts.json present => already bootstrapped.
+    // Fast path: a cached accounts.json means we're already set up — no network.
+    if (await this.cache.has(DRIVE_FILES.accounts)) {
+      this.done = true;
+      return;
+    }
+    // Otherwise check Drive (covers a fresh device that already has data).
     if (await this.drive.getMetaByName(DRIVE_FILES.accounts)) {
       this.done = true;
       return;
