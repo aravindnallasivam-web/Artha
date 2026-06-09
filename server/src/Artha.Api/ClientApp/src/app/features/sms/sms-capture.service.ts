@@ -419,6 +419,117 @@ export class SmsCaptureService {
     return parsed.length;
   }
 
+  // ----- Training wizard support -----
+
+  /**
+   * Headless inbox scan over a [from, to] day range (YYYY-MM-DD). Reads, parses,
+   * drops ignored senders, and returns the detected transactions newest-first.
+   * No UI. Ensures the category/account stores are loaded. Returns [] when not
+   * supported, permission denied, or none found.
+   */
+  async scanRange(from: string, to: string): Promise<ParsedExpense[]> {
+    if (!this.isSupported()) {
+      return [];
+    }
+    let status = await SmsReader.checkPermissions().catch(() => null);
+    if (status?.sms !== 'granted') {
+      status = await SmsReader.requestPermissions().catch(() => null);
+    }
+    if (status?.sms !== 'granted') {
+      return [];
+    }
+    const fromMs = Date.parse(`${from}T00:00:00`);
+    const toMs = Date.parse(`${to}T23:59:59`);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+      return [];
+    }
+    const { messages } = await SmsReader.readInbox({ since: fromMs, limit: 1000 });
+    const parsed = messages
+      .filter((m) => m.date <= toMs && !this.isIgnored(m.address))
+      .map((m) => parseExpenseSms(m))
+      .filter((p): p is ParsedExpense => p !== null);
+    await this.ensureStores();
+    return parsed;
+  }
+
+  /**
+   * Resolution snapshot for one parsed SMS, for the training list:
+   *  - accountId/categoryId: the best default to prefill the editor.
+   *  - learnedAccountId/learnedCategoryId: confident learned values (or null),
+   *    used to show "Set"/"Not set" and to recompute siblings after training.
+   */
+  rowDefaults(parsed: ParsedExpense): {
+    accountId: string;
+    categoryId: string;
+    learnedAccountId: string | null;
+    learnedCategoryId: string | null;
+  } {
+    return {
+      accountId: this.resolveAccountId(parsed),
+      categoryId: this.resolveCategoryId(parsed),
+      learnedAccountId: this.learnedAccountId(parsed),
+      learnedCategoryId: this.learnedCategoryId(parsed),
+    };
+  }
+
+  /** Persist both learned mappings for a trained message (sender→account,
+   *  merchant→category). Called during training, independent of logging. */
+  setMapping(parsed: ParsedExpense, accountId: string, categoryId: string): void {
+    if (accountId) {
+      this.rememberAccount(parsed, accountId);
+    }
+    if (categoryId) {
+      this.rememberCategory(parsed, categoryId);
+    }
+  }
+
+  /**
+   * Log one trained candidate: add the transaction (with its type), reinforce
+   * the mappings, and sync the account balance from the SMS (unless skipBalance,
+   * for newest-first dedup). Returns true when it was added.
+   */
+  async logTrained(
+    parsed: ParsedExpense,
+    fields: {
+      categoryId: string;
+      accountId: string;
+      amount: number;
+      date: string;
+      note: string | null;
+      excluded: boolean;
+    },
+    opts?: { skipBalance?: boolean },
+  ): Promise<boolean> {
+    if (!fields.categoryId || !fields.accountId || fields.amount <= 0) {
+      return false;
+    }
+    try {
+      await this.expensesStore.add({
+        date: fields.date,
+        amount: fields.amount,
+        categoryId: fields.categoryId,
+        accountId: fields.accountId,
+        note: fields.note?.trim() || null,
+        excluded: fields.excluded,
+        type: parsed.type,
+      });
+    } catch {
+      return false;
+    }
+    this.rememberAccount(parsed, fields.accountId);
+    this.rememberCategory(parsed, fields.categoryId);
+    if (parsed.balance != null && !opts?.skipBalance) {
+      await this.syncBalance(fields.accountId, parsed.balance);
+    }
+    return true;
+  }
+
+  /** For each candidate, find an already-logged expense it likely duplicates. */
+  async findDuplicates(parsed: ParsedExpense[]): Promise<Map<ParsedExpense, Expense | null>> {
+    const existing = await this.fetchExisting([...new Set(parsed.map((p) => monthOf(p.date)))]);
+    return new Map(parsed.map((p) => [p, this.findDuplicate(p, existing)]));
+  }
+
   private namedCategories(): { id: string; name: string }[] {
     return this.categoriesStore
       .items()

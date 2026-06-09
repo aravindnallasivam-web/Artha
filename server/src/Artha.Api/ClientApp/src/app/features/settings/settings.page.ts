@@ -29,6 +29,7 @@ import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
 import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
 import { SmsMappingsModal } from '../sms/sms-mappings.modal';
+import { SmsTrainingWizardModal } from '../sms/sms-training.wizard.modal';
 import { SettingsStore } from './settings.store';
 
 @Component({
@@ -166,6 +167,15 @@ import { SettingsStore } from './settings.store';
                 <ion-note slot="end" class="pill">{{ sms.pendingCount() }}</ion-note>
               </ion-item>
             }
+            <ion-item button detail="true" (click)="trainSms()">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="school-outline"></ion-icon>
+              </span>
+              <ion-label class="ion-text-wrap">
+                <h2>Train SMS recognition</h2>
+                <p>Teach it your banks &amp; categories</p>
+              </ion-label>
+            </ion-item>
             <ion-item button detail="false" [disabled]="smsBusy()" (click)="scanSms()">
               <span class="icon-chip chip-accent" slot="start">
                 <ion-icon name="search-outline"></ion-icon>
@@ -356,6 +366,18 @@ export class SettingsPage implements OnInit {
     const checked = (event as CustomEvent<{ checked: boolean }>).detail.checked;
     this.sms.setAutoAdd(checked);
     this.smsAutoAdd.set(checked);
+  }
+
+  async trainSms(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: SmsTrainingWizardModal });
+    await modal.present();
+    await modal.onWillDismiss();
+    // The wizard may enable capture, learn mappings (even without logging),
+    // ignore senders, and toggle auto-add — refresh everything it touches.
+    this.smsEnabled.set(this.sms.isEnabled());
+    this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+    this.smsMappingCount.set(this.sms.mappingCount());
+    this.smsIgnoredCount.set(this.sms.ignoredCount());
   }
 
   async manageMappings(): Promise<void> {
