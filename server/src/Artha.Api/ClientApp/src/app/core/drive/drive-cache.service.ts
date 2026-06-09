@@ -193,8 +193,13 @@ export class DriveCache {
     }, FLUSH_DEBOUNCE_MS);
   }
 
-  /** Push every dirty file to Drive (last-write-wins). Stops on the first
-   *  failure (likely offline) and retries on the next trigger. */
+  /**
+   * Push every dirty file to Drive. Before overwriting, check whether Drive's
+   * revision advanced past the one our local copy was based on; if it did
+   * (another device wrote in the meantime), merge the two by item id rather
+   * than clobbering the remote change. Stops on the first failure (likely
+   * offline) and retries on the next trigger.
+   */
   private async flush(): Promise<void> {
     if (this.flushing) {
       return;
@@ -209,11 +214,23 @@ export class DriveCache {
         }
         try {
           const meta = await this.drive.getMetaByName(fileName);
-          const result = meta
-            ? await this.drive.update(meta.id, entry.content)
-            : await this.drive.create(fileName, entry.content);
-          // Adopt the new revision; our content is the latest writer's.
-          await this.store(fileName, { content: entry.content, etag: result.headRevisionId });
+          let content = entry.content;
+          let result;
+          if (!meta) {
+            result = await this.drive.create(fileName, content);
+          } else {
+            const upToDate = entry.etag && meta.headRevisionId === entry.etag;
+            if (!upToDate) {
+              // Drive moved ahead of our base (or we never synced this file) —
+              // pull the current remote and merge so we don't lose its changes.
+              const remote = await this.drive.getByName(fileName);
+              if (remote) {
+                content = mergeContent(remote.content, entry.content);
+              }
+            }
+            result = await this.drive.update(meta.id, content);
+          }
+          await this.store(fileName, { content, etag: result.headRevisionId });
           this.dirty.delete(fileName);
           await this.persistDirty();
         } catch {
@@ -232,4 +249,52 @@ export class DriveCache {
       // ignore
     }
   }
+}
+
+interface Mergeable {
+  items?: { id?: unknown }[];
+  shards?: string[];
+  [key: string]: unknown;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Reconcile a remote and a local version of one appdata file when they've
+ * diverged. The files are all either `{ items: [{ id, … }] }` lists, the
+ * `{ shards: [...] }` manifest, or a scalar settings doc:
+ *   - list files  -> union by item id; the local edit wins on shared ids, and
+ *     items only present on the other device are preserved.
+ *   - manifest     -> union of shard keys.
+ *   - anything else -> local wins.
+ * (Hard-deleted items can reappear, since a 2-way union can't tell a deletion
+ * from a never-seen item — acceptable here as most deletes are soft archives.)
+ */
+function mergeContent(remote: unknown, local: unknown): unknown {
+  if (!isObject(remote) || !isObject(local)) {
+    return local;
+  }
+  const r = remote as Mergeable;
+  const l = local as Mergeable;
+
+  if (Array.isArray(l.items) && Array.isArray(r.items)) {
+    const byId = new Map<string, unknown>();
+    for (const item of r.items) {
+      const id = (item as { id?: unknown })?.id;
+      if (id != null) byId.set(String(id), item);
+    }
+    for (const item of l.items) {
+      const id = (item as { id?: unknown })?.id;
+      if (id != null) byId.set(String(id), item);
+    }
+    return { ...l, items: [...byId.values()] };
+  }
+
+  if (Array.isArray(l.shards) && Array.isArray(r.shards)) {
+    return { ...l, shards: [...new Set([...r.shards, ...l.shards])].sort() };
+  }
+
+  return local;
 }
