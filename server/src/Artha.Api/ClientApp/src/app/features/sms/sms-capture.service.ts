@@ -642,6 +642,7 @@ export class SmsCaptureService {
               accountId: r.accountId,
               note: r.note?.trim() || null,
               excluded: r.excluded,
+              type: r.parsed.type,
             });
             this.rememberAccount(r.parsed, r.accountId);
             this.rememberCategory(r.parsed, r.categoryId);
@@ -806,6 +807,7 @@ export class SmsCaptureService {
         accountId,
         note: parsed.merchant ?? parsed.sender ?? null,
         excluded: false,
+        type: parsed.type,
       });
     } catch {
       return false;

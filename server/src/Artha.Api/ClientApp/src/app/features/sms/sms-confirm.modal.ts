@@ -63,7 +63,11 @@ import { ParsedExpense } from './sms-parser';
         <ion-buttons slot="start">
           <ion-button (click)="dismiss()">{{ canDismiss ? 'Back' : 'Cancel' }}</ion-button>
         </ion-buttons>
-        <ion-title>{{ mode === 'edit' ? 'Edit expense' : 'Log expense?' }}</ion-title>
+        <ion-title>
+          {{ mode === 'edit'
+            ? (isIncome() ? 'Edit income' : 'Edit expense')
+            : (isIncome() ? 'Log income?' : 'Log expense?') }}
+        </ion-title>
         @if (canDismiss) {
           <ion-buttons slot="end">
             <ion-button color="danger" (click)="discard()">Dismiss</ion-button>
@@ -217,7 +221,7 @@ import { ParsedExpense } from './sms-parser';
         <div class="save-bar">
           <ion-button type="submit" expand="block" [disabled]="!canSave() || saving()">
             <ion-icon name="save-outline" slot="start"></ion-icon>
-            {{ saving() ? 'Saving…' : (mode === 'edit' ? 'Save changes' : 'Add expense') }}
+            {{ saving() ? 'Saving…' : (mode === 'edit' ? 'Save changes' : (isIncome() ? 'Add income' : 'Add expense')) }}
           </ion-button>
         </div>
       </form>
@@ -404,6 +408,7 @@ export class SmsConfirmModal implements OnInit {
         accountId: this.accountId,
         note: this.note?.trim() || null,
         excluded: this.excluded,
+        type: this.parsed.type,
       });
       // Return the chosen account + category so the capture service can learn
       // the SMS→account and merchant→category mappings for next time.
@@ -415,6 +420,10 @@ export class SmsConfirmModal implements OnInit {
       this.saving.set(false);
       await this.notifier.notifyError('Could not save the expense.');
     }
+  }
+
+  protected isIncome(): boolean {
+    return this.parsed?.type === 'income';
   }
 
   protected dismiss(): void {

@@ -1,8 +1,10 @@
 import { SmsMessage } from '../../core/native/sms-reader';
 
-/** A bank-SMS that looks like a spend, extracted on-device. */
+/** A bank-SMS that looks like a transaction, extracted on-device. */
 export interface ParsedExpense {
   amount: number;
+  /** 'expense' for a debit/spend, 'income' for a credit/money-in. */
+  type: 'expense' | 'income';
   /** Best-guess merchant / payee, or null if none found. */
   merchant: string | null;
   /** Last 3–4 digits of the account/card the SMS mentions, if any. */
@@ -93,8 +95,9 @@ function toIsoDate(epochMs: number): string {
 }
 
 /**
- * Parse a single SMS into a spend, or return null when it isn't an expense
- * (no amount, an incoming credit, an OTP/promo, etc.). Pure + on-device.
+ * Parse a single SMS into a transaction (debit -> expense, credit -> income),
+ * or return null when it isn't one (no amount, an OTP/promo, or an ambiguous
+ * message). Pure + on-device.
  */
 export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
   const body = (msg.body ?? '').trim();
@@ -113,9 +116,14 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
 
   const isDebit = DEBIT_RE.test(body);
   const isCredit = CREDIT_RE.test(body);
-  // Only debits are expenses. If it's clearly a credit, skip. If neither verb
-  // is present we can't be confident it's a spend, so skip too.
-  if (!isDebit || isCredit) {
+  // A clear debit is an expense; a clear credit is income. If neither verb is
+  // present, or both are (ambiguous), we can't be confident — skip.
+  let type: 'expense' | 'income';
+  if (isDebit && !isCredit) {
+    type = 'expense';
+  } else if (isCredit && !isDebit) {
+    type = 'income';
+  } else {
     return null;
   }
 
@@ -129,10 +137,13 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
 
   return {
     amount,
+    type,
     merchant,
     accountHint: accountMatch ? accountMatch[1] : null,
     date: toIsoDate(msg.date),
-    suggestedCategory: guessCategory(merchant, body),
+    // Category guessing is expense-oriented; income usually has no match (the
+    // user picks one in the confirm dialog).
+    suggestedCategory: type === 'expense' ? guessCategory(merchant, body) : null,
     balance: balance !== null && isFinite(balance) ? balance : null,
     sender: msg.address ?? '',
     raw: body,

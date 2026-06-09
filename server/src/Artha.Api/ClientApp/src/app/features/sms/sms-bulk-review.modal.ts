@@ -136,8 +136,10 @@ interface NamedRef {
 
               <div class="body" (click)="editRow(i)">
                 <div class="line1">
-                  <span class="merchant">{{ row.note || row.parsed.sender || 'Expense' }}</span>
-                  <span class="amount num">{{ row.amount | currency: currencyCode() : 'symbol' : '1.0-0' }}</span>
+                  <span class="merchant">{{ row.note || row.parsed.sender || (row.parsed.type === 'income' ? 'Income' : 'Expense') }}</span>
+                  <span class="amount num" [class.income]="row.parsed.type === 'income'">
+                    {{ row.parsed.type === 'income' ? '+' : '' }}{{ row.amount | currency: currencyCode() : 'symbol' : '1.0-0' }}
+                  </span>
                 </div>
                 <div class="line2">
                   {{ row.date }} · {{ row.parsed.sender }}
@@ -225,6 +227,7 @@ interface NamedRef {
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .amount { font-size: 14px; font-weight: 700; color: var(--artha-text); flex-shrink: 0; }
+    .amount.income { color: var(--artha-positive); }
     .line2 { margin-top: 2px; font-size: 11.5px; color: var(--artha-text-subtle); }
     .dup {
       margin-left: 6px; padding: 1px 7px; border-radius: 8px;
