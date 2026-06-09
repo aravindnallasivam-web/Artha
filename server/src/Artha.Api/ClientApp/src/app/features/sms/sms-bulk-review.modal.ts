@@ -1,6 +1,7 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, Input, OnInit, computed, inject, signal } from '@angular/core';
 import {
+  AlertController,
   IonButton,
   IonButtons,
   IonCheckbox,
@@ -87,10 +88,15 @@ interface NamedRef {
               {{ rows().length }} found · {{ selectedCount() }} selected ·
               <span class="num">{{ selectedTotal() | currency: currencyCode() : 'symbol' : '1.0-0' }}</span>
             </span>
-            <button type="button" class="select-all" (click)="toggleAll()">
-              <ion-checkbox [checked]="allSelected()" (click)="$event.preventDefault()"></ion-checkbox>
-              <span>Select all</span>
-            </button>
+            <div class="bar-right">
+              @if (queueMode && rows().length > 0) {
+                <button type="button" class="dismiss-all" (click)="dismissAll()">Dismiss all</button>
+              }
+              <button type="button" class="select-all" (click)="toggleAll()">
+                <ion-checkbox [checked]="allSelected()" (click)="$event.preventDefault()"></ion-checkbox>
+                <span>Select all</span>
+              </button>
+            </div>
           </div>
         </ion-toolbar>
       }
@@ -182,6 +188,11 @@ interface NamedRef {
     .bg { --background: var(--artha-bg); }
     .sub { --min-height: 42px; }
     .bar { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+    .bar-right { display: flex; align-items: center; gap: 14px; }
+    .dismiss-all {
+      background: none; border: 0; padding: 0; cursor: pointer;
+      color: var(--artha-negative); font-size: 12.5px; font-weight: 700;
+    }
     .summary { font-size: 12.5px; color: var(--artha-text-muted); font-weight: 600; }
     .num { font-variant-numeric: tabular-nums; }
     .select-all {
@@ -247,6 +258,7 @@ interface NamedRef {
 })
 export class SmsBulkReviewModal implements OnInit {
   private readonly modalCtrl = inject(ModalController);
+  private readonly alertCtrl = inject(AlertController);
   private readonly sms = inject(SmsCaptureService);
 
   @Input() candidates: SmsCandidateRow[] = [];
@@ -403,6 +415,33 @@ export class SmsBulkReviewModal implements OnInit {
   protected cancel(): void {
     // Closing keeps un-acted rows in the queue; only explicit dismissals leave.
     void this.modalCtrl.dismiss({ rows: [], dismissedKeys: [...this.dismissedKeys] }, 'cancel');
+  }
+
+  /** Drop every pending item without logging it, so the queue is cleared and
+   *  none of these resurface next time. */
+  protected async dismissAll(): Promise<void> {
+    const count = this.rows().length;
+    const alert = await this.alertCtrl.create({
+      header: 'Dismiss all?',
+      message: `${count} pending expense${count === 1 ? '' : 's'} will be discarded and won't be logged or shown again.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Dismiss all',
+          role: 'destructive',
+          handler: () => {
+            for (const r of this.rows()) {
+              if (r.key) this.dismissedKeys.add(r.key);
+            }
+            void this.modalCtrl.dismiss(
+              { rows: [], dismissedKeys: [...this.dismissedKeys] },
+              'cancel',
+            );
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 
   protected add(): void {
