@@ -6,6 +6,10 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.provider.Telephony;
 import android.telephony.SmsMessage;
@@ -113,6 +117,26 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         return false;
     }
 
+    /** The app's launcher icon (colored logo) as a Bitmap, for setLargeIcon. */
+    private Bitmap appLogoBitmap(Context ctx) {
+        try {
+            Drawable d = ctx.getPackageManager().getApplicationIcon(ctx.getPackageName());
+            if (d instanceof BitmapDrawable) {
+                return ((BitmapDrawable) d).getBitmap();
+            }
+            // Adaptive/vector icons: render the drawable into a bitmap.
+            int w = Math.max(1, d.getIntrinsicWidth());
+            int h = Math.max(1, d.getIntrinsicHeight());
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bmp);
+            d.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+            d.draw(canvas);
+            return bmp;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private org.json.JSONObject readJson(Context ctx, String key) {
         String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "");
         if (raw == null || raw.isEmpty()) {
@@ -206,6 +230,12 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentIntent);
+
+        // Show the app logo as the notification's large icon.
+        Bitmap logo = appLogoBitmap(context);
+        if (logo != null) {
+            builder.setLargeIcon(logo);
+        }
 
         if (canAdd) {
             Intent addLaunch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
