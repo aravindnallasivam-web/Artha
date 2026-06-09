@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none" role="img" aria-label="Artha">
+  <!-- Left blue loop -->
+  <path d="M217.2,111.1 A150,150 0 0 0 204.7,397" stroke="#1F5FC4" stroke-width="46" stroke-linecap="round" fill="none"/>
+  <!-- Right green loop -->
+  <path d="M294.8,111.1 A150,150 0 0 1 307.3,397" stroke="#1E8B4D" stroke-width="46" stroke-linecap="round" fill="none"/>
+  <!-- Loop arrowheads converging at the base -->
+  <path d="M252,414 L192,433 L218,361 Z" fill="#1F5FC4"/>
+  <path d="M260,414 L320,433 L294,361 Z" fill="#1E8B4D"/>
+  <!-- Central upward growth arrow -->
+  <path d="M256,150 L322,238 L283,238 L283,400 L229,400 L229,238 L190,238 Z" fill="#36A8DB"/>
+</svg>

@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- Inset into the adaptive-icon safe zone. -->
+    <group
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.78"
+        android:scaleY="0.78">
+        <!-- Left blue loop -->
+        <path
+            android:pathData="M217.2,111.1 A150,150 0 0 0 204.7,397"
+            android:strokeColor="#1F5FC4"
+            android:strokeWidth="46"
+            android:strokeLineCap="round" />
+        <!-- Right green loop -->
+        <path
+            android:pathData="M294.8,111.1 A150,150 0 0 1 307.3,397"
+            android:strokeColor="#1E8B4D"
+            android:strokeWidth="46"
+            android:strokeLineCap="round" />
+        <!-- Loop arrowheads converging at the base -->
+        <path
+            android:pathData="M252,414 L192,433 L218,361 Z"
+            android:fillColor="#1F5FC4" />
+        <path
+            android:pathData="M260,414 L320,433 L294,361 Z"
+            android:fillColor="#1E8B4D" />
+        <!-- Central upward growth arrow -->
+        <path
+            android:pathData="M256,150 L322,238 L283,238 L283,400 L229,400 L229,238 L190,238 Z"
+            android:fillColor="#36A8DB" />
+    </group>
+</vector>
