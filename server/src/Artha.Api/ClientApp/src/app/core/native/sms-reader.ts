@@ -48,10 +48,15 @@ export interface SmsReaderPlugin {
   /** Persist the normalised ignored-sender list so the background receiver skips them. */
   setIgnoredSenders(options: { senders: string[] }): Promise<void>;
   /**
-   * Persist the normalised set of senders we have a learned account mapping for,
-   * so the background notification can show a one-tap "Add" action for them.
+   * Persist the learned-mapping NAMES so the background notification can show a
+   * one-tap "Add" action only when BOTH the account and category resolve, and
+   * display them. `accountNames` is keyed by normalised sender; `categoryNames`
+   * by normalised merchant key (the receiver matches a key found in the body).
    */
-  setKnownSenders(options: { senders: string[] }): Promise<void>;
+  setNotificationMappings(options: {
+    accountNames: Record<string, string>;
+    categoryNames: Record<string, string>;
+  }): Promise<void>;
   /**
    * If the app was opened by tapping a background "expense detected"
    * notification, return the SMS that triggered it (and clear it so it is

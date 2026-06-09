@@ -154,18 +154,39 @@ export class SmsCaptureService {
   }
 
   /**
-   * Push the set of senders we have a learned account for to the native side,
-   * so the background notification can offer a one-tap "Add" action for them.
-   * Derived from the 's:' (sender) keys of the account map.
+   * Push the learned-mapping NAMES to the native side, so the background
+   * notification can show a one-tap "Add" action only when BOTH the account
+   * (by sender) and category (a learned merchant key found in the body) resolve,
+   * and display their names.
    */
-  private async syncKnownToNative(): Promise<void> {
+  private async syncNotificationMappings(): Promise<void> {
     if (!this.isSupported()) {
       return;
     }
-    const senders = Object.keys(this.accountMap())
-      .filter((k) => k.startsWith('s:'))
-      .map((k) => k.slice(2));
-    await SmsReader.setKnownSenders({ senders }).catch(() => undefined);
+    await this.ensureStores();
+    const accById = this.accountsStore.byId();
+    const catById = this.categoriesStore.byId();
+
+    const accountNames: Record<string, string> = {};
+    for (const [key, accountId] of Object.entries(this.accountMap())) {
+      if (!key.startsWith('s:')) {
+        continue; // the receiver matches by sender
+      }
+      const acc = accById[accountId];
+      if (acc && !acc.archived) {
+        accountNames[key.slice(2)] = acc.name;
+      }
+    }
+
+    const categoryNames: Record<string, string> = {};
+    for (const [merchantKey, categoryId] of Object.entries(this.categoryMap())) {
+      const cat = catById[categoryId];
+      if (merchantKey && cat && !cat.archived) {
+        categoryNames[merchantKey] = cat.name;
+      }
+    }
+
+    await SmsReader.setNotificationMappings({ accountNames, categoryNames }).catch(() => undefined);
   }
 
   /** SMS capture only exists on Android. */
@@ -188,7 +209,7 @@ export class SmsCaptureService {
     }
     this.bindResume();
     void this.syncIgnoredToNative();
-    void this.syncKnownToNative();
+    void this.syncNotificationMappings();
     if (!this.isEnabled()) {
       return;
     }
@@ -1076,6 +1097,7 @@ export class SmsCaptureService {
     }
     map[key] = categoryId;
     localStorage.setItem(CATEGORY_MAP_KEY, JSON.stringify(map));
+    void this.syncNotificationMappings();
   }
 
   private resolveAccountId(parsed: ParsedExpense): string {
@@ -1123,7 +1145,7 @@ export class SmsCaptureService {
     }
     if (changed) {
       localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
-      void this.syncKnownToNative();
+      void this.syncNotificationMappings();
     }
   }
 
@@ -1171,7 +1193,7 @@ export class SmsCaptureService {
     if (key in map) {
       delete map[key];
       localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
-      void this.syncKnownToNative();
+      void this.syncNotificationMappings();
     }
   }
 
@@ -1181,6 +1203,7 @@ export class SmsCaptureService {
     if (key in map) {
       delete map[key];
       localStorage.setItem(CATEGORY_MAP_KEY, JSON.stringify(map));
+      void this.syncNotificationMappings();
     }
   }
 }

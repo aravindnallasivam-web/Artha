@@ -27,9 +27,10 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     /** SharedPreferences the JS layer writes the ignored-sender list into. */
     static final String PREFS = "artha_sms";
     static final String KEY_IGNORED = "ignored_senders";
-    /** Normalised senders we have a learned account mapping for (JS-synced).
-     *  When the triggering sender is in here we add a one-tap "Add" action. */
-    static final String KEY_KNOWN = "known_senders";
+    /** JSON {normalisedSender: accountName} of learned account mappings (JS-synced). */
+    static final String KEY_ACCOUNT_NAMES = "account_names";
+    /** JSON {merchantKey: categoryName} of learned category mappings (JS-synced). */
+    static final String KEY_CATEGORY_NAMES = "category_names";
     /** Extra set on the "Add" action's launch intent so the app logs straight away. */
     static final String EXTRA_ACTION_ADD = "artha_action_add";
 
@@ -96,19 +97,10 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     }
 
     private boolean isIgnored(Context ctx, String sender) {
-        return inCsvPref(ctx, KEY_IGNORED, sender);
-    }
-
-    /** Whether the JS layer has told us this sender has a learned account. */
-    private boolean isKnown(Context ctx, String sender) {
-        return inCsvPref(ctx, KEY_KNOWN, sender);
-    }
-
-    private boolean inCsvPref(Context ctx, String key, String sender) {
         if (sender == null || sender.isEmpty()) {
             return false;
         }
-        String csv = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "");
+        String csv = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_IGNORED, "");
         if (csv == null || csv.isEmpty()) {
             return false;
         }
@@ -119,6 +111,41 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             }
         }
         return false;
+    }
+
+    private org.json.JSONObject readJson(Context ctx, String key) {
+        String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "");
+        if (raw == null || raw.isEmpty()) {
+            return new org.json.JSONObject();
+        }
+        try {
+            return new org.json.JSONObject(raw);
+        } catch (org.json.JSONException e) {
+            return new org.json.JSONObject();
+        }
+    }
+
+    /** Learned account name for this sender, or null. */
+    private String accountNameFor(Context ctx, String sender) {
+        if (sender == null || sender.isEmpty()) {
+            return null;
+        }
+        return readJson(ctx, KEY_ACCOUNT_NAMES).optString(normalizeSender(sender), null);
+    }
+
+    /** Learned category name for this SMS: the first learned merchant key the
+     *  body contains (avoids fragile merchant re-parsing). Null if none match. */
+    private String categoryNameFor(Context ctx, String body) {
+        org.json.JSONObject map = readJson(ctx, KEY_CATEGORY_NAMES);
+        String hay = body.toLowerCase().replaceAll("[^a-z0-9]", "");
+        java.util.Iterator<String> keys = map.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!key.isEmpty() && hay.contains(key)) {
+                return map.optString(key, null);
+            }
+        }
+        return null;
     }
 
     /** Must match the JS normalizeSender(): strip operator prefix, keep A-Z0-9. */
@@ -161,25 +188,33 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         }
         PendingIntent contentIntent = PendingIntent.getActivity(context, 0, launch, flags);
 
+        // Both the account (by sender) and category (a learned merchant key found
+        // in the body) must resolve to offer the one-tap "Add" action.
+        String accountName = accountNameFor(context, address);
+        String categoryName = categoryNameFor(context, body);
+        boolean canAdd = accountName != null && !accountName.isEmpty()
+            && categoryName != null && !categoryName.isEmpty();
+
+        String text = canAdd
+            ? "₹" + amount + " · " + categoryName + " · " + accountName
+            : "₹" + amount + " — tap to review and log it in Artha";
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.getApplicationInfo().icon)
             .setContentTitle("Expense detected")
-            .setContentText("₹" + amount + " — tap to review and log it in Artha")
+            .setContentText(text)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentIntent);
 
-        // When this sender already has a learned account, offer a one-tap "Add"
-        // action: it opens the app and logs the expense straight away (the app
-        // falls back to the review dialog if the category isn't actually known).
-        if (isKnown(context, address)) {
+        if (canAdd) {
             Intent addLaunch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
             if (addLaunch != null) {
                 addLaunch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 addLaunch.putExtra(EXTRA_OPEN_SMS, true);
                 addLaunch.putExtra(EXTRA_ACTION_ADD, true);
                 PendingIntent addIntent = PendingIntent.getActivity(context, 1, addLaunch, flags);
-                builder.addAction(0, "Add ₹" + amount, addIntent);
+                builder.addAction(0, "Add to " + categoryName, addIntent);
             }
         }
 

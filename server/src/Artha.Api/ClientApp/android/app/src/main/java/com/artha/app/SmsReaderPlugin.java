@@ -287,28 +287,16 @@ public class SmsReaderPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void setKnownSenders(PluginCall call) {
-        JSArray senders = call.getArray("senders");
-        StringBuilder csv = new StringBuilder();
-        if (senders != null) {
-            try {
-                for (Object value : senders.toList()) {
-                    if (value == null) {
-                        continue;
-                    }
-                    if (csv.length() > 0) {
-                        csv.append(",");
-                    }
-                    csv.append(value.toString());
-                }
-            } catch (org.json.JSONException ignored) {
-                // Leave whatever we accumulated.
-            }
-        }
+    public void setNotificationMappings(PluginCall call) {
+        JSObject accountNames = call.getObject("accountNames");
+        JSObject categoryNames = call.getObject("categoryNames");
         getContext()
             .getSharedPreferences(SmsBackgroundReceiver.PREFS, android.content.Context.MODE_PRIVATE)
             .edit()
-            .putString(SmsBackgroundReceiver.KEY_KNOWN, csv.toString())
+            .putString(SmsBackgroundReceiver.KEY_ACCOUNT_NAMES,
+                accountNames != null ? accountNames.toString() : "{}")
+            .putString(SmsBackgroundReceiver.KEY_CATEGORY_NAMES,
+                categoryNames != null ? categoryNames.toString() : "{}")
             .apply();
         call.resolve();
     }
