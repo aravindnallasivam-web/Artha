@@ -13,10 +13,12 @@
 // with an in-memory mirror for speed. Conflict policy is last-write-wins, which
 // is fine for a single-user app; cross-device edits converge on the next read.
 
-import { Injectable, inject } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { Network } from '@capacitor/network';
 import { Preferences } from '@capacitor/preferences';
 import { DriveRestClient } from './drive-rest.client';
+
+export type SyncState = 'synced' | 'saving' | 'pending' | 'offline';
 
 interface CacheEntry {
   content: unknown; // current local copy (may have unsynced edits)
@@ -42,9 +44,22 @@ export class DriveCache {
   private flushing = false;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ── Sync status (for the UI indicator) ───────────────────────────────────
+  private readonly pendingCount = signal(0);
+  private readonly syncing = signal(false);
+  private readonly online = signal(true);
+  /** Coarse sync state for a small "saving… / synced" indicator. */
+  readonly syncState = computed<SyncState>(() => {
+    if (this.syncing()) return 'saving';
+    if (this.pendingCount() > 0) return this.online() ? 'pending' : 'offline';
+    return 'synced';
+  });
+
   constructor() {
+    void Network.getStatus().then((s) => this.online.set(s.connected)).catch(() => undefined);
     // Push anything pending as soon as connectivity returns.
     void Network.addListener('networkStatusChange', (status) => {
+      this.online.set(status.connected);
       if (status.connected) {
         void this.flush();
       }
@@ -88,6 +103,7 @@ export class DriveCache {
     this.dirty.clear();
     this.refreshing.clear();
     this.lastRefreshed.clear();
+    this.pendingCount.set(0);
     this.loaded = false;
     try {
       const { keys } = await Preferences.keys();
@@ -131,6 +147,7 @@ export class DriveCache {
     } catch {
       // ignore
     }
+    this.pendingCount.set(this.dirty.size);
     if (this.dirty.size > 0) {
       this.scheduleFlush(); // sync edits left over from a previous run
     }
@@ -217,10 +234,11 @@ export class DriveCache {
    * offline) and retries on the next trigger.
    */
   private async flush(): Promise<void> {
-    if (this.flushing) {
+    if (this.flushing || this.dirty.size === 0) {
       return;
     }
     this.flushing = true;
+    this.syncing.set(true);
     try {
       for (const fileName of [...this.dirty]) {
         const entry = await this.load(fileName);
@@ -257,10 +275,12 @@ export class DriveCache {
       }
     } finally {
       this.flushing = false;
+      this.syncing.set(false);
     }
   }
 
   private async persistDirty(): Promise<void> {
+    this.pendingCount.set(this.dirty.size);
     try {
       await Preferences.set({ key: DIRTY_KEY, value: JSON.stringify([...this.dirty]) });
     } catch {
