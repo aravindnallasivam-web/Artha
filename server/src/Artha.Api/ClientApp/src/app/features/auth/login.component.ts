@@ -1,4 +1,6 @@
 import { Component, effect, inject, signal } from '@angular/core';
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 
 @Component({
@@ -82,6 +84,17 @@ export class LoginComponent {
         this.loading.set(false);
       }
     });
+
+    // If the user returns from the OAuth browser without completing (so we're
+    // still on this screen), free the button from its "Redirecting…" state. A
+    // successful sign-in navigates away before this matters.
+    if (Capacitor.isNativePlatform()) {
+      void App.addListener('resume', () => {
+        if (this.loading()) {
+          setTimeout(() => this.loading.set(false), 400);
+        }
+      });
+    }
   }
 
   async signIn(): Promise<void> {

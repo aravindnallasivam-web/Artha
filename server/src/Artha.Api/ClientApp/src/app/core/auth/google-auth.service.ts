@@ -58,8 +58,10 @@ export class GoogleAuthService {
       : `${window.location.origin}${environment.google.redirectPath}`;
 
     const pending: PendingFlow = { codeVerifier, redirectUri, state };
-    sessionStorage.setItem(PKCE_STORAGE_KEY, JSON.stringify(pending));
-    sessionStorage.setItem(STATE_STORAGE_KEY, state);
+    // Durable storage: returning from the OAuth browser can recreate the
+    // WebView, which would wipe sessionStorage and lose the PKCE verifier.
+    localStorage.setItem(PKCE_STORAGE_KEY, JSON.stringify(pending));
+    localStorage.setItem(STATE_STORAGE_KEY, state);
 
     const params = new URLSearchParams({
       client_id: environment.google.clientId,
@@ -94,35 +96,60 @@ export class GoogleAuthService {
     if (this.mobileListenerAttached || !Capacitor.isNativePlatform()) return;
     this.mobileListenerAttached = true;
 
-    // The OAuth response comes back on the configured redirect scheme (the
-    // reversed-client-id custom scheme for Android/iOS clients). Match by that
-    // scheme rather than a hardcoded one, and pull code/state from the raw
-    // query so we don't depend on URL parsing of non-standard schemes.
-    const redirectScheme = environment.google.nativeRedirectUri.split(':')[0].toLowerCase() + ':';
-
-    void App.addListener('appUrlOpen', async (event) => {
-      if (!event.url.toLowerCase().startsWith(redirectScheme)) return;
-      try {
-        const queryStart = event.url.indexOf('?');
-        const params = new URLSearchParams(queryStart >= 0 ? event.url.slice(queryStart + 1) : '');
-        const code = params.get('code');
-        const state = params.get('state');
-        if (!code || !state) return;
-
-        await this.completeLogin(code, state);
-        await this.router.navigate(['/dashboard']);
-      } catch (err) {
-        // This runs detached from the login component, so publish the failure
-        // for the login UI to display instead of hanging on "Redirecting…".
-        this.authError.set(describeAuthError(err));
-      } finally {
-        try { await Browser.close(); } catch { /* already dismissed */ }
-      }
+    // Warm path: the OAuth response deep-links back while the app is alive.
+    void App.addListener('appUrlOpen', (event) => {
+      void this.handleRedirectUrl(event.url);
     });
+    // Cold path: the redirect may have launched the app before this listener
+    // attached, so process the launch URL too (no-op on a normal launch).
+    void App.getLaunchUrl()
+      .then((res) => {
+        if (res?.url) {
+          void this.handleRedirectUrl(res.url);
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /** Scheme prefix the OAuth redirect comes back on, e.g. "com.google…:". */
+  private redirectScheme(): string {
+    return environment.google.nativeRedirectUri.split(':')[0].toLowerCase() + ':';
+  }
+
+  /**
+   * Handle an inbound OAuth redirect URL (from appUrlOpen or the launch URL):
+   * exchange the code and navigate, surfacing any error/cancel to the login UI.
+   */
+  private async handleRedirectUrl(url: string): Promise<void> {
+    if (!url || !url.toLowerCase().startsWith(this.redirectScheme())) {
+      return;
+    }
+    const queryStart = url.indexOf('?');
+    const params = new URLSearchParams(queryStart >= 0 ? url.slice(queryStart + 1) : '');
+    const oauthError = params.get('error');
+    if (oauthError) {
+      this.authError.set(`Google sign-in didn't complete (${oauthError}). Please try again.`);
+      try { await Browser.close(); } catch { /* already dismissed */ }
+      return;
+    }
+    const code = params.get('code');
+    const state = params.get('state');
+    if (!code || !state) {
+      return;
+    }
+    try {
+      await this.completeLogin(code, state);
+      await this.router.navigate(['/dashboard']);
+    } catch (err) {
+      // Detached from the login component — publish the failure for the UI.
+      this.authError.set(describeAuthError(err));
+    } finally {
+      try { await Browser.close(); } catch { /* already dismissed */ }
+    }
   }
 
   async completeLogin(code: string, returnedState: string): Promise<LoginResponse> {
-    const raw = sessionStorage.getItem(PKCE_STORAGE_KEY);
+    const raw = localStorage.getItem(PKCE_STORAGE_KEY);
     if (!raw) {
       throw new Error('Missing PKCE state. Please try signing in again.');
     }
@@ -138,8 +165,8 @@ export class GoogleAuthService {
       pending.redirectUri,
     );
 
-    sessionStorage.removeItem(PKCE_STORAGE_KEY);
-    sessionStorage.removeItem(STATE_STORAGE_KEY);
+    localStorage.removeItem(PKCE_STORAGE_KEY);
+    localStorage.removeItem(STATE_STORAGE_KEY);
 
     // The session just marks "signed in"; Drive calls authorize via the token
     // store (which refreshes silently), so the session can be long-lived.
