@@ -19,8 +19,9 @@ import { Preferences } from '@capacitor/preferences';
 import { DriveRestClient } from './drive-rest.client';
 
 interface CacheEntry {
-  content: unknown;
-  etag: string; // last revision we know Drive had
+  content: unknown; // current local copy (may have unsynced edits)
+  base?: unknown; // last copy we synced with Drive — the 3-way merge ancestor
+  etag: string; // Drive revision the base corresponds to
 }
 
 const KEY_PREFIX = 'artha.cache.v1.';
@@ -69,7 +70,12 @@ export class DriveCache {
     if (!result) {
       return null;
     }
-    const seeded: CacheEntry = { content: result.content, etag: result.headRevisionId };
+    // Fresh from Drive: local copy == synced base.
+    const seeded: CacheEntry = {
+      content: result.content,
+      base: result.content,
+      etag: result.headRevisionId,
+    };
     await this.store(fileName, seeded);
     return { content: seeded.content, etag: seeded.etag };
   }
@@ -97,7 +103,12 @@ export class DriveCache {
   async write(fileName: string, content: unknown): Promise<string> {
     await this.ensureLoaded();
     const prev = await this.load(fileName);
-    const entry: CacheEntry = { content, etag: prev?.etag ?? '' };
+    // Keep the last-synced base so a later conflict can be 3-way merged.
+    const entry: CacheEntry = {
+      content,
+      base: prev ? prev.base ?? prev.content : content,
+      etag: prev?.etag ?? '',
+    };
     await this.store(fileName, entry);
     this.dirty.add(fileName);
     await this.persistDirty();
@@ -174,7 +185,12 @@ export class DriveCache {
       }
       const result = await this.drive.getByName(fileName);
       if (result && !this.dirty.has(fileName)) {
-        await this.store(fileName, { content: result.content, etag: result.headRevisionId });
+        // No local edits, so local copy == synced base.
+        await this.store(fileName, {
+          content: result.content,
+          base: result.content,
+          etag: result.headRevisionId,
+        });
       }
     } catch {
       // Offline / transient — keep serving the cached copy.
@@ -222,15 +238,17 @@ export class DriveCache {
             const upToDate = entry.etag && meta.headRevisionId === entry.etag;
             if (!upToDate) {
               // Drive moved ahead of our base (or we never synced this file) —
-              // pull the current remote and merge so we don't lose its changes.
+              // pull the current remote and 3-way merge (base, local, remote) so
+              // we keep the other device's changes and honour real deletions.
               const remote = await this.drive.getByName(fileName);
               if (remote) {
-                content = mergeContent(remote.content, entry.content);
+                content = mergeContent(entry.base, entry.content, remote.content);
               }
             }
             result = await this.drive.update(meta.id, content);
           }
-          await this.store(fileName, { content, etag: result.headRevisionId });
+          // What we just wrote is now the synced base.
+          await this.store(fileName, { content, base: content, etag: result.headRevisionId });
           this.dirty.delete(fileName);
           await this.persistDirty();
         } catch {
@@ -252,7 +270,7 @@ export class DriveCache {
 }
 
 interface Mergeable {
-  items?: { id?: unknown }[];
+  items?: unknown[];
   shards?: string[];
   [key: string]: unknown;
 }
@@ -261,35 +279,91 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function itemId(item: unknown): string | null {
+  const id = (item as { id?: unknown })?.id;
+  return id == null ? null : String(id);
+}
+
+function mapById(items: unknown[] | undefined): Map<string, unknown> {
+  const map = new Map<string, unknown>();
+  for (const item of items ?? []) {
+    const id = itemId(item);
+    if (id != null) map.set(id, item);
+  }
+  return map;
+}
+
+function sameItem(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
- * Reconcile a remote and a local version of one appdata file when they've
- * diverged. The files are all either `{ items: [{ id, … }] }` lists, the
- * `{ shards: [...] }` manifest, or a scalar settings doc:
- *   - list files  -> union by item id; the local edit wins on shared ids, and
- *     items only present on the other device are preserved.
- *   - manifest     -> union of shard keys.
- *   - anything else -> local wins.
- * (Hard-deleted items can reappear, since a 2-way union can't tell a deletion
- * from a never-seen item — acceptable here as most deletes are soft archives.)
+ * Three-way merge of one appdata file when the local copy and Drive have both
+ * moved past the common ancestor (`base` = the last copy we synced):
+ *   - list files (`{ items: [{ id, … }] }`) merge per item id. An item edited
+ *     on one side only takes that side; edited on both, the local edit wins; a
+ *     real deletion (present in base, gone on one side, untouched on the other)
+ *     is honoured; an edit-vs-delete is resolved by keeping the edit.
+ *   - the manifest unions its shard keys.
+ *   - scalar docs (settings) keep local.
+ * Falls back to a local-wins union when no base is available (older caches).
  */
-function mergeContent(remote: unknown, local: unknown): unknown {
-  if (!isObject(remote) || !isObject(local)) {
+function mergeContent(base: unknown, local: unknown, remote: unknown): unknown {
+  if (!isObject(local) || !isObject(remote)) {
     return local;
   }
-  const r = remote as Mergeable;
   const l = local as Mergeable;
+  const r = remote as Mergeable;
+  const b = (isObject(base) ? base : {}) as Mergeable;
 
   if (Array.isArray(l.items) && Array.isArray(r.items)) {
-    const byId = new Map<string, unknown>();
-    for (const item of r.items) {
-      const id = (item as { id?: unknown })?.id;
-      if (id != null) byId.set(String(id), item);
+    const baseMap = mapById(b.items);
+    const localMap = mapById(l.items);
+    const remoteMap = mapById(r.items);
+    const chosen = new Map<string, unknown>();
+
+    const ids = new Set<string>([...baseMap.keys(), ...localMap.keys(), ...remoteMap.keys()]);
+    for (const id of ids) {
+      const inB = baseMap.has(id);
+      const lo = localMap.get(id);
+      const re = remoteMap.get(id);
+      const inL = localMap.has(id);
+      const inR = remoteMap.has(id);
+      const localChanged = inL && (!inB || !sameItem(lo, baseMap.get(id)));
+      const remoteChanged = inR && (!inB || !sameItem(re, baseMap.get(id)));
+
+      if (inL && inR) {
+        chosen.set(id, localChanged || !remoteChanged ? lo : re);
+      } else if (inL && !inR) {
+        // Gone on remote. Keep if locally added (not in base) or locally edited
+        // (edit beats the remote delete); otherwise honour the remote delete.
+        if (!inB || localChanged) chosen.set(id, lo);
+      } else if (!inL && inR) {
+        // Gone on local. Keep if remotely added or remotely edited; otherwise
+        // honour the local delete.
+        if (!inB || remoteChanged) chosen.set(id, re);
+      }
+      // gone on both → deleted everywhere → drop
     }
+
+    // Emit in local order, then any remote-only survivors.
+    const out: unknown[] = [];
+    const emitted = new Set<string>();
     for (const item of l.items) {
-      const id = (item as { id?: unknown })?.id;
-      if (id != null) byId.set(String(id), item);
+      const id = itemId(item);
+      if (id != null && chosen.has(id)) {
+        out.push(chosen.get(id));
+        emitted.add(id);
+      }
     }
-    return { ...l, items: [...byId.values()] };
+    for (const item of r.items) {
+      const id = itemId(item);
+      if (id != null && chosen.has(id) && !emitted.has(id)) {
+        out.push(chosen.get(id));
+        emitted.add(id);
+      }
+    }
+    return { ...l, items: out };
   }
 
   if (Array.isArray(l.shards) && Array.isArray(r.shards)) {
