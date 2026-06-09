@@ -153,6 +153,21 @@ export class SmsCaptureService {
     await SmsReader.setIgnoredSenders({ senders: [...this.ignored] }).catch(() => undefined);
   }
 
+  /**
+   * Push the set of senders we have a learned account for to the native side,
+   * so the background notification can offer a one-tap "Add" action for them.
+   * Derived from the 's:' (sender) keys of the account map.
+   */
+  private async syncKnownToNative(): Promise<void> {
+    if (!this.isSupported()) {
+      return;
+    }
+    const senders = Object.keys(this.accountMap())
+      .filter((k) => k.startsWith('s:'))
+      .map((k) => k.slice(2));
+    await SmsReader.setKnownSenders({ senders }).catch(() => undefined);
+  }
+
   /** SMS capture only exists on Android. */
   isSupported(): boolean {
     return Capacitor.getPlatform() === 'android';
@@ -173,6 +188,7 @@ export class SmsCaptureService {
     }
     this.bindResume();
     void this.syncIgnoredToNative();
+    void this.syncKnownToNative();
     if (!this.isEnabled()) {
       return;
     }
@@ -198,8 +214,11 @@ export class SmsCaptureService {
       return false;
     }
     let pending: SmsMessage | null = null;
+    let autoLog = false;
     try {
-      pending = (await SmsReader.consumePendingSms()).message;
+      const result = await SmsReader.consumePendingSms();
+      pending = result.message;
+      autoLog = result.autoLog ?? false;
     } catch {
       return false;
     }
@@ -217,11 +236,21 @@ export class SmsCaptureService {
     if (!parsed) {
       return false;
     }
-    // Keep it in the queue first (so it's never lost), then — since the user
-    // tapped the notification to deal with it now — open the polished single
-    // confirm for this one straight away (fast path: no duplicate-check read).
     this.enqueue(parsed);
     await this.ensureStores();
+    // "Add" action: log it straight away (bypassing the auto-add toggle), then
+    // drop back to the background. If the category isn't actually known the
+    // force-add fails and we fall through to the review dialog.
+    if (autoLog && (await this.tryAutoAdd(parsed, undefined, /* force */ true))) {
+      await this.notifyAutoAdded([parsed]);
+      try {
+        await App.minimizeApp();
+      } catch {
+        // Not on Android / unavailable — harmless.
+      }
+      return true;
+    }
+    // Body tap: open the polished single confirm (fast path, no dup-check read).
     await this.openSingleConfirm(parsed, /* skipDuplicateCheck */ true);
     return true;
   }
@@ -897,8 +926,11 @@ export class SmsCaptureService {
    * Log a single detected expense automatically if its vendor + account are
    * already learned and it isn't a duplicate. Returns true if it was added.
    */
-  private async tryAutoAdd(parsed: ParsedExpense, existing?: Expense[]): Promise<boolean> {
-    if (!this.isAutoAddEnabled()) {
+  private async tryAutoAdd(parsed: ParsedExpense, existing?: Expense[], force = false): Promise<boolean> {
+    // `force` is used by the notification "Add" action: the user explicitly
+    // asked to log it, so we bypass the global auto-add toggle (but still only
+    // log when the account + category are actually known).
+    if (!force && !this.isAutoAddEnabled()) {
       return false;
     }
     const categoryId = this.learnedCategoryId(parsed);
@@ -1091,6 +1123,7 @@ export class SmsCaptureService {
     }
     if (changed) {
       localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
+      void this.syncKnownToNative();
     }
   }
 
@@ -1138,6 +1171,7 @@ export class SmsCaptureService {
     if (key in map) {
       delete map[key];
       localStorage.setItem(ACCOUNT_MAP_KEY, JSON.stringify(map));
+      void this.syncKnownToNative();
     }
   }
 

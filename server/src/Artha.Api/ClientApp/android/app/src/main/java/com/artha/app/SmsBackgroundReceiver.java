@@ -27,6 +27,11 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     /** SharedPreferences the JS layer writes the ignored-sender list into. */
     static final String PREFS = "artha_sms";
     static final String KEY_IGNORED = "ignored_senders";
+    /** Normalised senders we have a learned account mapping for (JS-synced).
+     *  When the triggering sender is in here we add a one-tap "Add" action. */
+    static final String KEY_KNOWN = "known_senders";
+    /** Extra set on the "Add" action's launch intent so the app logs straight away. */
+    static final String EXTRA_ACTION_ADD = "artha_action_add";
 
     // The SMS behind the most recent notification, stashed so the app can open
     // the confirm dialog straight from it (no inbox re-scan) when tapped.
@@ -91,10 +96,19 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     }
 
     private boolean isIgnored(Context ctx, String sender) {
+        return inCsvPref(ctx, KEY_IGNORED, sender);
+    }
+
+    /** Whether the JS layer has told us this sender has a learned account. */
+    private boolean isKnown(Context ctx, String sender) {
+        return inCsvPref(ctx, KEY_KNOWN, sender);
+    }
+
+    private boolean inCsvPref(Context ctx, String key, String sender) {
         if (sender == null || sender.isEmpty()) {
             return false;
         }
-        String csv = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_IGNORED, "");
+        String csv = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "");
         if (csv == null || csv.isEmpty()) {
             return false;
         }
@@ -154,6 +168,20 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentIntent);
+
+        // When this sender already has a learned account, offer a one-tap "Add"
+        // action: it opens the app and logs the expense straight away (the app
+        // falls back to the review dialog if the category isn't actually known).
+        if (isKnown(context, address)) {
+            Intent addLaunch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+            if (addLaunch != null) {
+                addLaunch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                addLaunch.putExtra(EXTRA_OPEN_SMS, true);
+                addLaunch.putExtra(EXTRA_ACTION_ADD, true);
+                PendingIntent addIntent = PendingIntent.getActivity(context, 1, addLaunch, flags);
+                builder.addAction(0, "Add ₹" + amount, addIntent);
+            }
+        }
 
         nm.notify(NOTIF_ID, builder.build());
     }

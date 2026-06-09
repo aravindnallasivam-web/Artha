@@ -286,6 +286,33 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve();
     }
 
+    @PluginMethod
+    public void setKnownSenders(PluginCall call) {
+        JSArray senders = call.getArray("senders");
+        StringBuilder csv = new StringBuilder();
+        if (senders != null) {
+            try {
+                for (Object value : senders.toList()) {
+                    if (value == null) {
+                        continue;
+                    }
+                    if (csv.length() > 0) {
+                        csv.append(",");
+                    }
+                    csv.append(value.toString());
+                }
+            } catch (org.json.JSONException ignored) {
+                // Leave whatever we accumulated.
+            }
+        }
+        getContext()
+            .getSharedPreferences(SmsBackgroundReceiver.PREFS, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString(SmsBackgroundReceiver.KEY_KNOWN, csv.toString())
+            .apply();
+        call.resolve();
+    }
+
     /**
      * If this launch came from tapping a background "expense detected"
      * notification, hand back the SMS that triggered it (once) so the web layer
@@ -305,8 +332,12 @@ public class SmsReaderPlugin extends Plugin {
             return;
         }
 
-        // Consume the flag so a later plain resume doesn't re-open the dialog.
+        // True when the user tapped the notification's "Add" action (vs the body).
+        boolean autoLog = intent.getBooleanExtra(SmsBackgroundReceiver.EXTRA_ACTION_ADD, false);
+
+        // Consume the flags so a later plain resume doesn't re-open the dialog.
         intent.removeExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS);
+        intent.removeExtra(SmsBackgroundReceiver.EXTRA_ACTION_ADD);
         activity.setIntent(intent);
 
         android.content.SharedPreferences prefs =
@@ -330,6 +361,7 @@ public class SmsReaderPlugin extends Plugin {
         message.put("body", body);
         message.put("date", date);
         ret.put("message", message);
+        ret.put("autoLog", autoLog);
         call.resolve(ret);
     }
 

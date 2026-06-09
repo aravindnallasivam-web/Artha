@@ -48,12 +48,18 @@ export interface SmsReaderPlugin {
   /** Persist the normalised ignored-sender list so the background receiver skips them. */
   setIgnoredSenders(options: { senders: string[] }): Promise<void>;
   /**
+   * Persist the normalised set of senders we have a learned account mapping for,
+   * so the background notification can show a one-tap "Add" action for them.
+   */
+  setKnownSenders(options: { senders: string[] }): Promise<void>;
+  /**
    * If the app was opened by tapping a background "expense detected"
    * notification, return the SMS that triggered it (and clear it so it is
-   * handed out only once). `message` is null otherwise. Lets the app open the
-   * confirm dialog straight from the notification instead of re-scanning.
+   * handed out only once). `message` is null otherwise. `autoLog` is true when
+   * the user tapped the notification's "Add" action (vs. the body, which opens
+   * the review dialog). Lets the app log straight from the notification.
    */
-  consumePendingSms(): Promise<{ message: SmsMessage | null }>;
+  consumePendingSms(): Promise<{ message: SmsMessage | null; autoLog?: boolean }>;
   addListener(
     eventName: 'smsReceived',
     listenerFunc: (message: SmsMessage) => void,
