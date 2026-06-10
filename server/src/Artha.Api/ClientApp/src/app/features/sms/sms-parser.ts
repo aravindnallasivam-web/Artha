@@ -15,14 +15,26 @@ export interface ParsedExpense {
   suggestedCategory: string | null;
   /** Available balance reported by the SMS, if any (to sync the account). */
   balance: number | null;
+  /**
+   * ISO code of the currency the SMS amount is in (e.g. 'INR', 'USD'). Card
+   * spends abroad quote a foreign currency; the confirm dialog uses this to
+   * warn that the figure needs converting before it's logged.
+   */
+  currency: string | null;
   /** The sender address (bank short-code). */
   sender: string;
   /** Original message body, kept for the confirm dialog / note. */
   raw: string;
 }
 
-// Amount like "Rs. 1,240.50", "INR 320", "₹2,899".
-const AMOUNT_RE = /(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+// Amount tokens: local INR forms (Rs/INR/₹) plus the foreign currencies an
+// Indian card commonly quotes abroad ("USD 23.60", "$23.60", "AED 90").
+const CURRENCY_TOKEN = '(rs\\.?|inr|usd|eur|gbp|aed|sgd|aud|cad|jpy|chf|hkd|myr|thb|sar|qar|npr|₹|\\$|€|£)';
+const AMOUNT_SCAN_RE = new RegExp(`${CURRENCY_TOKEN}\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'gi');
+// When the text right before an amount talks about a balance, credit limit or
+// outstanding/due figure, that number is NOT the transaction amount — it's the
+// "Avl Bal" / "Avl Limit" the bank tacks on. We must never grab it as the spend.
+const NON_TXN_CONTEXT_RE = /(avl|avbl|available|bal|balance|limit|lmt|outstanding|o\/s|due)\s*[:.\-]?\s*$/i;
 // Spend verbs vs. incoming-money verbs. "sent"/"transferred" cover the newer
 // UPI alerts (e.g. HDFC "Sent Rs.70.00 From A/C .. To ..").
 const DEBIT_RE = /\b(debited|spent|sent|transferred|withdrawn|withdrawal|purchase|paid|payment|deducted|charged|debit)\b/i;
@@ -34,6 +46,10 @@ const ACCOUNT_RE = /\b(?:a\/c|acct|account|card)\b[^\d]{0,12}(\d{3,4})\b/i;
 // currency token is optional because many banks omit it in transaction alerts;
 // the amount must still sit right after "bal" so we never grab an a/c number.
 const BALANCE_RE = /bal(?:ance)?\s*(?:is|:|-)?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
+// Card spends read "... on <DD-Mon-YY> on <MERCHANT>" or "... at <MERCHANT> on
+// <date>" — the merchant sits after the date, introduced by "on"/"at". Tried
+// first because the generic rule below doesn't treat "on" as a connective.
+const MERCHANT_CARD_RE = /\bon\s+\d{1,2}[-/ ][A-Za-z]{3,}[-/ ]\d{2,4}\s+(?:at|on)\s+([A-Za-z0-9][A-Za-z0-9 ._@&'\-]{1,39})/i;
 // Merchant after a connective keyword.
 const MERCHANT_RE = /(?:\bat\s+|\bto\s+|\bvpa\s+|\binfo[:\-]\s*|\btowards\s+|\bfor\s+)([A-Za-z0-9][A-Za-z0-9 ._@&'\-*]{1,39})/i;
 // Messages we never want to treat as a transaction.
@@ -62,6 +78,46 @@ export function extractBalance(body: string): number | null {
   }
   const value = parseFloat(m[1].replace(/,/g, ''));
   return isFinite(value) ? value : null;
+}
+
+/** Map a matched currency token to its ISO code. */
+function normaliseCurrency(token: string): string {
+  switch (token.toLowerCase().replace(/\.$/, '')) {
+    case 'rs':
+    case 'inr':
+    case '₹':
+      return 'INR';
+    case '$':
+      return 'USD';
+    case '€':
+      return 'EUR';
+    case '£':
+      return 'GBP';
+    default:
+      return token.toUpperCase();
+  }
+}
+
+/**
+ * Find the transaction amount: the first currency-tagged figure that isn't a
+ * balance/limit/outstanding number. Returns the value and its ISO currency, so
+ * a foreign-currency spend ("USD 23.60") is read correctly instead of falling
+ * through to the "Avl Limit: INR ..." figure later in the message.
+ */
+function extractAmount(body: string): { value: number; currency: string } | null {
+  AMOUNT_SCAN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = AMOUNT_SCAN_RE.exec(body)) !== null) {
+    const before = body.slice(Math.max(0, m.index - 16), m.index);
+    if (NON_TXN_CONTEXT_RE.test(before)) {
+      continue;
+    }
+    const value = parseFloat(m[2].replace(/,/g, ''));
+    if (isFinite(value) && value > 0) {
+      return { value, currency: normaliseCurrency(m[1]) };
+    }
+  }
+  return null;
 }
 
 function guessCategory(merchant: string | null, body: string): string | null {
@@ -105,14 +161,11 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
     return null;
   }
 
-  const amountMatch = body.match(AMOUNT_RE);
-  if (!amountMatch) {
+  const amountHit = extractAmount(body);
+  if (!amountHit) {
     return null;
   }
-  const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
-  if (!isFinite(amount) || amount <= 0) {
-    return null;
-  }
+  const amount = amountHit.value;
 
   const isDebit = DEBIT_RE.test(body);
   const isCredit = CREDIT_RE.test(body);
@@ -127,7 +180,7 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
     return null;
   }
 
-  const merchantMatch = body.match(MERCHANT_RE);
+  const merchantMatch = body.match(MERCHANT_CARD_RE) ?? body.match(MERCHANT_RE);
   const merchant = merchantMatch ? cleanMerchant(merchantMatch[1]) : null;
   const accountMatch = body.match(ACCOUNT_RE);
   const balanceMatch = body.match(BALANCE_RE);
@@ -145,6 +198,7 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
     // user picks one in the confirm dialog).
     suggestedCategory: type === 'expense' ? guessCategory(merchant, body) : null,
     balance: balance !== null && isFinite(balance) ? balance : null,
+    currency: amountHit.currency,
     sender: msg.address ?? '',
     raw: body,
   };

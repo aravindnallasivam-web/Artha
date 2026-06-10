@@ -210,6 +210,13 @@ import { ParsedExpense } from './sms-parser';
             </ion-text>
           }
 
+          @if (foreignCurrency()) {
+            <ion-note class="bal cur-warn">
+              This spend was in {{ foreignCurrency() }} ({{ parsed.currency }} {{ parsed.amount | number: '1.0-2' }}).
+              Enter the amount actually charged to your account.
+            </ion-note>
+          }
+
           @if (parsed.balance != null) {
             <ion-note class="bal">
               Balance in SMS: {{ parsed.balance | number: '1.0-2' }} — the account's balance will update to this.
@@ -306,6 +313,7 @@ import { ParsedExpense } from './sms-parser';
     .excl-sub { font-size: 12px; color: var(--artha-text-muted); margin-top: 2px; }
 
     .bal { display: block; margin-top: 14px; font-size: 12.5px; color: var(--artha-accent); font-weight: 600; }
+    .cur-warn { color: var(--artha-negative); }
     .warn { font-size: 13px; }
     .raw {
       display: block;
@@ -438,6 +446,20 @@ export class SmsConfirmModal implements OnInit {
   /** Stop prompting for this sender; the caller adds it to the ignore list. */
   protected ignoreSender(): void {
     void this.modalCtrl.dismiss(null, 'ignore');
+  }
+
+  /**
+   * The SMS's currency code when it differs from the selected account's
+   * currency (e.g. a USD card spend on an INR account), else null. Signals that
+   * the prefilled amount needs converting before it's logged.
+   */
+  protected foreignCurrency(): string | null {
+    const cur = this.parsed.currency;
+    if (!cur) {
+      return null;
+    }
+    const accCode = this.accountsStore.byId()[this.accountId]?.currency || 'INR';
+    return cur !== accCode ? cur : null;
   }
 
   /** Currency symbol for the selected account, e.g. ₹ / $ / €. */
