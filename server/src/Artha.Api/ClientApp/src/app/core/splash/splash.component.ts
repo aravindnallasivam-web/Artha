@@ -4,9 +4,10 @@ import { Component, OnInit, signal } from '@angular/core';
  * Branded launch splash rendered by the web layer so it can show the app name
  * and slogan as crisp text (the native splash is a static image that can't).
  *
- * It paints immediately on first load over a white background that matches the
- * native splash's backgroundColor (#ffffff), so the native→web handoff has no
- * flash. After a short beat it fades out and removes itself from the layout.
+ * Its background follows the OS colour scheme (prefers-color-scheme) using the
+ * same light/dark values as the native splash (values / values-night), so the
+ * native→web handoff is seamless and both never disagree on dark vs light.
+ * After a short beat it fades out and removes itself from the layout.
  */
 @Component({
   selector: 'artha-splash',
@@ -30,7 +31,7 @@ import { Component, OnInit, signal } from '@angular/core';
       align-items: center;
       justify-content: center;
       gap: 6px;
-      background: var(--artha-bg, #ffffff);
+      background: #f8fafc;
       opacity: 1;
       transition: opacity 0.35s ease;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -46,16 +47,23 @@ import { Component, OnInit, signal } from '@angular/core';
       font-size: 34px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      color: var(--artha-text, #0f172a);
+      color: #0f172a;
     }
     .slogan {
       margin: 0;
       font-size: 15px;
-      color: var(--artha-text-muted, #64748b);
+      color: #475569;
     }
     @keyframes splash-pop {
       from { transform: scale(0.85); opacity: 0; }
       to   { transform: scale(1); opacity: 1; }
+    }
+    /* Follow the OS scheme so this matches the native splash (values-night),
+       avoiding a light/dark disagreement across the two splash stages. */
+    @media (prefers-color-scheme: dark) {
+      .splash { background: #0b1220; }
+      .name { color: #f1f5f9; }
+      .slogan { color: #cbd5e1; }
     }
     @media (prefers-reduced-motion: reduce) {
       .logo { animation: none; }
