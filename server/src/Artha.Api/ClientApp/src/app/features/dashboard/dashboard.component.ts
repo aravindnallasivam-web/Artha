@@ -12,10 +12,9 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
-import { AccountBalancesService } from '../accounts/account-balances.service';
-import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
+import { LoansStore } from '../loans/loans.store';
 import { PlannedExpensesStore } from '../planned-expenses/planned-expenses.store';
 import { ReportsApi } from '../reports/reports.api';
 import { SettingsStore } from '../settings/settings.store';
@@ -26,13 +25,6 @@ interface CategorySlice {
   name: string;
   amount: number;
   share: number; // 0..1
-}
-
-interface AccountBalance {
-  id: string;
-  name: string;
-  color: string;
-  balance: number;
 }
 
 @Component({
@@ -159,27 +151,28 @@ interface AccountBalance {
             </article>
           </section>
 
-          <!-- 3 · Net worth + balances -->
-          <section class="networth">
-            <div class="nw-top">
-              <p class="nw-label">Net worth</p>
-              <span class="nw-count">{{ accountCount() }} {{ accountCount() === 1 ? 'account' : 'accounts' }}</span>
-            </div>
-            @if (balancesLoading()) {
-              <ion-skeleton-text [animated]="true" style="width: 45%; height: 24px; margin: 6px 0 0"></ion-skeleton-text>
-            } @else {
-              <p class="nw-value num">{{ netWorth() | currency: currency() : 'symbol' : '1.0-0' }}</p>
-              <div class="nw-pills">
-                @for (b of accountBalances(); track b.id) {
-                  <span class="nw-pill">
-                    <span class="dot" [style.background]="b.color"></span>
-                    {{ b.name }}
-                    <strong class="num">{{ b.balance | currency: currency() : 'symbol' : '1.0-0' }}</strong>
-                  </span>
-                }
+          <!-- 3 · Loans -->
+          @if (activeLoans().length > 0) {
+            <a class="card loans" routerLink="/loans">
+              <div class="card-header">
+                <h2 class="card-title">Loans</h2>
+                <span class="card-link">Manage <ion-icon name="chevron-forward"></ion-icon></span>
               </div>
-            }
-          </section>
+              <div class="loans-figs">
+                <div class="loan-fig">
+                  <span class="loan-fig-label">Outstanding</span>
+                  <span class="loan-fig-value num">{{ totalOutstanding() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                </div>
+                <div class="loan-fig">
+                  <span class="loan-fig-label">Monthly EMI</span>
+                  <span class="loan-fig-value num">{{ totalEmi() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                </div>
+              </div>
+              <div class="loans-count">
+                {{ activeLoans().length }} active {{ activeLoans().length === 1 ? 'loan' : 'loans' }}
+              </div>
+            </a>
+          }
 
           <!-- 4 + 5 · Top categories & recent (two columns on desktop) -->
           <section class="main">
@@ -298,7 +291,7 @@ interface AccountBalance {
     .pending-chevron { flex: none; font-size: 18px; color: var(--artha-accent); }
 
     /* Cards (shared) */
-    .hero, .networth, .card {
+    .hero, .card {
       background: var(--artha-surface); border: 1px solid var(--artha-border);
       border-radius: var(--artha-radius-lg); box-shadow: var(--artha-shadow-sm);
     }
@@ -338,22 +331,16 @@ interface AccountBalance {
     }
     .stat-value { margin: 6px 0 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
 
-    /* 3 · Net worth */
-    .networth { padding: 16px 20px 18px; }
-    .nw-top { display: flex; align-items: baseline; justify-content: space-between; }
-    .nw-label {
-      margin: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+    /* 3 · Loans */
+    .loans { padding: 4px 4px 14px; text-decoration: none; }
+    .loans-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 2px 16px 0; }
+    .loan-fig { display: flex; flex-direction: column; gap: 3px; }
+    .loan-fig-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
       text-transform: uppercase; color: var(--artha-text-subtle);
     }
-    .nw-count { font-size: 11px; color: var(--artha-text-subtle); }
-    .nw-value { margin: 6px 0 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
-    .nw-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .nw-pill {
-      display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px;
-      background: var(--artha-surface-2); font-size: 11.5px; color: var(--artha-text-muted);
-    }
-    .nw-pill .dot { width: 7px; height: 7px; border-radius: 50%; }
-    .nw-pill strong { color: var(--artha-text); font-weight: 700; }
+    .loan-fig-value { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
+    .loans-count { padding: 10px 16px 0; font-size: 11.5px; color: var(--artha-text-muted); }
 
     /* 4 + 5 · main grid */
     .main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -416,20 +403,22 @@ interface AccountBalance {
 export class DashboardComponent implements OnInit {
   protected readonly expensesStore = inject(ExpensesStore);
   private readonly categoriesStore = inject(CategoriesStore);
-  private readonly accountsStore = inject(AccountsStore);
+  private readonly loansStore = inject(LoansStore);
   private readonly plannedStore = inject(PlannedExpensesStore);
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly sms = inject(SmsCaptureService);
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
-  private readonly balancesService = inject(AccountBalancesService);
 
   protected readonly currentUser = this.session.currentUser;
 
   /** Previous-month total (for the trend chip); null until fetched. */
   private readonly prevMonthTotal = signal<number | null>(null);
-  /** All-time spend per account; null until the lazy balances load resolves. */
-  private readonly accountSpend = signal<Map<string, number> | null>(null);
+
+  /** Active loans summary for the dashboard card. */
+  protected readonly activeLoans = computed(() => this.loansStore.active());
+  protected readonly totalOutstanding = computed(() => this.loansStore.totalOutstanding());
+  protected readonly totalEmi = computed(() => this.loansStore.totalMonthlyEmi());
 
   protected readonly currency = computed(() =>
     this.expensesStore.currency() || this.settingsStore.currency() || 'USD',
@@ -458,7 +447,6 @@ export class DashboardComponent implements OnInit {
 
   protected readonly totalSpent = computed(() => this.counted().reduce((s, e) => s + e.amount, 0));
   protected readonly expenseCount = computed(() => this.counted().length);
-  protected readonly accountCount = computed(() => this.accountsStore.active().length);
 
   protected readonly todaySpent = computed(() => {
     const today = isoToday();
@@ -487,31 +475,6 @@ export class DashboardComponent implements OnInit {
     return { up: cur >= prev, pct: Math.round(Math.abs((cur - prev) / prev) * 100) };
   });
 
-  protected readonly balancesLoading = computed(() => this.accountSpend() === null);
-
-  protected readonly netWorth = computed(() => {
-    const spend = this.accountSpend();
-    if (!spend) return 0;
-    return this.accountsStore
-      .active()
-      .reduce((sum, a) => sum + (a.openingBalance ?? 0) - (spend.get(a.id) ?? 0), 0);
-  });
-
-  protected readonly accountBalances = computed<AccountBalance[]>(() => {
-    const spend = this.accountSpend();
-    if (!spend) return [];
-    return this.accountsStore
-      .active()
-      .map((a) => ({
-        id: a.id,
-        name: a.name,
-        color: a.color ?? '#6366f1',
-        balance: (a.openingBalance ?? 0) - (spend.get(a.id) ?? 0),
-      }))
-      .sort((x, y) => y.balance - x.balance)
-      .slice(0, 4);
-  });
-
   protected readonly breakdown = computed<CategorySlice[]>(() => {
     const total = this.totalSpent();
     if (total <= 0) return [];
@@ -538,10 +501,8 @@ export class DashboardComponent implements OnInit {
     if (this.categoriesStore.items().length === 0) {
       void this.categoriesStore.load(/* includeArchived */ true);
     }
-    if (this.accountsStore.items().length === 0) {
-      void this.accountsStore.load(/* includeArchived */ false);
-    }
     void this.plannedStore.load();
+    void this.loansStore.load();
     if (!this.settingsStore.settings()) {
       void this.settingsStore.load();
     }
@@ -552,12 +513,6 @@ export class DashboardComponent implements OnInit {
       .monthly(prev.getFullYear(), prev.getMonth() + 1)
       .then((r) => this.prevMonthTotal.set(r.total))
       .catch(() => this.prevMonthTotal.set(null));
-
-    // Account balances — lazy (walks all shards) so it doesn't block the screen.
-    this.balancesService
-      .spendByAccount()
-      .then((map) => this.accountSpend.set(map))
-      .catch(() => this.accountSpend.set(new Map()));
   }
 
   protected async reviewPending(): Promise<void> {
