@@ -40,8 +40,10 @@ export class CategoriesDriveService {
 
     const existing = await this.repo.read<CategoryList>(DRIVE_FILES.categories);
     const list = existing?.document.items ?? [];
-    if (list.some((c) => !c.archived && c.name.toLowerCase() === name.toLowerCase())) {
-      throw badRequest(`A category named '${name}' already exists.`);
+    const parentId = request.parentId ?? null;
+    this.validateParent(list, parentId, null);
+    if (this.nameTaken(list, name, parentId, null)) {
+      throw badRequest(`A category named '${name}' already exists here.`);
     }
 
     const created: Category = {
@@ -51,6 +53,7 @@ export class CategoriesDriveService {
       icon: request.icon,
       archived: false,
       excludeFromReports: request.excludeFromReports,
+      parentId,
     };
     await this.repo.write<CategoryList>(
       DRIVE_FILES.categories,
@@ -73,8 +76,19 @@ export class CategoriesDriveService {
     if (idx < 0) {
       throw notFound();
     }
-    if (list.some((c) => c.id !== id && !c.archived && c.name.toLowerCase() === name.toLowerCase())) {
-      throw badRequest(`A category named '${name}' already exists.`);
+    const parentId = request.parentId ?? null;
+    if (parentId !== null) {
+      if (parentId === id) {
+        throw badRequest('A category cannot be its own parent.');
+      }
+      // One level deep: a category that already has subcategories can't become one.
+      if (list.some((c) => !c.archived && c.parentId === id)) {
+        throw badRequest('This category has subcategories, so it cannot become a subcategory itself.');
+      }
+    }
+    this.validateParent(list, parentId, id);
+    if (this.nameTaken(list, name, parentId, id)) {
+      throw badRequest(`A category named '${name}' already exists here.`);
     }
 
     list[idx] = {
@@ -83,6 +97,7 @@ export class CategoriesDriveService {
       color: request.color,
       icon: request.icon,
       excludeFromReports: request.excludeFromReports,
+      parentId,
     };
     await this.repo.write<CategoryList>(
       DRIVE_FILES.categories,
@@ -99,6 +114,12 @@ export class CategoriesDriveService {
     const idx = list.findIndex((c) => c.id === id);
     if (idx < 0) {
       throw notFound();
+    }
+    if (list.some((c) => !c.archived && c.parentId === id)) {
+      throw conflict(
+        'This category has subcategories. Archive or move them first.',
+        'category-has-subcategories',
+      );
     }
     if (await this.isReferenced(id)) {
       throw conflict(
@@ -197,6 +218,35 @@ export class CategoriesDriveService {
         throw err;
       }
     }
+  }
+
+  /** A parent must exist, be active, and itself be top-level (one level deep). */
+  private validateParent(list: Category[], parentId: string | null, selfId: string | null): void {
+    if (parentId === null) {
+      return;
+    }
+    const parent = list.find((c) => c.id === parentId);
+    if (!parent || parent.archived) {
+      throw badRequest('The chosen parent category was not found.');
+    }
+    if (parent.id === selfId) {
+      throw badRequest('A category cannot be its own parent.');
+    }
+    if (parent.parentId) {
+      throw badRequest('Subcategories cannot be nested more than one level deep.');
+    }
+  }
+
+  /** Names must be unique among active siblings (same parent), case-insensitive. */
+  private nameTaken(list: Category[], name: string, parentId: string | null, selfId: string | null): boolean {
+    const lower = name.toLowerCase();
+    return list.some(
+      (c) =>
+        c.id !== selfId &&
+        !c.archived &&
+        (c.parentId ?? null) === parentId &&
+        c.name.toLowerCase() === lower,
+    );
   }
 
   private async isReferenced(categoryId: string): Promise<boolean> {

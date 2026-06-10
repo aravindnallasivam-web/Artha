@@ -3,6 +3,11 @@ export interface CategoryBreakdown {
   categoryName: string;
   total: number;
   count: number;
+  /**
+   * For a top-level category, the per-subcategory split of its rolled-up total
+   * (omitted when it has no subcategory spend). Children are themselves leaves.
+   */
+  children?: CategoryBreakdown[];
 }
 
 export interface MonthlyReport {

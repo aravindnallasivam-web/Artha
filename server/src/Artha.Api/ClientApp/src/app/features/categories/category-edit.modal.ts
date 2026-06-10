@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   IonButton,
@@ -65,6 +65,24 @@ import { CategoriesStore } from './categories.store';
         maxlength="40"
         [disabled]="saving()"
       />
+
+      <label class="field-label" for="cat-parent">Parent category</label>
+      @if (editingHasChildren()) {
+        <p class="parent-note">This category has subcategories, so it stays a top-level category.</p>
+      } @else {
+        <select
+          id="cat-parent"
+          class="text-field"
+          [ngModel]="parentId() ?? ''"
+          (ngModelChange)="onParentChange($event)"
+          [disabled]="saving()"
+        >
+          <option value="">None — top-level category</option>
+          @for (p of parentOptions(); track p.id) {
+            <option [value]="p.id">{{ p.name }}</option>
+          }
+        </select>
+      }
 
       <div class="field-label-row">
         <span class="field-label">Colour</span>
@@ -193,6 +211,11 @@ import { CategoriesStore } from './categories.store';
       background: var(--artha-surface, #fff);
     }
     .text-field:focus { outline: 2px solid var(--artha-accent, #2f6df6); outline-offset: -1px; }
+    select.text-field { appearance: auto; -webkit-appearance: auto; }
+    .parent-note {
+      margin: 0; font-size: 12px; line-height: 1.4;
+      color: var(--artha-text-muted, #555);
+    }
 
     .swatches {
       display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px;
@@ -256,6 +279,8 @@ import { CategoriesStore } from './categories.store';
 export class CategoryEditModal implements OnInit {
   /** Set via modal componentProps. Absent => creating a new category. */
   category?: Category;
+  /** Preselect a parent when adding a subcategory from a parent's card. */
+  defaultParentId?: string | null;
 
   private readonly modalCtrl = inject(ModalController);
   private readonly store = inject(CategoriesStore);
@@ -268,7 +293,18 @@ export class CategoryEditModal implements OnInit {
   protected readonly color = signal<string | null>(CATEGORY_COLORS[10]);
   protected readonly icon = signal<string | null>(null);
   protected readonly excludeFromReports = signal(false);
+  protected readonly parentId = signal<string | null>(null);
   protected readonly saving = signal(false);
+
+  /** Top-level categories that can be a parent (excludes the one being edited). */
+  protected readonly parentOptions = computed(() =>
+    this.store.topLevel().filter((c) => c.id !== this.category?.id),
+  );
+
+  /** Editing a category that already has subcategories: it must stay top-level. */
+  protected readonly editingHasChildren = computed(
+    () => !!this.category && this.store.subcategoriesOf(this.category.id).length > 0,
+  );
 
   ngOnInit(): void {
     if (this.category) {
@@ -276,7 +312,14 @@ export class CategoryEditModal implements OnInit {
       this.color.set(this.category.color);
       this.icon.set(this.category.icon);
       this.excludeFromReports.set(this.category.excludeFromReports);
+      this.parentId.set(this.category.parentId ?? null);
+    } else if (this.defaultParentId) {
+      this.parentId.set(this.defaultParentId);
     }
+  }
+
+  protected onParentChange(value: string): void {
+    this.parentId.set(value || null);
   }
 
   protected async save(): Promise<void> {
@@ -290,6 +333,8 @@ export class CategoryEditModal implements OnInit {
       color: this.color(),
       icon: this.icon(),
       excludeFromReports: this.excludeFromReports(),
+      // A category that already has subcategories must stay top-level.
+      parentId: this.editingHasChildren() ? null : this.parentId(),
     };
     try {
       if (this.category) {

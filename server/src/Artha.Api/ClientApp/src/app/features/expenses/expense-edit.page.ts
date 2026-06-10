@@ -131,8 +131,8 @@ import { ExpensesStore } from './expenses.store';
                   interface="popover"
                   placeholder="Choose a category"
                 >
-                  @for (cat of categories(); track cat.id) {
-                    <ion-select-option [value]="cat.id">{{ cat.name }}</ion-select-option>
+                  @for (opt of categoryOptions(); track opt.id) {
+                    <ion-select-option [value]="opt.id">{{ opt.label }}</ion-select-option>
                   }
                 </ion-select>
               </ion-item>
@@ -279,6 +279,23 @@ export class ExpenseEditPage implements OnInit {
   protected readonly mode = signal<'create' | 'edit'>('create');
   protected readonly categories = computed(() => this.categoriesStore.active());
   protected readonly accounts = computed(() => this.accountsStore.active());
+
+  /**
+   * Flat, ordered category options for the picker: each top-level category
+   * followed by its subcategories, indented (em-spaces render in the popover).
+   * The stored categoryId can be a top-level category or a subcategory.
+   */
+  protected readonly categoryOptions = computed(() => {
+    const tops = [...this.categoriesStore.topLevel()].sort((a, b) => a.name.localeCompare(b.name));
+    const out: { id: string; label: string }[] = [];
+    for (const top of tops) {
+      out.push({ id: top.id, label: top.name });
+      for (const child of this.categoriesStore.subcategoriesOf(top.id)) {
+        out.push({ id: child.id, label: `  ${child.name}` });
+      }
+    }
+    return out;
+  });
 
   protected readonly form = this.fb.nonNullable.group({
     date: [this.today(), Validators.required],

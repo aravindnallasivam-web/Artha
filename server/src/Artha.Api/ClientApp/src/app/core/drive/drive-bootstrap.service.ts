@@ -122,6 +122,7 @@ function buildDefaultCategories(): Category[] {
     icon,
     archived: false,
     excludeFromReports: false,
+    parentId: null,
   }));
 }
 

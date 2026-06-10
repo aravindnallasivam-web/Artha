@@ -33,6 +33,8 @@ interface CatRow {
   color: string;
   total: number;
   count: number;
+  /** Per-subcategory split for a top-level row (absent when there's none). */
+  children?: CatRow[];
 }
 
 @Component({
@@ -198,13 +200,39 @@ interface CatRow {
                 @for (row of byCategory(); track row.categoryId) {
                   <li class="bar-row" (click)="openCategory(row.categoryId)">
                     <div class="bar-top">
-                      <span class="bar-name">{{ row.name }}</span>
+                      <span class="bar-name">
+                        @if (row.children) {
+                          <button
+                            class="expand-btn"
+                            [attr.aria-label]="'Toggle subcategories of ' + row.name"
+                            (click)="toggleCategory($event, row.categoryId)"
+                          >
+                            <ion-icon
+                              [name]="expandedCategories().has(row.categoryId) ? 'chevron-down' : 'chevron-forward'"
+                            ></ion-icon>
+                          </button>
+                        }
+                        {{ row.name }}
+                      </span>
                       <span class="bar-amt num">{{ row.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                     </div>
                     <div class="bar-track">
                       <div class="bar-fill" [style.width.%]="percent(row.total)" [style.background]="row.color"></div>
                     </div>
                   </li>
+                  @if (row.children && expandedCategories().has(row.categoryId)) {
+                    @for (child of row.children; track child.categoryId) {
+                      <li class="bar-row bar-row--child" (click)="openCategory(child.categoryId)">
+                        <div class="bar-top">
+                          <span class="bar-name">{{ child.name }}</span>
+                          <span class="bar-amt num">{{ child.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                        </div>
+                        <div class="bar-track">
+                          <div class="bar-fill" [style.width.%]="percent(child.total)" [style.background]="child.color"></div>
+                        </div>
+                      </li>
+                    }
+                  }
                 }
               </ul>
             </section>
@@ -325,10 +353,17 @@ interface CatRow {
     .bar-row:not(.static) { cursor: pointer; }
     .bar-row:not(.static):hover { background: var(--artha-surface-2); }
     .bar-top { display: flex; justify-content: space-between; margin-bottom: 6px; }
-    .bar-name { font-size: 13px; font-weight: 600; color: var(--artha-text); }
+    .bar-name { font-size: 13px; font-weight: 600; color: var(--artha-text); display: inline-flex; align-items: center; gap: 4px; }
     .bar-amt { font-size: 13px; font-weight: 700; color: var(--artha-text); }
     .bar-track { height: 8px; border-radius: 4px; background: var(--artha-surface-2, #eef2f7); overflow: hidden; }
     .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    .expand-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent; border: 0; padding: 0; margin: 0;
+      color: var(--artha-text-subtle); cursor: pointer; font-size: 14px;
+    }
+    .bar-row--child { margin-left: 18px; }
+    .bar-row--child .bar-name { font-weight: 500; color: var(--artha-text-muted); }
 
     /* Planned vs actual */
     .pva-line { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13px; }
@@ -421,31 +456,70 @@ export class ReportsPage implements OnInit {
   });
 
   protected readonly byCategory = computed<CatRow[]>(() => {
-    const map = new Map<string, { total: number; count: number }>();
+    const byId = this.categoriesStore.byId();
+
+    // 1. Per-category (leaf) totals.
+    const leaf = new Map<string, { total: number; count: number }>();
     for (const e of this.counted()) {
-      const cur = map.get(e.categoryId) ?? { total: 0, count: 0 };
+      const cur = leaf.get(e.categoryId) ?? { total: 0, count: 0 };
       cur.total += e.amount;
       cur.count += 1;
-      map.set(e.categoryId, cur);
+      leaf.set(e.categoryId, cur);
     }
-    const byId = this.categoriesStore.byId();
-    return [...map.entries()]
-      .map(([id, v]) => ({
-        categoryId: id,
-        name: byId[id]?.name ?? 'Uncategorized',
-        rawColor: byId[id]?.color ?? null,
-        total: v.total,
-        count: v.count,
-      }))
-      .sort((a, b) => b.total - a.total)
-      .map((c, i) => ({
-        categoryId: c.categoryId,
-        name: c.name,
-        color: c.rawColor ?? PALETTE[i % PALETTE.length],
-        total: c.total,
-        count: c.count,
-      }));
+
+    // 2. Roll up into top-level categories, keeping the subcategory split.
+    const roots = new Map<
+      string,
+      { total: number; count: number; children: Map<string, { total: number; count: number }> }
+    >();
+    for (const [id, v] of leaf) {
+      const rootId = byId[id]?.parentId ?? id;
+      const root = roots.get(rootId) ?? { total: 0, count: 0, children: new Map() };
+      root.total += v.total;
+      root.count += v.count;
+      if (byId[id]?.parentId) {
+        const cv = root.children.get(id) ?? { total: 0, count: 0 };
+        cv.total += v.total;
+        cv.count += v.count;
+        root.children.set(id, cv);
+      }
+      roots.set(rootId, root);
+    }
+
+    const nameOf = (id: string): string => byId[id]?.name ?? 'Uncategorized';
+    return [...roots.entries()]
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([id, r], i) => {
+        const color = byId[id]?.color ?? PALETTE[i % PALETTE.length];
+        const children = [...r.children.entries()]
+          .sort((a, b) => b[1].total - a[1].total)
+          .map(([cid, cv]) => ({
+            categoryId: cid,
+            name: nameOf(cid),
+            color: byId[cid]?.color ?? color,
+            total: cv.total,
+            count: cv.count,
+          }));
+        return {
+          categoryId: id,
+          name: nameOf(id),
+          color,
+          total: r.total,
+          count: r.count,
+          children: children.length ? children : undefined,
+        };
+      });
   });
+
+  /** Top-level category ids whose subcategory split is expanded in the list. */
+  protected readonly expandedCategories = signal<Set<string>>(new Set());
+
+  protected toggleCategory(event: Event, categoryId: string): void {
+    event.stopPropagation();
+    const next = new Set(this.expandedCategories());
+    next.has(categoryId) ? next.delete(categoryId) : next.add(categoryId);
+    this.expandedCategories.set(next);
+  }
 
   protected readonly topCategory = computed(() => this.byCategory()[0] ?? null);
 

@@ -52,7 +52,12 @@ export class ReportsDriveService {
     const counted = items.filter(
       (e) => e.type !== 'income' && !e.excluded && !excluded.has(e.categoryId),
     );
-    const byCategory = breakdown(counted, categoriesById);
+    const perCategory = new Map<string, { total: number; count: number }>();
+    for (const e of counted) {
+      const prev = perCategory.get(e.categoryId) ?? { total: 0, count: 0 };
+      perCategory.set(e.categoryId, { total: prev.total + e.amount, count: prev.count + 1 });
+    }
+    const byCategory = rollUp(perCategory, categoriesById);
 
     const planned = (await this.repo.read<PlannedExpenseList>(DRIVE_FILES.plannedExpenses))?.document.items.filter(
       (p) => !p.archived,
@@ -108,14 +113,7 @@ export class ReportsDriveService {
       return { month: i + 1, total: s.total, count: s.count };
     });
 
-    const byCategory: CategoryBreakdown[] = [...catTotals.entries()]
-      .map(([categoryId, v]) => ({
-        categoryId,
-        categoryName: categoriesById.get(categoryId)?.name ?? '(Unknown)',
-        total: v.total,
-        count: v.count,
-      }))
-      .sort((a, b) => b.total - a.total);
+    const byCategory = rollUp(catTotals, categoriesById);
 
     return {
       year,
@@ -144,24 +142,60 @@ export class ReportsDriveService {
 }
 
 function excludedCategoryIds(categoriesById: Map<string, Category>): Set<string> {
-  return new Set(
+  const excluded = new Set(
     [...categoriesById.values()].filter((c) => c.excludeFromReports).map((c) => c.id),
   );
+  // Excluding a parent also excludes its subcategories.
+  for (const c of categoriesById.values()) {
+    if (c.parentId && excluded.has(c.parentId)) {
+      excluded.add(c.id);
+    }
+  }
+  return excluded;
 }
 
-function breakdown(items: Expense[], categoriesById: Map<string, Category>): CategoryBreakdown[] {
-  const acc = new Map<string, { total: number; count: number }>();
-  for (const e of items) {
-    const prev = acc.get(e.categoryId) ?? { total: 0, count: 0 };
-    acc.set(e.categoryId, { total: prev.total + e.amount, count: prev.count + 1 });
+/**
+ * Group per-category totals up to their top-level category. Each top-level
+ * entry carries the rolled-up total, plus a `children` split of any subcategory
+ * spend, so the UI can show a parent total and drill into its subcategories.
+ */
+function rollUp(
+  perCategory: Map<string, { total: number; count: number }>,
+  categoriesById: Map<string, Category>,
+): CategoryBreakdown[] {
+  const roots = new Map<
+    string,
+    { total: number; count: number; children: Map<string, { total: number; count: number }> }
+  >();
+  for (const [categoryId, v] of perCategory) {
+    const cat = categoriesById.get(categoryId);
+    const rootId = cat?.parentId ?? categoryId;
+    const root = roots.get(rootId) ?? { total: 0, count: 0, children: new Map() };
+    root.total += v.total;
+    root.count += v.count;
+    if (cat?.parentId) {
+      const cv = root.children.get(categoryId) ?? { total: 0, count: 0 };
+      cv.total += v.total;
+      cv.count += v.count;
+      root.children.set(categoryId, cv);
+    }
+    roots.set(rootId, root);
   }
-  return [...acc.entries()]
-    .map(([categoryId, v]) => ({
-      categoryId,
-      categoryName: categoriesById.get(categoryId)?.name ?? '(Unknown)',
-      total: v.total,
-      count: v.count,
-    }))
+
+  const name = (id: string): string => categoriesById.get(id)?.name ?? '(Unknown)';
+  return [...roots.entries()]
+    .map(([rootId, r]) => {
+      const children = [...r.children.entries()]
+        .map(([id, v]) => ({ categoryId: id, categoryName: name(id), total: v.total, count: v.count }))
+        .sort((a, b) => b.total - a.total);
+      return {
+        categoryId: rootId,
+        categoryName: name(rootId),
+        total: r.total,
+        count: r.count,
+        children: children.length ? children : undefined,
+      };
+    })
     .sort((a, b) => b.total - a.total);
 }
 

@@ -86,7 +86,7 @@ import { CategoriesStore } from './categories.store';
             </div>
           }
 
-          @if (visible().length === 0) {
+          @if (rows().length === 0) {
             @if (view() === 'archived') {
               <div class="empty">
                 <ion-icon name="archive-outline"></ion-icon>
@@ -100,23 +100,24 @@ import { CategoriesStore } from './categories.store';
               </div>
             }
           } @else {
-            @for (cat of visible(); track cat.id) {
+            @for (row of rows(); track row.cat.id) {
               <div
                 class="cat-card"
+                [class.child]="row.isChild"
                 [class.selectable]="selecting()"
-                [class.selected]="isSelected(cat)"
-                (click)="onCardClick(cat)"
+                [class.selected]="isSelected(row.cat)"
+                (click)="onCardClick(row.cat)"
               >
                 <div
                   class="cat-badge"
-                  [style.background]="badgeBg(cat)"
-                  [style.color]="badgeColor(cat)"
+                  [style.background]="badgeBg(row.cat)"
+                  [style.color]="badgeColor(row.cat)"
                 >
-                  <ion-icon [name]="cat.icon || 'pricetag'"></ion-icon>
+                  <ion-icon [name]="row.cat.icon || 'pricetag'"></ion-icon>
                 </div>
                 <div class="cat-text">
-                  <div class="cat-name">{{ cat.name }}</div>
-                  @if (cat.excludeFromReports) {
+                  <div class="cat-name">{{ row.cat.name }}</div>
+                  @if (row.cat.excludeFromReports) {
                     <span class="cat-flag">
                       <ion-icon name="eye-off-outline"></ion-icon>
                       Not in reports
@@ -127,21 +128,30 @@ import { CategoriesStore } from './categories.store';
                 @if (selecting()) {
                   <ion-icon
                     class="check"
-                    [name]="isSelected(cat) ? 'checkmark-circle' : 'ellipse-outline'"
+                    [name]="isSelected(row.cat) ? 'checkmark-circle' : 'ellipse-outline'"
                   ></ion-icon>
-                } @else if (!cat.archived) {
+                } @else if (!row.cat.archived) {
                   <div class="cat-actions">
+                    @if (!row.isChild) {
+                      <button
+                        class="iconbtn"
+                        [attr.aria-label]="'Add subcategory to ' + row.cat.name"
+                        (click)="addSubcategory($event, row.cat)"
+                      >
+                        <ion-icon name="add"></ion-icon>
+                      </button>
+                    }
                     <button
                       class="iconbtn"
-                      [attr.aria-label]="'Edit ' + cat.name"
-                      (click)="edit($event, cat)"
+                      [attr.aria-label]="'Edit ' + row.cat.name"
+                      (click)="edit($event, row.cat)"
                     >
                       <ion-icon name="pencil"></ion-icon>
                     </button>
                     <button
                       class="iconbtn danger"
-                      [attr.aria-label]="'Archive ' + cat.name"
-                      (click)="onArchive($event, cat)"
+                      [attr.aria-label]="'Archive ' + row.cat.name"
+                      (click)="onArchive($event, row.cat)"
                     >
                       <ion-icon name="trash"></ion-icon>
                     </button>
@@ -182,6 +192,12 @@ import { CategoriesStore } from './categories.store';
       box-shadow: var(--artha-shadow-sm);
       transition: transform 120ms ease, border-color 120ms ease;
     }
+    .cat-card.child {
+      margin-left: 26px;
+      border-left: 3px solid var(--artha-border-strong);
+    }
+    .cat-card.child .cat-badge { width: 32px; height: 32px; font-size: 16px; border-radius: 10px; }
+    .cat-card.child .cat-name { font-size: 14px; font-weight: 500; }
     .cat-card.selectable { cursor: pointer; }
     .cat-card.selectable:active { transform: scale(0.992); }
     .cat-card.selected {
@@ -231,11 +247,25 @@ export class CategoriesListPage implements OnInit {
   protected readonly selecting = signal(false);
   protected readonly selectedIds = signal<Set<string>>(new Set());
 
-  protected readonly visible = computed(() =>
-    this.view() === 'active'
-      ? this.store.active()
-      : this.store.items().filter((c) => c.archived),
-  );
+  /**
+   * Rows to render: in the Active view, each top-level category is followed by
+   * its subcategories (flagged `isChild` so the template can indent them). The
+   * Archived view stays a flat list.
+   */
+  protected readonly rows = computed<{ cat: Category; isChild: boolean }[]>(() => {
+    if (this.view() === 'archived') {
+      return this.store.items().filter((c) => c.archived).map((cat) => ({ cat, isChild: false }));
+    }
+    const out: { cat: Category; isChild: boolean }[] = [];
+    const tops = [...this.store.topLevel()].sort((a, b) => a.name.localeCompare(b.name));
+    for (const top of tops) {
+      out.push({ cat: top, isChild: false });
+      for (const child of this.store.subcategoriesOf(top.id)) {
+        out.push({ cat: child, isChild: true });
+      }
+    }
+    return out;
+  });
 
   ngOnInit(): void {
     void this.store.load();
@@ -351,12 +381,18 @@ export class CategoriesListPage implements OnInit {
     void this.openEditor(cat);
   }
 
+  /** Open the editor preset to create a subcategory under the given parent. */
+  protected addSubcategory(event: Event, parent: Category): void {
+    event.stopPropagation();
+    void this.openEditor(undefined, parent.id);
+  }
+
   /** Open the category editor modal. The modal saves itself and dismisses
       with role 'saved' on success. */
-  private async openEditor(category?: Category): Promise<void> {
+  private async openEditor(category?: Category, defaultParentId?: string): Promise<void> {
     const modal = await this.modalCtrl.create({
       component: CategoryEditModal,
-      componentProps: { category },
+      componentProps: { category, defaultParentId },
     });
     await modal.present();
     await modal.onWillDismiss();

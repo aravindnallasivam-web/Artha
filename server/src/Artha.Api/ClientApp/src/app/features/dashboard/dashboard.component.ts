@@ -437,9 +437,17 @@ export class DashboardComponent implements OnInit {
 
   protected readonly recent = computed(() => this.expensesStore.items().slice(0, 6));
 
-  private readonly excludedCategoryIds = computed(
-    () => new Set(this.categoriesStore.items().filter((c) => c.excludeFromReports).map((c) => c.id)),
-  );
+  private readonly excludedCategoryIds = computed(() => {
+    const items = this.categoriesStore.items();
+    const excluded = new Set(items.filter((c) => c.excludeFromReports).map((c) => c.id));
+    // Excluding a parent also excludes its subcategories.
+    for (const c of items) {
+      if (c.parentId && excluded.has(c.parentId)) {
+        excluded.add(c.id);
+      }
+    }
+    return excluded;
+  });
 
   private readonly counted = computed(() => {
     const excludedCats = this.excludedCategoryIds();
@@ -507,9 +515,11 @@ export class DashboardComponent implements OnInit {
   protected readonly breakdown = computed<CategorySlice[]>(() => {
     const total = this.totalSpent();
     if (total <= 0) return [];
+    // Roll subcategory spend up into the top-level (parent) category.
     const byCat = new Map<string, number>();
     for (const e of this.counted()) {
-      byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
+      const root = this.categoriesStore.rootIdOf(e.categoryId);
+      byCat.set(root, (byCat.get(root) ?? 0) + e.amount);
     }
     return [...byCat.entries()]
       .map(([id, amount]) => ({ id, name: this.categoryName(id), amount, share: amount / total }))

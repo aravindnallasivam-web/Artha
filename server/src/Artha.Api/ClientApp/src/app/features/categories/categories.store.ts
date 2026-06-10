@@ -29,6 +29,44 @@ export class CategoriesStore {
     return map;
   });
 
+  /** Active top-level categories (no parent). */
+  readonly topLevel = computed(() => this.active().filter((c) => !c.parentId));
+
+  /** Active subcategories grouped by their parent id, each list name-sorted. */
+  readonly childrenByParent = computed(() => {
+    const map: Record<string, Category[]> = {};
+    for (const c of this.active()) {
+      if (c.parentId) {
+        (map[c.parentId] ??= []).push(c);
+      }
+    }
+    for (const list of Object.values(map)) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return map;
+  });
+
+  /** Active subcategories of a given parent, name-sorted. */
+  subcategoriesOf(parentId: string): Category[] {
+    return this.childrenByParent()[parentId] ?? [];
+  }
+
+  /** The top-level ancestor id for a category (itself if already top-level). */
+  rootIdOf(id: string): string {
+    return this.byId()[id]?.parentId ?? id;
+  }
+
+  /** "Parent · Child" for a subcategory, or just the name for a top-level one. */
+  pathLabel(id: string): string {
+    const map = this.byId();
+    const cat = map[id];
+    if (!cat) {
+      return '';
+    }
+    const parent = cat.parentId ? map[cat.parentId] : undefined;
+    return parent ? `${parent.name} · ${cat.name}` : cat.name;
+  }
+
   async load(includeArchived = false, force = false): Promise<void> {
     if (!force
         && this._lastLoadedAt > 0
