@@ -179,7 +179,7 @@ interface CategorySlice {
             <div class="card breakdown">
               <div class="card-header">
                 <h2 class="card-title">Top categories</h2>
-                <a routerLink="/reports" class="card-link">Reports <ion-icon name="chevron-forward"></ion-icon></a>
+                <a routerLink="/categories" class="card-link">Manage <ion-icon name="chevron-forward"></ion-icon></a>
               </div>
               @if (breakdown().length === 0) {
                 <div class="empty empty--compact"><p>No spending yet this month.</p></div>
