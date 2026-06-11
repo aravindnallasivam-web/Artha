@@ -63,3 +63,7 @@ bundled through `extraResources` (`../dist/client/browser` → `app-dist`).
   interception, window, external-link handling, single-instance lock.
 - `preload.js` — exposes the minimal `window.electronAPI` bridge.
 - `package.json` — Electron deps, scripts, and electron-builder config.
+- `build/icon.png` — the app icon (a copy of the mobile `assets/icon.png`,
+  1024×1024). electron-builder auto-generates the macOS `.icns`, Windows `.ico`
+  and Linux icons from it. To refresh it after changing the mobile icon, copy
+  `assets/icon.png` over `electron/build/icon.png`.

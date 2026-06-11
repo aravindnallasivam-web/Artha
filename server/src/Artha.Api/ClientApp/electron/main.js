@@ -51,6 +51,10 @@ const MIME = {
 
 let mainWindow = null;
 
+// App icon (the shared mobile icon). Used for the runtime window/taskbar icon;
+// electron-builder also auto-detects build/icon.png for the installed app icons.
+const ICON_PATH = path.join(__dirname, 'build', 'icon.png');
+
 /** Small "you can close this tab" page shown in the user's browser post-auth. */
 function authDonePage() {
   return `<!doctype html><html><head><meta charset="utf-8">
@@ -140,6 +144,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0f172a',
     title: 'Artha',
+    icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
