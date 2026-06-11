@@ -211,10 +211,28 @@ import { ParsedExpense } from './sms-parser';
           }
 
           @if (foreignCurrency()) {
-            <ion-note class="bal cur-warn">
-              This spend was in {{ foreignCurrency() }} ({{ parsed.currency }} {{ parsed.amount | number: '1.0-2' }}).
-              Enter the amount actually charged to your account.
-            </ion-note>
+            <div class="fx">
+              <div class="fx-row">
+                <span class="fx-eq">1 {{ parsed.currency }} =</span>
+                <input
+                  class="fx-input"
+                  type="number"
+                  inputmode="decimal"
+                  step="0.0001"
+                  min="0"
+                  placeholder="rate"
+                  [ngModel]="rate"
+                  (ngModelChange)="onRateChange($event)"
+                  [ngModelOptions]="{ standalone: true }"
+                  aria-label="Exchange rate"
+                />
+                <span class="fx-eq">{{ accountCurrencyCode() }}</span>
+              </div>
+              <div class="fx-hint">
+                SMS was {{ parsed.currency }} {{ parsed.amount | number: '1.0-2' }} — enter today's
+                rate to convert the amount to {{ accountCurrencyCode() }}.
+              </div>
+            </div>
           }
 
           @if (parsed.balance != null) {
@@ -313,7 +331,21 @@ import { ParsedExpense } from './sms-parser';
     .excl-sub { font-size: 12px; color: var(--artha-text-muted); margin-top: 2px; }
 
     .bal { display: block; margin-top: 14px; font-size: 12.5px; color: var(--artha-accent); font-weight: 600; }
-    .cur-warn { color: var(--artha-negative); }
+    .fx {
+      margin-top: 14px; padding: 12px 14px;
+      border: 1px solid var(--artha-border); border-radius: var(--artha-radius);
+      background: var(--artha-surface-2);
+    }
+    .fx-row { display: flex; align-items: center; gap: 8px; }
+    .fx-eq { font-size: 14px; font-weight: 600; color: var(--artha-text); white-space: nowrap; }
+    .fx-input {
+      flex: 1; min-width: 0; box-sizing: border-box;
+      padding: 8px 10px; font-size: 15px;
+      border: 1px solid var(--artha-border-strong); border-radius: var(--artha-radius-sm);
+      background: var(--artha-surface); color: var(--artha-text);
+    }
+    .fx-input:focus { outline: 2px solid var(--artha-accent); outline-offset: -1px; }
+    .fx-hint { margin-top: 8px; font-size: 12px; line-height: 1.4; color: var(--artha-text-muted); }
     .warn { font-size: 13px; }
     .raw {
       display: block;
@@ -370,6 +402,8 @@ export class SmsConfirmModal implements OnInit {
   protected date = '';
   protected note = '';
   protected excluded = false;
+  /** User-entered FX rate (1 SMS-currency = rate account-currency), or null. */
+  protected rate: number | null = null;
   protected readonly saving = signal(false);
 
   protected readonly categories = () =>
@@ -385,6 +419,11 @@ export class SmsConfirmModal implements OnInit {
   }
 
   protected canSave(): boolean {
+    // A foreign-currency spend must have a rate entered so we log the converted
+    // amount, not the raw foreign figure.
+    if (this.foreignCurrency() && !this.rate) {
+      return false;
+    }
     return this.amount > 0 && !!this.categoryId && !!this.accountId && !!this.date;
   }
 
@@ -400,7 +439,7 @@ export class SmsConfirmModal implements OnInit {
           date: this.dateValue(),
           categoryId: this.categoryId,
           accountId: this.accountId,
-          note: this.note?.trim() || null,
+          note: this.composeNote(),
           excluded: this.excluded,
         },
         'edited',
@@ -414,7 +453,7 @@ export class SmsConfirmModal implements OnInit {
         amount: Number(this.amount),
         categoryId: this.categoryId,
         accountId: this.accountId,
-        note: this.note?.trim() || null,
+        note: this.composeNote(),
         excluded: this.excluded,
         type: this.parsed.type,
       });
@@ -458,8 +497,32 @@ export class SmsConfirmModal implements OnInit {
     if (!cur) {
       return null;
     }
-    const accCode = this.accountsStore.byId()[this.accountId]?.currency || 'INR';
-    return cur !== accCode ? cur : null;
+    return cur !== this.accountCurrencyCode() ? cur : null;
+  }
+
+  /** ISO currency code of the selected account (defaults to INR). */
+  protected accountCurrencyCode(): string {
+    return this.accountsStore.byId()[this.accountId]?.currency || 'INR';
+  }
+
+  /** Convert the SMS's foreign amount into the account currency at this rate. */
+  protected onRateChange(value: number | string): void {
+    const r = typeof value === 'number' ? value : parseFloat(value);
+    this.rate = isFinite(r) && r > 0 ? r : null;
+    if (this.rate) {
+      this.amount = Math.round(this.parsed.amount * this.rate * 100) / 100;
+    }
+  }
+
+  /** Note for the saved expense, tagging the original currency + rate used. */
+  private composeNote(): string | null {
+    const base = this.note?.trim() ?? '';
+    const fx = this.foreignCurrency();
+    if (fx && this.rate) {
+      const tag = `${this.parsed.currency} ${this.parsed.amount.toFixed(2)} @ ${this.rate}`;
+      return base ? `${base} · ${tag}` : tag;
+    }
+    return base || null;
   }
 
   /** Currency symbol for the selected account, e.g. ₹ / $ / €. */
