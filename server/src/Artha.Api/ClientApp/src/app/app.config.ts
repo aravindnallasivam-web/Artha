@@ -42,6 +42,9 @@ export const appConfig: ApplicationConfig = {
       inject(ThemeService);
       await session.restoreFromNativeIfNeeded();
       googleAuth.initializeMobileAuthListener();
+      // Desktop (Electron): catch the OAuth redirect bridged from the main
+      // process. No-op on web/native.
+      googleAuth.initializeElectronAuthListener();
       await nativeUi.initialize();
       // Resume the SMS watcher if the user enabled capture previously.
       // No-op on web/iOS and when disabled.

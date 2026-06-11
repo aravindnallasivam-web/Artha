@@ -11,6 +11,9 @@
     "cap:open:ios": "cap open ios",
     "cap:open:android": "cap open android",
     "cap:assets": "node scripts/generate-mobile-assets.mjs && capacitor-assets generate --ios --android",
+    "electron:install": "npm --prefix electron install",
+    "electron:start": "npm run build && npm --prefix electron start",
+    "electron:dist": "npm run build && npm --prefix electron run dist",
     "test": "ng test"
   },
   "private": true,

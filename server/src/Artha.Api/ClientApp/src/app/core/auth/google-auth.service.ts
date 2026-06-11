@@ -8,6 +8,7 @@ import { environment } from '../../../environments/environment';
 import { DriveBootstrap } from '../drive/drive-bootstrap.service';
 import { DriveCache } from '../drive/drive-cache.service';
 import { GoogleTokenStore } from '../drive/google-token.store';
+import { getElectron } from '../native/electron-bridge';
 import { LoginResponse } from './auth.models';
 import { GoogleOAuthService } from './google-oauth.service';
 import { generateCodeChallenge, generateCodeVerifier, generateState } from './pkce';
@@ -35,6 +36,7 @@ export class GoogleAuthService {
   private readonly bootstrap = inject(DriveBootstrap);
   private readonly cache = inject(DriveCache);
   private mobileListenerAttached = false;
+  private electronListenerAttached = false;
 
   /**
    * Last auth failure message, published for the login screen to display.
@@ -82,9 +84,40 @@ export class GoogleAuthService {
       this.initializeMobileAuthListener();
       await Browser.open({ url: authUrl, presentationStyle: 'popover' });
       // Browser dismissal happens in the appUrlOpen handler.
+    } else if (getElectron()) {
+      // Desktop: Google blocks sign-in inside Electron's webview, so open the
+      // user's real browser. The redirect (to <origin>/auth/callback) is caught
+      // by the Electron main process and returned to us over IPC.
+      this.initializeElectronAuthListener();
+      await getElectron()!.openExternal(authUrl);
     } else {
       window.location.assign(authUrl);
     }
+  }
+
+  /**
+   * Desktop-only: receive the OAuth redirect captured by the Electron main
+   * process (electron/main.js) and finish the login. Idempotent; also wired
+   * from APP_INITIALIZER so a redirect is never missed.
+   */
+  initializeElectronAuthListener(): void {
+    if (this.electronListenerAttached) return;
+    const electron = getElectron();
+    if (!electron) return;
+    this.electronListenerAttached = true;
+
+    electron.onOAuthCallback((payload) => {
+      if (payload.error) {
+        this.authError.set(
+          `Google sign-in didn't complete (${payload.error}). Please try again.`,
+        );
+        return;
+      }
+      if (!payload.code || !payload.state) return;
+      void this.completeLogin(payload.code, payload.state)
+        .then(() => this.router.navigate(['/dashboard']))
+        .catch((err) => this.authError.set(describeAuthError(err)));
+    });
   }
 
   /**
