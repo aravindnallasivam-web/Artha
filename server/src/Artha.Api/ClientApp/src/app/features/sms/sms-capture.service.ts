@@ -30,6 +30,12 @@ const IGNORED_KEY = 'artha.sms.ignoredSenders';
 // Persistent queue of detected-but-unattended expenses. Items survive app
 // restarts and stay until the user saves or dismisses them.
 const PENDING_KEY = 'artha.sms.pending';
+// Content keys of items the user just resolved (saved/dismissed/auto-added).
+// A catch-up scan can re-read the same SMS from the inbox, so we suppress
+// re-queuing it for a while. Keyed by content + day, so it never blocks a
+// genuinely new transaction on a later date.
+const RESOLVED_KEY = 'artha.sms.resolved';
+const RESOLVED_TTL_MS = 24 * 60 * 60 * 1000;
 // When on, a detected expense whose vendor (category) and account are already
 // learned is logged automatically and the user is just notified.
 const AUTO_ADD_KEY = 'artha.sms.autoAdd';
@@ -91,6 +97,9 @@ export class SmsCaptureService {
   /** Number of detected expenses waiting to be saved or dismissed. */
   readonly pendingCount = this._pendingCount.asReadonly();
   private pending: PendingItem[] = this.loadPending();
+  // Content keys -> resolved-at epoch ms; suppresses re-queuing a just-handled
+  // SMS that a later catch-up scan re-reads from the inbox.
+  private resolved: Record<string, number> = this.loadResolved();
   // Guards so we never stack the queue-review or single-confirm dialogs.
   private reviewing = false;
   private confirming = false;
@@ -246,10 +255,11 @@ export class SmsCaptureService {
     if (!pending) {
       return false;
     }
-    // Advance the watermark so the catch-up scan won't re-offer this same SMS.
-    if (pending.date) {
-      this.setLastSeen(Math.max(this.getLastSeen(), pending.date + 1));
-    }
+    // NB: don't advance the watermark to this SMS's time here. Tapping the
+    // newest of several notifications would otherwise make the follow-up
+    // catch-up scan skip the older pending SMS. The catch-up scan still reads
+    // from the previous watermark and picks up the whole batch; the
+    // "recently resolved" guard stops this tapped one being re-offered.
     if (this.isIgnored(pending.address)) {
       return false;
     }
@@ -869,10 +879,15 @@ export class SmsCaptureService {
     return `${p.date}|${p.amount.toFixed(2)}|${categoryKey(p.merchant)}|${normalizeSender(p.sender)}`;
   }
 
-  /** Add a detected expense to the queue unless an identical one is already there. */
+  /** Add a detected expense to the queue unless it's already queued or was
+      just resolved (and a catch-up scan is re-reading it from the inbox). */
   private enqueue(parsed: ParsedExpense): void {
     const key = this.pendingKey(parsed);
     if (this.pending.some((x) => x.key === key)) {
+      return;
+    }
+    const resolvedAt = this.resolved[key];
+    if (resolvedAt && Date.now() - resolvedAt < RESOLVED_TTL_MS) {
       return;
     }
     this.pending = [...this.pending, { key, parsed, addedAt: Date.now() }];
@@ -884,11 +899,47 @@ export class SmsCaptureService {
     if (drop.size === 0) {
       return;
     }
+    // Remember these as just-resolved so a follow-up inbox scan won't re-queue
+    // them, then drop them from the live queue.
+    const now = Date.now();
+    for (const key of drop) {
+      this.resolved[key] = now;
+    }
+    this.persistResolved();
     const before = this.pending.length;
     this.pending = this.pending.filter((x) => !drop.has(x.key));
     if (this.pending.length !== before) {
       this.persistPending();
     }
+  }
+
+  /** Load the resolved-keys guard, pruning entries past their TTL. */
+  private loadResolved(): Record<string, number> {
+    let raw: Record<string, number> = {};
+    try {
+      raw = JSON.parse(localStorage.getItem(RESOLVED_KEY) ?? '{}') as Record<string, number>;
+    } catch {
+      raw = {};
+    }
+    const cutoff = Date.now() - RESOLVED_TTL_MS;
+    const fresh: Record<string, number> = {};
+    for (const [key, at] of Object.entries(raw)) {
+      if (typeof at === 'number' && at >= cutoff) {
+        fresh[key] = at;
+      }
+    }
+    return fresh;
+  }
+
+  private persistResolved(): void {
+    // Prune stale entries on the way out so the store can't grow unbounded.
+    const cutoff = Date.now() - RESOLVED_TTL_MS;
+    for (const [key, at] of Object.entries(this.resolved)) {
+      if (at < cutoff) {
+        delete this.resolved[key];
+      }
+    }
+    localStorage.setItem(RESOLVED_KEY, JSON.stringify(this.resolved));
   }
 
   private loadPending(): PendingItem[] {
