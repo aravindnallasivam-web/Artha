@@ -1,6 +1,7 @@
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
+  LOCALE_ID,
   inject,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
@@ -19,6 +20,8 @@ import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
   providers: [
+    // Indian English locale → lakh/crore number grouping and dd/MM dates.
+    { provide: LOCALE_ID, useValue: 'en-IN' },
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
     provideIonicAngular({ mode: 'md' }),
