@@ -27,6 +27,7 @@ import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.s
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
 import { TransactionType } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
+import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from './expenses.store';
 
@@ -35,6 +36,7 @@ import { ExpensesStore } from './expenses.store';
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    CategoryPickerComponent,
     IonBackButton,
     IonButton,
     IonButtons,
@@ -124,17 +126,7 @@ import { ExpensesStore } from './expenses.store';
             <div class="section-label">Details</div>
             <div class="card">
               <ion-item lines="full">
-                <ion-select
-                  label="Category"
-                  labelPlacement="stacked"
-                  formControlName="categoryId"
-                  interface="popover"
-                  placeholder="Choose a category"
-                >
-                  @for (opt of categoryOptions(); track opt.id) {
-                    <ion-select-option [value]="opt.id">{{ opt.label }}</ion-select-option>
-                  }
-                </ion-select>
+                <artha-category-picker formControlName="categoryId"></artha-category-picker>
               </ion-item>
               <ion-item lines="none">
                 <ion-select
@@ -279,23 +271,6 @@ export class ExpenseEditPage implements OnInit {
   protected readonly mode = signal<'create' | 'edit'>('create');
   protected readonly categories = computed(() => this.categoriesStore.active());
   protected readonly accounts = computed(() => this.accountsStore.active());
-
-  /**
-   * Flat, ordered category options for the picker: each top-level category
-   * followed by its subcategories, indented (em-spaces render in the popover).
-   * The stored categoryId can be a top-level category or a subcategory.
-   */
-  protected readonly categoryOptions = computed(() => {
-    const tops = [...this.categoriesStore.topLevel()].sort((a, b) => a.name.localeCompare(b.name));
-    const out: { id: string; label: string }[] = [];
-    for (const top of tops) {
-      out.push({ id: top.id, label: top.name });
-      for (const child of this.categoriesStore.subcategoriesOf(top.id)) {
-        out.push({ id: child.id, label: `  ${child.name}` });
-      }
-    }
-    return out;
-  });
 
   protected readonly form = this.fb.nonNullable.group({
     date: [this.today(), Validators.required],

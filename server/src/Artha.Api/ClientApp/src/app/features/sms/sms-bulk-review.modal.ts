@@ -1,5 +1,6 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, Input, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import {
   AlertController,
   IonButton,
@@ -17,6 +18,7 @@ import {
   ModalController,
 } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
+import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { SmsCaptureService } from './sms-capture.service';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { ParsedExpense } from './sms-parser';
@@ -53,6 +55,8 @@ interface NamedRef {
   standalone: true,
   imports: [
     CurrencyPipe,
+    FormsModule,
+    CategoryPickerComponent,
     IonButton,
     IonButtons,
     IonCheckbox,
@@ -152,17 +156,12 @@ interface NamedRef {
               </div>
 
               <div class="selects">
-                <ion-select
-                  label="Category"
-                  labelPlacement="stacked"
+                <artha-category-picker
                   interface="action-sheet"
-                  [value]="row.categoryId"
-                  (ionChange)="setCategory(i, $event)"
-                >
-                  @for (c of categoryOptions(); track c.id) {
-                    <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
-                  }
-                </ion-select>
+                  [ngModel]="row.categoryId"
+                  (ngModelChange)="setCategory(i, $event)"
+                  [ngModelOptions]="{ standalone: true }"
+                ></artha-category-picker>
                 <ion-select
                   label="Account"
                   labelPlacement="stacked"
@@ -341,8 +340,8 @@ export class SmsBulkReviewModal implements OnInit {
     this.rows.update((rs) => rs.map((r) => ({ ...r, selected: next })));
   }
 
-  protected setCategory(i: number, event: Event): void {
-    this.patch(i, { categoryId: (event as CustomEvent<{ value: string }>).detail.value });
+  protected setCategory(i: number, categoryId: string | null): void {
+    this.patch(i, { categoryId: categoryId ?? '' });
   }
 
   protected setAccount(i: number, event: Event): void {

@@ -20,6 +20,7 @@ import {
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
 import { LoanPaymentInput, LoanPaymentType } from '../../core/models/loan.model';
 import { AccountsStore } from '../accounts/accounts.store';
+import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 
 /** What the loan detail page receives back when a payment is saved. */
@@ -35,6 +36,7 @@ export interface LoanPaymentResult {
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    CategoryPickerComponent,
     IonButton,
     IonButtons,
     IonContent,
@@ -106,12 +108,7 @@ export interface LoanPaymentResult {
           </ion-item>
           @if (form.controls.addExpense.value) {
             <ion-item lines="full">
-              <ion-select label="Category" labelPlacement="stacked" interface="popover"
-                placeholder="Select" formControlName="categoryId">
-                @for (cat of categories.active(); track cat.id) {
-                  <ion-select-option [value]="cat.id">{{ cat.name }}</ion-select-option>
-                }
-              </ion-select>
+              <artha-category-picker formControlName="categoryId" placeholder="Select"></artha-category-picker>
             </ion-item>
             <ion-item lines="none">
               <ion-select label="Account" labelPlacement="stacked" interface="popover"

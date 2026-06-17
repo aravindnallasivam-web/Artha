@@ -2,6 +2,15 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Category, CategoryUpsertRequest } from '../../core/models/category.model';
 import { CategoriesApi } from './categories.api';
 
+/** One entry in a category <select>: a top-level category or a subcategory. */
+export interface CategoryOption {
+  id: string;
+  name: string;
+  /** Display label — the plain name, or an indented name for a subcategory. */
+  label: string;
+  isChild: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CategoriesStore {
   private readonly api = inject(CategoriesApi);
@@ -50,6 +59,23 @@ export class CategoriesStore {
   subcategoriesOf(parentId: string): Category[] {
     return this.childrenByParent()[parentId] ?? [];
   }
+
+  /**
+   * Flat, ordered options for a category <select>: each top-level category
+   * followed by its subcategories (indented). Single source of truth for every
+   * category picker so the hierarchy shows consistently everywhere.
+   */
+  readonly pickerOptions = computed<CategoryOption[]>(() => {
+    const tops = [...this.topLevel()].sort((a, b) => a.name.localeCompare(b.name));
+    const out: CategoryOption[] = [];
+    for (const top of tops) {
+      out.push({ id: top.id, name: top.name, label: top.name, isChild: false });
+      for (const child of this.subcategoriesOf(top.id)) {
+        out.push({ id: child.id, name: child.name, label: `  ${child.name}`, isChild: true });
+      }
+    }
+    return out;
+  });
 
   /** The top-level ancestor id for a category (itself if already top-level). */
   rootIdOf(id: string): string {

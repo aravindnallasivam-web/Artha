@@ -24,6 +24,7 @@ import {
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
+import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { ParsedExpense } from './sms-parser';
@@ -39,6 +40,7 @@ import { ParsedExpense } from './sms-parser';
   imports: [
     DecimalPipe,
     FormsModule,
+    CategoryPickerComponent,
     IonButton,
     IonButtons,
     IonContent,
@@ -149,18 +151,10 @@ import { ParsedExpense } from './sms-parser';
           <div class="section-label">Details</div>
           <div class="card">
             <ion-item lines="full">
-              <ion-select
-                label="Category"
-                labelPlacement="stacked"
-                interface="popover"
-                placeholder="Choose a category"
+              <artha-category-picker
                 [(ngModel)]="categoryId"
                 [ngModelOptions]="{ standalone: true }"
-              >
-                @for (c of categories(); track c.id) {
-                  <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
-                }
-              </ion-select>
+              ></artha-category-picker>
             </ion-item>
             <ion-item lines="none">
               <ion-select

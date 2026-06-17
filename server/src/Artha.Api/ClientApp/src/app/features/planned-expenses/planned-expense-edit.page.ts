@@ -11,14 +11,13 @@ import {
   IonIcon,
   IonInput,
   IonItem,
-  IonSelect,
-  IonSelectOption,
   IonSpinner,
   IonTitle,
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { PlannedCycle, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { SettingsStore } from '../settings/settings.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
@@ -29,6 +28,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
   imports: [
     DecimalPipe,
     ReactiveFormsModule,
+    CategoryPickerComponent,
     IonBackButton,
     IonButton,
     IonButtons,
@@ -37,8 +37,6 @@ import { PlannedExpensesStore } from './planned-expenses.store';
     IonIcon,
     IonInput,
     IonItem,
-    IonSelect,
-    IonSelectOption,
     IonSpinner,
     IonTitle,
     IonToolbar,
@@ -119,18 +117,11 @@ import { PlannedExpensesStore } from './planned-expenses.store';
             <div class="section-label">Details</div>
             <div class="card">
               <ion-item lines="full">
-                <ion-select
-                  label="Category"
-                  labelPlacement="stacked"
-                  interface="popover"
-                  placeholder="None"
+                <artha-category-picker
                   formControlName="categoryId"
-                >
-                  <ion-select-option [value]="null">None</ion-select-option>
-                  @for (cat of categories.active(); track cat.id) {
-                    <ion-select-option [value]="cat.id">{{ cat.name }}</ion-select-option>
-                  }
-                </ion-select>
+                  [includeNone]="true"
+                  placeholder="None"
+                ></artha-category-picker>
               </ion-item>
               <ion-item lines="none">
                 <ion-input
