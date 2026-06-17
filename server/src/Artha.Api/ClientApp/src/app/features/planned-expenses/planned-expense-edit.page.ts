@@ -16,6 +16,7 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
+import { DriveRequestError } from '../../core/drive/drive-errors';
 import { PlannedCycle, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
@@ -329,8 +330,11 @@ export class PlannedExpenseEditPage implements OnInit {
       }
       await this.router.navigate(['/planned-expenses']);
     } catch (err) {
+      // Surface the real reason (duplicate name, validation, archived category,
+      // a Drive conflict) instead of a generic message.
+      const detail = err instanceof DriveRequestError ? err.message : null;
       await this.notifier.notifyError(
-        this.editingId ? 'Could not save changes.' : 'Could not add planned expense.',
+        detail ?? (this.editingId ? 'Could not save changes.' : 'Could not add planned expense.'),
       );
     } finally {
       this.saving.set(false);
