@@ -245,4 +245,10 @@ body.keyboard-open .m-tabs {
 body.keyboard-open .save-bar {
   padding-bottom: 12px !important;
 }
+/* The webview shrinks when the keyboard opens, so a bottom-anchored FAB would
+ * ride up and float above the keyboard. Hide floating action buttons while
+ * typing. */
+body.keyboard-open ion-fab {
+  display: none;
+}
 
