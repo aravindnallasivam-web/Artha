@@ -14,7 +14,6 @@ import { MONTH_LABELS, MonthSummary } from '../../core/models/report.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
-import { PlannedExpensesStore } from '../planned-expenses/planned-expenses.store';
 import { DonutChartComponent, DonutSegment } from './donut-chart.component';
 import { LineChartComponent } from './line-chart.component';
 import { YearBarChartComponent } from './year-bar-chart.component';
@@ -119,36 +118,6 @@ interface CatRow {
               }
             </div>
           </section>
-
-          <!-- Planned vs actual: compares fixed monthly bills (rent, broadband)
-               against this month's actual spend. Monthly view only. -->
-          @if (view() === 'monthly' && plannedCount() > 0) {
-            <section class="card">
-              <div class="card-head">
-                <h2>Planned vs actual</h2>
-                <span class="card-sub">{{ plannedCount() }} predefined / month</span>
-              </div>
-              <div class="pva-line">
-                <span class="bar-name">Planned</span>
-                <span class="bar-amt num">{{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-              </div>
-              <div class="pva-line">
-                <span class="bar-name">Actual</span>
-                <span class="bar-amt num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-              </div>
-              <div class="bar-track">
-                <div
-                  class="bar-fill"
-                  [style.width.%]="plannedPercent()"
-                  [style.background]="total() > plannedTotal() ? 'var(--artha-negative, #dc2626)' : 'var(--artha-accent)'"
-                ></div>
-              </div>
-              <div class="pva-line pva-delta" [class.over]="total() > plannedTotal()">
-                <span>{{ total() > plannedTotal() ? 'Over budget' : 'Remaining' }}</span>
-                <span class="num">{{ plannedDelta() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-              </div>
-            </section>
-          }
 
           @if (count() === 0) {
             <div class="empty">
@@ -365,11 +334,6 @@ interface CatRow {
     .bar-row--child { margin-left: 18px; }
     .bar-row--child .bar-name { font-weight: 500; color: var(--artha-text-muted); }
 
-    /* Planned vs actual */
-    .pva-line { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13px; }
-    .pva-line .bar-name { color: var(--artha-text-muted); }
-    .pva-delta { margin-top: 8px; font-weight: 700; color: var(--artha-positive, #16a34a); }
-    .pva-delta.over { color: var(--artha-negative, #dc2626); }
 
     /* Merchants */
     .merchants { list-style: none; margin: 0; padding: 0; }
@@ -402,7 +366,6 @@ export class ReportsPage implements OnInit {
   private readonly api = inject(ExpensesApi);
   private readonly categoriesStore = inject(CategoriesStore);
   private readonly accountsStore = inject(AccountsStore);
-  private readonly plannedStore = inject(PlannedExpensesStore);
   private readonly router = inject(Router);
 
   protected readonly view = signal<ViewMode>('monthly');
@@ -523,13 +486,6 @@ export class ReportsPage implements OnInit {
 
   protected readonly topCategory = computed(() => this.byCategory()[0] ?? null);
 
-  // Planned (predefined) monthly bills — a fixed budget compared against actual.
-  // Compare actual spend against planned *spending* commitments only — investment
-  // / excluded-from-reports categories are left out, matching the spend total.
-  protected readonly plannedTotal = computed(() => this.plannedStore.plannedSpendTotal());
-  protected readonly plannedCount = computed(() => this.plannedStore.plannedSpending().length);
-  protected readonly plannedDelta = computed(() => Math.abs(this.plannedTotal() - this.total()));
-
   protected readonly donutSegments = computed<DonutSegment[]>(() => {
     const cats = this.byCategory();
     const top = cats.slice(0, 5).map((c) => ({ label: c.name, value: c.total, color: c.color }));
@@ -592,7 +548,6 @@ export class ReportsPage implements OnInit {
     if (this.accountsStore.items().length === 0) {
       void this.accountsStore.load(/* includeArchived */ true);
     }
-    void this.plannedStore.load();
     void this.refresh();
   }
 
@@ -628,13 +583,6 @@ export class ReportsPage implements OnInit {
     const total = this.total();
     if (total <= 0) return 0;
     return Math.round((value / total) * 100);
-  }
-
-  /** Actual spend as a share of the planned budget, capped at 100% for the bar. */
-  protected plannedPercent(): number {
-    const planned = this.plannedTotal();
-    if (planned <= 0) return 0;
-    return Math.min(100, (this.total() / planned) * 100);
   }
 
   protected openCategory(categoryId: string): void {
