@@ -337,12 +337,12 @@ export class CategoryEditModal implements OnInit {
       parentId: this.editingHasChildren() ? null : this.parentId(),
     };
     try {
-      if (this.category) {
-        await this.store.update(this.category.id, payload);
-      } else {
-        await this.store.add(payload);
-      }
-      await this.modalCtrl.dismiss(true, 'saved');
+      const saved = this.category
+        ? await this.store.update(this.category.id, payload)
+        : await this.store.add(payload);
+      // Return the saved category so callers (e.g. the inline "New category"
+      // flow in the picker) can select it immediately.
+      await this.modalCtrl.dismiss(saved, 'saved');
     } catch {
       this.saving.set(false);
       await this.notifier.notifyError(

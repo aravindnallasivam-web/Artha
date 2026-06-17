@@ -1,7 +1,12 @@
 import { Component, Input, computed, forwardRef, inject, signal } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { IonSelect, IonSelectOption } from '@ionic/angular/standalone';
+import { IonSelect, IonSelectOption, ModalController } from '@ionic/angular/standalone';
+import { Category } from '../../core/models/category.model';
+import { CategoryEditModal } from './category-edit.modal';
 import { CategoriesStore } from './categories.store';
+
+/** Sentinel option value: picking it opens the "new category" editor. */
+const CREATE_VALUE = '__artha_new_category__';
 
 /**
  * Reusable category picker — a single `<ion-select>` that lists every top-level
@@ -41,12 +46,18 @@ import { CategoriesStore } from './categories.store';
       @for (opt of options(); track opt.id) {
         <ion-select-option [value]="opt.id">{{ opt.label }}</ion-select-option>
       }
+      @if (allowCreate) {
+        <ion-select-option [value]="createValue">+ New category…</ion-select-option>
+      }
     </ion-select>
   `,
   styles: [':host { display: contents; }'],
 })
 export class CategoryPickerComponent implements ControlValueAccessor {
   private readonly store = inject(CategoriesStore);
+  private readonly modalCtrl = inject(ModalController);
+
+  protected readonly createValue = CREATE_VALUE;
 
   @Input() label = 'Category';
   @Input() labelPlacement: 'stacked' | 'fixed' | 'floating' | 'start' | 'end' = 'stacked';
@@ -55,6 +66,8 @@ export class CategoryPickerComponent implements ControlValueAccessor {
   /** Show a leading "None" option (value null) — e.g. optional planned-expense category. */
   @Input() includeNone = false;
   @Input() noneLabel = 'None';
+  /** Offer a "+ New category…" option that opens the category editor inline. */
+  @Input() allowCreate = true;
   @Input() disabled = false;
 
   protected readonly value = signal<string | null>(null);
@@ -67,7 +80,7 @@ export class CategoryPickerComponent implements ControlValueAccessor {
   protected readonly options = computed<{ id: string; label: string }[]>(() => {
     const opts = this.store.pickerOptions().map((o) => ({ id: o.id, label: o.label }));
     const current = this.value();
-    if (current && !opts.some((o) => o.id === current)) {
+    if (current && current !== CREATE_VALUE && !opts.some((o) => o.id === current)) {
       opts.push({ id: current, label: this.store.pathLabel(current) || current });
     }
     return opts;
@@ -94,8 +107,31 @@ export class CategoryPickerComponent implements ControlValueAccessor {
 
   protected onSelect(event: Event): void {
     const next = (event as CustomEvent<{ value: string | null }>).detail?.value ?? null;
+    if (next === CREATE_VALUE) {
+      // Don't commit the sentinel to the form. Keep the dropdown showing it
+      // while the editor is open, then resolve to the new (or previous) value.
+      const previous = this.value();
+      this.value.set(CREATE_VALUE);
+      void this.createCategory(previous);
+      return;
+    }
     this.value.set(next);
     this.onChange(next);
     this.onTouched();
+  }
+
+  /** Open the category editor; on save, select the new category. */
+  private async createCategory(previous: string | null): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: CategoryEditModal });
+    await modal.present();
+    const { role, data } = await modal.onWillDismiss<Category>();
+    if (role === 'saved' && data?.id) {
+      this.value.set(data.id);
+      this.onChange(data.id);
+      this.onTouched();
+    } else {
+      // Cancelled — revert the dropdown to what was selected before.
+      this.value.set(previous);
+    }
   }
 }
