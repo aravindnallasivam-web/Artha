@@ -99,7 +99,7 @@ interface CategorySlice {
             </button>
           }
 
-          <!-- 1 · Hero: spend + budget -->
+          <!-- 1 · Hero: spend -->
           <section class="hero">
             <div class="hero-top">
               <p class="hero-label">Spent in {{ monthShort() }}</p>
@@ -110,25 +110,10 @@ interface CategorySlice {
               }
             </div>
             <p class="hero-value num">{{ totalSpent() | currency: currency() : 'symbol' : '1.0-0' }}</p>
-            @if (plannedTotal() > 0) {
-              <div class="bar bar--lg">
-                <div class="bar-fill" [class.bar-fill--over]="overBudget()" [style.width.%]="budgetPct()"></div>
-              </div>
-              <p class="hero-meta">
-                @if (overBudget()) {
-                  <span class="over">{{ -budgetLeft() | currency: currency() : 'symbol' : '1.0-0' }} over</span>
-                  your {{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }} plan
-                } @else {
-                  {{ budgetLeft() | currency: currency() : 'symbol' : '1.0-0' }} left of
-                  {{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }} planned
-                }
-              </p>
-            } @else {
-              <p class="hero-meta">
-                {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
-                @if (dailyAverage() > 0) { · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day }
-              </p>
-            }
+            <p class="hero-meta">
+              {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
+              @if (dailyAverage() > 0) { · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day }
+            </p>
             @if (expensesStore.incomeTotal() > 0) {
               <p class="hero-income">
                 + {{ expensesStore.incomeTotal() | currency: currency() : 'symbol' : '1.0-0' }} received this month
@@ -503,13 +488,6 @@ export class DashboardComponent implements OnInit {
       .sort((a, b) => b.monthly - a.monthly)
       .slice(0, 4),
   );
-  protected readonly budgetLeft = computed(() => this.plannedTotal() - this.totalSpent());
-  protected readonly overBudget = computed(() => this.plannedTotal() > 0 && this.budgetLeft() < 0);
-  protected readonly budgetPct = computed(() => {
-    const planned = this.plannedTotal();
-    if (planned <= 0) return 0;
-    return Math.min(100, (this.totalSpent() / planned) * 100);
-  });
 
   protected readonly momTrend = computed(() => {
     const prev = this.prevMonthTotal();
