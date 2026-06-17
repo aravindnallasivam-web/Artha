@@ -20,6 +20,8 @@ const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 const PKCE_STORAGE_KEY = 'artha.pkce';
 const STATE_STORAGE_KEY = 'artha.oauth.state';
+/** Last signed-in Google user id — used to detect an account switch. */
+const LAST_USER_KEY = 'artha.lastUserId';
 
 interface PendingFlow {
   codeVerifier: string;
@@ -200,6 +202,17 @@ export class GoogleAuthService {
 
     localStorage.removeItem(PKCE_STORAGE_KEY);
     localStorage.removeItem(STATE_STORAGE_KEY);
+
+    // Account-change guard: if a *different* Google user just signed in, wipe
+    // any local data from the previous account before continuing — covers the
+    // case where the switch didn't go through a clean sign-out.
+    const previousUserId = localStorage.getItem(LAST_USER_KEY);
+    if (previousUserId && previousUserId !== result.user.id) {
+      await this.cache.clear();
+      this.clearAccountLocalState();
+      this.bootstrap.reset();
+    }
+    localStorage.setItem(LAST_USER_KEY, result.user.id);
 
     // The session just marks "signed in"; Drive calls authorize via the token
     // store (which refreshes silently), so the session can be long-lived.
