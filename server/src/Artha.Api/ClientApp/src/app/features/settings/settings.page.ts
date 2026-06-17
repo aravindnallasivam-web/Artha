@@ -173,11 +173,8 @@ import { SettingsStore } from './settings.store';
                 <span class="icon-chip chip-positive" slot="start"><ion-icon name="people"></ion-icon></span>
                 <ion-label class="ion-text-wrap">
                   <h2>Sharing with {{ s.email }}</h2>
-                  <p>Read-only access to your expenses.</p>
+                  <p>Read-only · updates automatically.</p>
                 </ion-label>
-              </ion-item>
-              <ion-item button detail="false" [disabled]="shareBusy()" (click)="refreshShare()">
-                <ion-label>Update shared copy</ion-label>
               </ion-item>
               <ion-item button detail="false" [disabled]="shareBusy()" (click)="stopShare()">
                 <ion-label color="danger">Stop sharing</ion-label>
@@ -511,22 +508,6 @@ export class SettingsPage implements OnInit {
       await this.notifier.notifyInfo(`Shared your expenses with ${share.email} (read-only).`);
     } catch (err) {
       await this.notifier.notifyError(err instanceof Error ? err.message : 'Could not share.');
-    } finally {
-      this.shareBusy.set(false);
-    }
-  }
-
-  async refreshShare(): Promise<void> {
-    if (this.shareBusy()) {
-      return;
-    }
-    this.shareBusy.set(true);
-    try {
-      await this.sharing.refresh();
-      this.outShare.set(this.sharing.currentShare());
-      await this.notifier.notifyInfo('Updated the shared copy.');
-    } catch (err) {
-      await this.notifier.notifyError(err instanceof Error ? err.message : 'Could not update.');
     } finally {
       this.shareBusy.set(false);
     }

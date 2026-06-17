@@ -7,6 +7,7 @@
 // folder via the Google Picker (Phase 3).
 
 import { Injectable, inject } from '@angular/core';
+import { App } from '@capacitor/app';
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { SessionService } from '../auth/session.service';
 import { Expense } from '../models/expense.model';
@@ -39,6 +40,7 @@ export class DriveSharingService {
   private readonly tokens = inject(GoogleTokenStore);
   private readonly repo = inject(AppDataRepository);
   private readonly session = inject(SessionService);
+  private lifecycleBound = false;
 
   /** The current outbound share, if any. */
   currentShare(): OutboundShare | null {
@@ -48,6 +50,34 @@ export class DriveSharingService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Keep the shared copy current automatically: refresh on app start and each
+   * time the app is backgrounded (when editing is likely done). Call once at
+   * startup. No-op when nothing is shared.
+   */
+  async initialize(): Promise<void> {
+    this.bindLifecycle();
+    if (this.currentShare()) {
+      try {
+        await this.refresh();
+      } catch {
+        // Best-effort; will retry on the next background/start.
+      }
+    }
+  }
+
+  private bindLifecycle(): void {
+    if (this.lifecycleBound) {
+      return;
+    }
+    this.lifecycleBound = true;
+    void App.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive && this.currentShare()) {
+        void this.refresh().catch(() => undefined);
+      }
+    });
   }
 
   /** Share (read-only) with an email: create/refresh the snapshot + grant access. */
