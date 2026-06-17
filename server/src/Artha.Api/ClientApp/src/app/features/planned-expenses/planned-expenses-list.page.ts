@@ -30,14 +30,21 @@ import {
   monthlyEquivalent,
 } from '../../core/models/planned-expense.model';
 import { CategoriesStore } from '../categories/categories.store';
+import { DonutChartComponent, DonutSegment } from '../reports/donut-chart.component';
 import { SettingsStore } from '../settings/settings.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
+
+const PALETTE = [
+  '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899',
+  '#06b6d4', '#ef4444', '#84cc16', '#f97316', '#6366f1',
+];
 
 @Component({
   selector: 'artha-planned-expenses-list',
   standalone: true,
   imports: [
     CurrencyPipe,
+    DonutChartComponent,
     IonCard,
     IonCardContent,
     IonContent,
@@ -85,6 +92,27 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           <div class="sum-foot">
             {{ store.active().length }} bill{{ store.active().length === 1 ? '' : 's' }} committed
           </div>
+
+          @if (categoryDonut().length > 0) {
+            <div class="donut-wrap">
+              <artha-donut-chart
+                class="donut"
+                [segments]="categoryDonut()"
+                [currency]="settings.currency()"
+              ></artha-donut-chart>
+              <ul class="legend">
+                @for (seg of categoryDonut(); track seg.label) {
+                  <li>
+                    <span class="dot" [style.background]="seg.color"></span>
+                    <span class="lg-name">{{ seg.label }}</span>
+                    <span class="lg-amt num">
+                      {{ seg.value | currency: settings.currency() : 'symbol' : '1.0-0' }}/mo
+                    </span>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
         </ion-card-content>
       </ion-card>
 
@@ -162,6 +190,17 @@ import { PlannedExpensesStore } from './planned-expenses.store';
       margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--artha-border, rgba(0,0,0,0.08));
       font-size: 12.5px; color: var(--ion-color-medium); text-align: center; line-height: 1.4;
     }
+    .donut-wrap {
+      display: flex; align-items: center; gap: 16px;
+      margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--artha-border, rgba(0,0,0,0.08));
+    }
+    .donut-wrap .donut { width: 120px; flex-shrink: 0; }
+    .legend { flex: 1; min-width: 0; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+    .legend li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .legend .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .legend .lg-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--artha-text); }
+    .legend .lg-amt { font-weight: 700; color: var(--artha-text); }
   `],
 })
 export class PlannedExpensesListPage implements OnInit {
@@ -174,6 +213,26 @@ export class PlannedExpensesListPage implements OnInit {
 
   /** Total committed per year: monthly-equivalent total × 12. */
   protected readonly annualTotal = computed(() => this.store.plannedTotal() * 12);
+
+  /** Planned commitments grouped by category (monthly-equivalent) for the donut. */
+  protected readonly categoryDonut = computed<DonutSegment[]>(() => {
+    const byId = this.categories.byId();
+    const totals = new Map<string, number>();
+    for (const p of this.store.active()) {
+      const key = p.categoryId ?? '';
+      totals.set(key, (totals.get(key) ?? 0) + monthlyEquivalent(p));
+    }
+    return [...totals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, value], idx) => {
+        const cat = id ? byId[id] : null;
+        return {
+          label: cat?.name ?? 'Uncategorised',
+          value,
+          color: cat?.color ?? PALETTE[idx % PALETTE.length],
+        };
+      });
+  });
 
   ngOnInit(): void {
     void this.store.load();
