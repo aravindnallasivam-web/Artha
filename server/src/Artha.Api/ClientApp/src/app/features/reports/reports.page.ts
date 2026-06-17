@@ -142,10 +142,20 @@ interface CatRow {
               <div class="card donut-card">
                 <div class="card-head">
                   <h2>By category</h2>
-                  <span class="card-sub">Share of spend</span>
+                  @if (donutRoot()) {
+                    <button type="button" class="card-sub link" (click)="clearDonutDrill()">‹ {{ donutRootName() }}</button>
+                  } @else {
+                    <span class="card-sub">Share of spend</span>
+                  }
                 </div>
                 <div class="donut-body">
-                  <artha-donut-chart class="donut" [segments]="donutSegments()" [currency]="currency()"></artha-donut-chart>
+                  <artha-donut-chart
+                    class="donut"
+                    [segments]="donutSegments()"
+                    [currency]="currency()"
+                    [interactive]="true"
+                    (segmentSelect)="onDonutSelect($event)"
+                  ></artha-donut-chart>
                   <ul class="legend">
                     @for (seg of donutSegments(); track seg.label) {
                       <li>
@@ -304,6 +314,7 @@ interface CatRow {
     .card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
     .card-head h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--artha-text); }
     .card-sub { font-size: 11.5px; color: var(--artha-text-subtle); }
+    .card-sub.link { background: transparent; border: 0; cursor: pointer; color: var(--artha-accent, #2f6df6); font-weight: 600; padding: 0; }
     .charts-row { display: flex; gap: 18px; align-items: stretch; }
     .trend-card { flex: 1.7; }
     .donut-card { flex: 1; }
@@ -486,9 +497,25 @@ export class ReportsPage implements OnInit {
 
   protected readonly topCategory = computed(() => this.byCategory()[0] ?? null);
 
+  /** Drilled-into root category id (donut shows its subcategory split), or null. */
+  protected readonly donutRoot = signal<string | null>(null);
+  protected readonly donutRootName = computed(() => {
+    const r = this.donutRoot();
+    return r ? this.byCategory().find((c) => c.categoryId === r)?.name ?? '' : '';
+  });
+
   protected readonly donutSegments = computed<DonutSegment[]>(() => {
     const cats = this.byCategory();
-    const top = cats.slice(0, 5).map((c) => ({ label: c.name, value: c.total, color: c.color }));
+    const root = this.donutRoot();
+    if (root) {
+      const kids = cats.find((c) => c.categoryId === root)?.children ?? [];
+      if (kids.length) {
+        return kids.map((c) => ({ id: c.categoryId, label: c.name, value: c.total, color: c.color }));
+      }
+    }
+    const top: DonutSegment[] = cats
+      .slice(0, 5)
+      .map((c) => ({ id: c.categoryId, label: c.name, value: c.total, color: c.color }));
     const rest = cats.slice(5).reduce((s, c) => s + c.total, 0);
     if (rest > 0) top.push({ label: 'Other', value: rest, color: OTHER_COLOR });
     return top;
@@ -512,6 +539,21 @@ export class ReportsPage implements OnInit {
     }
     return arr;
   });
+
+  /** Click a root slice to drill into its subcategories (when it has >1). */
+  protected onDonutSelect(seg: DonutSegment): void {
+    if (this.donutRoot() || !seg.id) {
+      return;
+    }
+    const kids = this.byCategory().find((c) => c.categoryId === seg.id)?.children;
+    if (kids && kids.length > 1) {
+      this.donutRoot.set(seg.id);
+    }
+  }
+
+  protected clearDonutDrill(): void {
+    this.donutRoot.set(null);
+  }
 
   protected readonly topMerchants = computed(() => {
     const map = new Map<string, number>();
@@ -595,6 +637,8 @@ export class ReportsPage implements OnInit {
   }
 
   private async refresh(): Promise<void> {
+    // Changing period exits any donut drill-down.
+    this.donutRoot.set(null);
     this.loading.set(true);
     try {
       if (this.view() === 'monthly') {
