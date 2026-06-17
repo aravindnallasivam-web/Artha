@@ -683,5 +683,8 @@ export class SettingsPage implements OnInit {
   async signOut(): Promise<void> {
     await this.googleAuth.logout();
     await this.router.navigate(['/login']);
+    // Hard reload so no in-memory state (store signals, caches) from the
+    // previous account survives into the next sign-in.
+    window.location.reload();
   }
 }

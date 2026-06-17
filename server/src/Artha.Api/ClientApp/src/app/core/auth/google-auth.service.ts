@@ -229,6 +229,22 @@ export class GoogleAuthService {
     await this.googleTokens.clear();
     this.bootstrap.reset();
     this.session.clear();
+    // Clear account-specific local state so the next account starts clean
+    // (SMS learned mappings/queue, family-sharing links). Device-level prefs
+    // like theme and the app lock are intentionally kept.
+    this.clearAccountLocalState();
+  }
+
+  private clearAccountLocalState(): void {
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('artha.sms.') || key.startsWith('artha.sharing.')) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch {
+      // Best-effort.
+    }
   }
 
 }
