@@ -524,8 +524,10 @@ export class ReportsPage implements OnInit {
   protected readonly topCategory = computed(() => this.byCategory()[0] ?? null);
 
   // Planned (predefined) monthly bills — a fixed budget compared against actual.
-  protected readonly plannedTotal = computed(() => this.plannedStore.plannedTotal());
-  protected readonly plannedCount = computed(() => this.plannedStore.active().length);
+  // Compare actual spend against planned *spending* commitments only — investment
+  // / excluded-from-reports categories are left out, matching the spend total.
+  protected readonly plannedTotal = computed(() => this.plannedStore.plannedSpendTotal());
+  protected readonly plannedCount = computed(() => this.plannedStore.plannedSpending().length);
   protected readonly plannedDelta = computed(() => Math.abs(this.plannedTotal() - this.total()));
 
   protected readonly donutSegments = computed<DonutSegment[]>(() => {

@@ -71,8 +71,12 @@ export class ReportsDriveService {
       total: sum(counted),
       count: counted.length,
       // Each planned bill contributes its monthly share (amount / interval).
-      plannedTotal: planned.reduce((t, p) => t + monthlyEquivalent(p), 0),
-      plannedCount: planned.length,
+      // Investment/excluded-from-reports categories are left out so this lines
+      // up with the spend total above.
+      plannedTotal: planned
+        .filter((p) => !p.categoryId || !excluded.has(p.categoryId))
+        .reduce((t, p) => t + monthlyEquivalent(p), 0),
+      plannedCount: planned.filter((p) => !p.categoryId || !excluded.has(p.categoryId)).length,
       byCategory,
     };
   }
