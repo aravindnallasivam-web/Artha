@@ -24,7 +24,8 @@ import {
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
 import { DriveSharingService } from '../../core/drive/drive-sharing.service';
-import { OutboundShare } from '../../core/models/shared-ledger.model';
+import { InboundShare, OutboundShare } from '../../core/models/shared-ledger.model';
+import { SharedLedgerService } from '../shared-ledger/shared-ledger.service';
 import { AppLockService } from '../../core/security/app-lock.service';
 import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
@@ -163,42 +164,67 @@ import { SettingsStore } from './settings.store';
             <ion-item button detail="false" (click)="reconnectForSharing()">
               <ion-label color="primary">Reconnect Google</ion-label>
             </ion-item>
-          } @else if (outShare(); as s) {
-            <ion-item lines="none">
-              <span class="icon-chip chip-positive" slot="start"><ion-icon name="people"></ion-icon></span>
-              <ion-label class="ion-text-wrap">
-                <h2>Sharing with {{ s.email }}</h2>
-                <p>Read-only access to your expenses.</p>
-              </ion-label>
-            </ion-item>
-            <ion-item button detail="false" [disabled]="shareBusy()" (click)="refreshShare()">
-              <ion-label>Update shared copy</ion-label>
-            </ion-item>
-            <ion-item button detail="false" [disabled]="shareBusy()" (click)="stopShare()">
-              <ion-label color="danger">Stop sharing</ion-label>
-            </ion-item>
           } @else {
-            <ion-item lines="none">
-              <span class="icon-chip chip-accent" slot="start"><ion-icon name="people"></ion-icon></span>
-              <ion-label class="ion-text-wrap">
-                <h2>Share your expenses (read-only)</h2>
-                <p>Enter a family member's Google email — they'll get read-only access to your expenses.</p>
-              </ion-label>
-            </ion-item>
-            <ion-item lines="none">
-              <ion-input
-                label="Email"
-                labelPlacement="stacked"
-                type="email"
-                inputmode="email"
-                placeholder="name@gmail.com"
-                [value]="shareEmail()"
-                (ionInput)="shareEmail.set($any($event.target).value)"
-              ></ion-input>
-            </ion-item>
-            <ion-item button detail="false" [disabled]="shareBusy() || shareEmail().trim().length === 0" (click)="shareExpenses()">
-              <ion-label color="primary">{{ shareBusy() ? 'Sharing…' : 'Share my expenses' }}</ion-label>
-            </ion-item>
+            <!-- Share my expenses (producer) -->
+            @if (outShare(); as s) {
+              <ion-item lines="none">
+                <span class="icon-chip chip-positive" slot="start"><ion-icon name="people"></ion-icon></span>
+                <ion-label class="ion-text-wrap">
+                  <h2>Sharing with {{ s.email }}</h2>
+                  <p>Read-only access to your expenses.</p>
+                </ion-label>
+              </ion-item>
+              <ion-item button detail="false" [disabled]="shareBusy()" (click)="refreshShare()">
+                <ion-label>Update shared copy</ion-label>
+              </ion-item>
+              <ion-item button detail="false" [disabled]="shareBusy()" (click)="stopShare()">
+                <ion-label color="danger">Stop sharing</ion-label>
+              </ion-item>
+            } @else {
+              <ion-item lines="none">
+                <span class="icon-chip chip-accent" slot="start"><ion-icon name="people"></ion-icon></span>
+                <ion-label class="ion-text-wrap">
+                  <h2>Share your expenses (read-only)</h2>
+                  <p>Enter a family member's Google email — they'll get read-only access to your expenses.</p>
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-input
+                  label="Email"
+                  labelPlacement="stacked"
+                  type="email"
+                  inputmode="email"
+                  placeholder="name@gmail.com"
+                  [value]="shareEmail()"
+                  (ionInput)="shareEmail.set($any($event.target).value)"
+                ></ion-input>
+              </ion-item>
+              <ion-item button detail="false" [disabled]="shareBusy() || shareEmail().trim().length === 0" (click)="shareExpenses()">
+                <ion-label color="primary">{{ shareBusy() ? 'Sharing…' : 'Share my expenses' }}</ion-label>
+              </ion-item>
+            }
+
+            <!-- View someone else's expenses (consumer) -->
+            @if (inShare(); as ins) {
+              <ion-item lines="none">
+                <span class="icon-chip chip-positive" slot="start"><ion-icon name="people"></ion-icon></span>
+                <ion-label class="ion-text-wrap">
+                  <h2>Viewing {{ ins.ownerName }}</h2>
+                  <p>Read-only shared ledger.</p>
+                </ion-label>
+              </ion-item>
+              <ion-item button detail="true" (click)="viewShared()">
+                <ion-label>View shared expenses</ion-label>
+              </ion-item>
+              <ion-item button detail="false" (click)="disconnectShared()">
+                <ion-label color="danger">Disconnect</ion-label>
+              </ion-item>
+            } @else {
+              <ion-item button detail="false" [disabled]="connectBusy()" (click)="connectShared()">
+                <span class="icon-chip chip-accent" slot="start"><ion-icon name="people"></ion-icon></span>
+                <ion-label color="primary">{{ connectBusy() ? 'Connecting…' : 'Connect a shared account' }}</ion-label>
+              </ion-item>
+            }
           }
         </ion-list>
 
@@ -407,6 +433,7 @@ export class SettingsPage implements OnInit {
   protected readonly sms = inject(SmsCaptureService);
   protected readonly appLock = inject(AppLockService);
   private readonly sharing = inject(DriveSharingService);
+  private readonly sharedLedger = inject(SharedLedgerService);
   protected readonly theme = inject(ThemeService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
@@ -425,6 +452,8 @@ export class SettingsPage implements OnInit {
   protected readonly outShare = signal<OutboundShare | null>(null);
   protected readonly shareEmail = signal('');
   protected readonly shareBusy = signal(false);
+  protected readonly inShare = signal<InboundShare | null>(null);
+  protected readonly connectBusy = signal(false);
   protected readonly appVersion = signal(environment.version);
 
   /** Up to two uppercased initials for the profile avatar. */
@@ -443,6 +472,7 @@ export class SettingsPage implements OnInit {
     this.appLockEnabled.set(this.appLock.isEnabled());
     void this.appLock.isAvailable().then((a) => this.appLockAvailable.set(a));
     this.outShare.set(this.sharing.currentShare());
+    this.inShare.set(this.sharedLedger.connectedShare());
     void this.googleAuth.hasSharingScope().then((v) => this.sharingScope.set(v));
     void this.loadVersion();
   }
@@ -502,6 +532,34 @@ export class SettingsPage implements OnInit {
     } finally {
       this.shareBusy.set(false);
     }
+  }
+
+  /** Connect to a ledger someone shared with you (via the Google Picker). */
+  async connectShared(): Promise<void> {
+    if (this.connectBusy()) {
+      return;
+    }
+    this.connectBusy.set(true);
+    try {
+      const share = await this.sharedLedger.connect();
+      this.inShare.set(share);
+      if (share) {
+        await this.notifier.notifyInfo(`Connected to ${share.ownerName}.`);
+      }
+    } catch (err) {
+      await this.notifier.notifyError(err instanceof Error ? err.message : 'Could not connect.');
+    } finally {
+      this.connectBusy.set(false);
+    }
+  }
+
+  disconnectShared(): void {
+    this.sharedLedger.disconnect();
+    this.inShare.set(null);
+  }
+
+  viewShared(): void {
+    void this.router.navigate(['/shared']);
   }
 
   /** Toggle the biometric app lock; reflects the real state if auth is cancelled. */

@@ -8,6 +8,9 @@ export const environment = {
     clientId: '952436597649-6bpd2mli17eg30falj66bqpt8p5svvso.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
     redirectPath: '/auth/callback',
+    // Google Picker (consumer-side family sharing). Fill from your Cloud project.
+    pickerApiKey: '',
+    appId: '',
     nativeRedirectUri:
       'com.googleusercontent.apps.952436597649-6bpd2mli17eg30falj66bqpt8p5svvso:/oauth2redirect',
     scopes: [

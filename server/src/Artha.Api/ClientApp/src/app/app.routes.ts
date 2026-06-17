@@ -119,6 +119,11 @@ export const routes: Routes = [
           import('./features/categories/categories-list.page').then((m) => m.CategoriesListPage),
       },
       {
+        path: 'shared',
+        loadComponent: () =>
+          import('./features/shared-ledger/shared-ledger.page').then((m) => m.SharedLedgerPage),
+      },
+      {
         path: 'settings',
         loadComponent: () =>
           import('./features/settings/settings.page').then((m) => m.SettingsPage),
