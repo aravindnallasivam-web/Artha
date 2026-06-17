@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, computed, inject } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   AlertController,
@@ -94,11 +94,18 @@ const PALETTE = [
           </div>
 
           @if (categoryDonut().length > 0) {
+            @if (drillRoot(); as r) {
+              <button type="button" class="drill-back" (click)="clearDrill()">
+                ‹ {{ rootName() }} — tap to go back
+              </button>
+            }
             <div class="donut-wrap">
               <artha-donut-chart
                 class="donut"
                 [segments]="categoryDonut()"
                 [currency]="settings.currency()"
+                [interactive]="true"
+                (segmentSelect)="onDonutSelect($event)"
               ></artha-donut-chart>
               <ul class="legend">
                 @for (seg of categoryDonut(); track seg.label) {
@@ -190,6 +197,10 @@ const PALETTE = [
       margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--artha-border, rgba(0,0,0,0.08));
       font-size: 12.5px; color: var(--ion-color-medium); text-align: center; line-height: 1.4;
     }
+    .drill-back {
+      margin-top: 12px; background: transparent; border: 0; cursor: pointer;
+      font-size: 12.5px; font-weight: 600; color: var(--artha-accent, #2f6df6); padding: 2px 0;
+    }
     .donut-wrap {
       display: flex; align-items: center; gap: 16px;
       margin-top: 14px; padding-top: 14px;
@@ -214,25 +225,71 @@ export class PlannedExpensesListPage implements OnInit {
   /** Total committed per year: monthly-equivalent total × 12. */
   protected readonly annualTotal = computed(() => this.store.plannedTotal() * 12);
 
-  /** Planned commitments grouped by category (monthly-equivalent) for the donut. */
+  /** Drilled-into root category id (showing its subcategory split), or null. */
+  protected readonly drillRoot = signal<string | null>(null);
+  protected readonly rootName = computed(() => {
+    const r = this.drillRoot();
+    return r ? this.categories.byId()[r]?.name ?? '' : '';
+  });
+
+  /**
+   * Planned commitments as donut slices (monthly-equivalent). At the top level
+   * they're grouped by root (parent) category; once drilled into a root, they're
+   * its per-subcategory split.
+   */
   protected readonly categoryDonut = computed<DonutSegment[]>(() => {
     const byId = this.categories.byId();
+    const root = this.drillRoot();
     const totals = new Map<string, number>();
     for (const p of this.store.active()) {
-      const key = p.categoryId ?? '';
-      totals.set(key, (totals.get(key) ?? 0) + monthlyEquivalent(p));
+      const catId = p.categoryId ?? '';
+      const rootId = catId ? this.categories.rootIdOf(catId) : '';
+      if (root) {
+        if (rootId !== root) continue;
+        const key = catId || root;
+        totals.set(key, (totals.get(key) ?? 0) + monthlyEquivalent(p));
+      } else {
+        totals.set(rootId, (totals.get(rootId) ?? 0) + monthlyEquivalent(p));
+      }
     }
     return [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([id, value], idx) => {
         const cat = id ? byId[id] : null;
         return {
+          id,
           label: cat?.name ?? 'Uncategorised',
           value,
           color: cat?.color ?? PALETTE[idx % PALETTE.length],
         };
       });
   });
+
+  /** Clicking a top-level root slice drills into its subcategories (if any). */
+  protected onDonutSelect(seg: DonutSegment): void {
+    if (this.drillRoot() || !seg.id) {
+      return;
+    }
+    if (this.distinctCategoriesUnder(seg.id) > 1) {
+      this.drillRoot.set(seg.id);
+    }
+  }
+
+  protected clearDrill(): void {
+    this.drillRoot.set(null);
+  }
+
+  /** How many distinct categories appear under a root among active planned items. */
+  private distinctCategoriesUnder(rootId: string): number {
+    const seen = new Set<string>();
+    for (const p of this.store.active()) {
+      const catId = p.categoryId ?? '';
+      if (catId && this.categories.rootIdOf(catId) === rootId) {
+        seen.add(catId);
+      }
+    }
+    return seen.size;
+  }
 
   ngOnInit(): void {
     void this.store.load();

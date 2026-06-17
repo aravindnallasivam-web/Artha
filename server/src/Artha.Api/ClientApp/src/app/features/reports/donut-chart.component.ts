@@ -1,9 +1,11 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 
 export interface DonutSegment {
   label: string;
   value: number;
   color: string;
+  /** Optional identifier so callers can react to a slice being clicked. */
+  id?: string;
 }
 
 /**
@@ -23,7 +25,9 @@ export interface DonutSegment {
         @for (a of arcs(); track a.idx) {
           <circle cx="60" cy="60" [attr.r]="radius" fill="none"
             [attr.stroke]="a.color" [attr.stroke-width]="thickness"
-            [attr.stroke-dasharray]="a.dash" [attr.stroke-dashoffset]="a.offset" />
+            [attr.stroke-dasharray]="a.dash" [attr.stroke-dashoffset]="a.offset"
+            [style.cursor]="interactive() ? 'pointer' : null"
+            (click)="segmentSelect.emit(a.seg)" />
         }
       </g>
       <text x="60" y="57" text-anchor="middle" font-size="15" font-weight="700"
@@ -40,6 +44,9 @@ export interface DonutSegment {
 export class DonutChartComponent {
   readonly segments = input.required<DonutSegment[]>();
   readonly currency = input<string>('USD');
+  /** When true, slices show a pointer cursor (callers handle segmentSelect). */
+  readonly interactive = input<boolean>(false);
+  readonly segmentSelect = output<DonutSegment>();
   readonly centerBottom = 'total';
 
   protected readonly radius = 44;
@@ -55,6 +62,7 @@ export class DonutChartComponent {
       const len = (s.value / total) * this.circumference;
       const arc = {
         idx,
+        seg: s,
         color: s.color,
         dash: `${len.toFixed(2)} ${(this.circumference - len).toFixed(2)}`,
         offset: (-offset).toFixed(2),
