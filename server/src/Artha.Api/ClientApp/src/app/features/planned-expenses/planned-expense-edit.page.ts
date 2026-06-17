@@ -3,6 +3,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
+  AlertController,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -16,7 +17,9 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { PlannedCycle, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import { DriveRequestError } from '../../core/drive/drive-errors';
+import { AmountInputDirective } from '../../shared/amount-input.directive';
+import { PlannedExpenseUpsertRequest, intervalOf } from '../../core/models/planned-expense.model';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { SettingsStore } from '../settings/settings.store';
@@ -28,6 +31,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
   imports: [
     DecimalPipe,
     ReactiveFormsModule,
+    AmountInputDirective,
     CategoryPickerComponent,
     IonBackButton,
     IonButton,
@@ -48,6 +52,13 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           <ion-back-button defaultHref="/planned-expenses"></ion-back-button>
         </ion-buttons>
         <ion-title>{{ mode() === 'edit' ? 'Edit planned expense' : 'New planned expense' }}</ion-title>
+        @if (mode() === 'edit') {
+          <ion-buttons slot="end">
+            <ion-button color="danger" (click)="remove()" aria-label="Delete planned expense">
+              <ion-icon slot="icon-only" name="trash-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        }
       </ion-toolbar>
     </ion-header>
 
@@ -59,45 +70,48 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           <div class="wrap">
             <!-- Amount hero -->
             <div class="amount">
-              <div class="amount-label">
-                {{ form.controls.cycle.value === 'yearly' ? 'YEARLY AMOUNT' : 'MONTHLY AMOUNT' }}
-              </div>
+              <div class="amount-label">AMOUNT PER PAYMENT</div>
               <div class="amount-row">
                 <span class="cur">{{ currencySymbol() }}</span>
                 <input
                   class="amount-input"
-                  type="number"
+                  type="text"
                   inputmode="decimal"
-                  step="0.01"
-                  min="0"
                   placeholder="0"
                   formControlName="amount"
+                  arthaAmount
                   (focus)="selectAll($event)"
                   aria-label="Amount"
                 />
               </div>
-              @if (form.controls.cycle.value === 'yearly' && form.controls.amount.value) {
+              @if (intervalValue() > 1 && form.controls.amount.value) {
                 <div class="amount-sub">
-                  ≈ {{ currencySymbol() }}{{ +form.controls.amount.value / 12 | number: '1.0-0' }} / month in reports
+                  ≈ {{ currencySymbol() }}{{ +form.controls.amount.value / intervalValue() | number: '1.0-0' }} / month in reports
                 </div>
               }
             </div>
 
-            <!-- Billing cycle -->
-            <div class="section-label">Billing cycle</div>
+            <!-- Repeat frequency -->
+            <div class="section-label">Repeats every</div>
             <div class="chips">
-              <button
-                type="button"
-                class="chip"
-                [class.sel]="form.controls.cycle.value === 'monthly'"
-                (click)="setCycle('monthly')"
-              >Monthly</button>
-              <button
-                type="button"
-                class="chip"
-                [class.sel]="form.controls.cycle.value === 'yearly'"
-                (click)="setCycle('yearly')"
-              >Yearly</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 1" (click)="setInterval(1)">Monthly</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 3" (click)="setInterval(3)">3 months</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 6" (click)="setInterval(6)">6 months</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 12" (click)="setInterval(12)">Yearly</button>
+            </div>
+            <div class="card">
+              <ion-item lines="none">
+                <ion-input
+                  label="Every (months)"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="60"
+                  placeholder="e.g. 4"
+                  formControlName="intervalMonths"
+                ></ion-input>
+              </ion-item>
             </div>
 
             <!-- Name -->
@@ -225,6 +239,7 @@ export class PlannedExpenseEditPage implements OnInit {
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly alertCtrl = inject(AlertController);
 
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
@@ -233,7 +248,7 @@ export class PlannedExpenseEditPage implements OnInit {
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(60)]],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
-    cycle: ['monthly' as PlannedCycle, Validators.required],
+    intervalMonths: [1, [Validators.required, Validators.min(1), Validators.max(60)]],
     categoryId: [null as string | null],
     dayOfMonth: [null as number | null, [Validators.min(1), Validators.max(31)]],
   });
@@ -257,9 +272,27 @@ export class PlannedExpenseEditPage implements OnInit {
           this.form.patchValue({
             name: item.name,
             amount: item.amount,
-            cycle: item.cycle,
+            intervalMonths: intervalOf(item),
             categoryId: item.categoryId,
             dayOfMonth: item.dayOfMonth,
+          });
+        }
+      } else {
+        // Prefill when launched from an expense's "Make recurring" action.
+        const p = (history.state ?? {}) as Partial<{
+          name: string;
+          amount: number;
+          categoryId: string | null;
+          dayOfMonth: number | null;
+          intervalMonths: number;
+        }>;
+        if (p.name || p.amount != null) {
+          this.form.patchValue({
+            name: p.name ?? '',
+            amount: p.amount ?? null,
+            intervalMonths: p.intervalMonths ?? 1,
+            categoryId: p.categoryId ?? null,
+            dayOfMonth: p.dayOfMonth ?? null,
           });
         }
       }
@@ -268,8 +301,13 @@ export class PlannedExpenseEditPage implements OnInit {
     }
   }
 
-  protected setCycle(cycle: PlannedCycle): void {
-    this.form.patchValue({ cycle });
+  /** Current interval value (coerced to a number) for the template. */
+  protected intervalValue(): number {
+    return Number(this.form.controls.intervalMonths.value) || 1;
+  }
+
+  protected setInterval(months: number): void {
+    this.form.patchValue({ intervalMonths: months });
   }
 
   protected selectAll(event: Event): void {
@@ -297,7 +335,7 @@ export class PlannedExpenseEditPage implements OnInit {
     const payload: PlannedExpenseUpsertRequest = {
       name: (raw.name ?? '').trim(),
       amount: Number(raw.amount),
-      cycle: raw.cycle,
+      intervalMonths: Number(raw.intervalMonths) || 1,
       categoryId: raw.categoryId || null,
       dayOfMonth: raw.dayOfMonth != null && raw.dayOfMonth !== ('' as unknown as number)
         ? Number(raw.dayOfMonth)
@@ -311,11 +349,45 @@ export class PlannedExpenseEditPage implements OnInit {
       }
       await this.router.navigate(['/planned-expenses']);
     } catch (err) {
+      // Surface the real reason (duplicate name, validation, archived category,
+      // a Drive conflict) instead of a generic message.
+      const detail = err instanceof DriveRequestError ? err.message : null;
       await this.notifier.notifyError(
-        this.editingId ? 'Could not save changes.' : 'Could not add planned expense.',
+        detail ?? (this.editingId ? 'Could not save changes.' : 'Could not add planned expense.'),
       );
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /** Delete (archive) this planned expense, after confirming. */
+  async remove(): Promise<void> {
+    const id = this.editingId;
+    if (!id) {
+      return;
+    }
+    const alert = await this.alertCtrl.create({
+      header: 'Delete planned expense?',
+      message: 'It will be removed from your planned list.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: () => {
+            void (async () => {
+              try {
+                await this.store.remove(id);
+                await this.router.navigate(['/planned-expenses']);
+              } catch {
+                await this.notifier.notifyError('Could not delete planned expense.');
+              }
+            })();
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 }

@@ -4,11 +4,13 @@ import {
   PlannedExpenseUpsertRequest,
   monthlyEquivalent,
 } from '../../core/models/planned-expense.model';
+import { CategoriesStore } from '../categories/categories.store';
 import { PlannedExpensesApi } from './planned-expenses.api';
 
 @Injectable({ providedIn: 'root' })
 export class PlannedExpensesStore {
   private readonly api = inject(PlannedExpensesApi);
+  private readonly categories = inject(CategoriesStore);
 
   private readonly _items = signal<PlannedExpense[]>([]);
   private readonly _includeArchived = signal<boolean>(false);
@@ -29,10 +31,30 @@ export class PlannedExpensesStore {
     }
     return map;
   });
-  // Total monthly outlay across active planned expenses, with yearly bills
-  // spread across 12 months so the figure is comparable to monthly spend.
+  // Total monthly outlay across active planned expenses, with longer cycles
+  // spread to a monthly equivalent. This counts everything — bills, insurance,
+  // investments — i.e. all committed outflows (used by the list + dashboard).
   readonly plannedTotal = computed(() =>
     this.active().reduce((sum, p) => sum + monthlyEquivalent(p), 0),
+  );
+
+  /** Active planned items that count as spending — i.e. whose category isn't
+   *  excluded from reports (investments/transfers are left out). */
+  readonly plannedSpending = computed(() => {
+    const byId = this.categories.byId();
+    return this.active().filter((p) => {
+      if (!p.categoryId) return true;
+      const cat = byId[p.categoryId];
+      if (!cat) return true;
+      const parentExcluded = cat.parentId ? byId[cat.parentId]?.excludeFromReports : false;
+      return !cat.excludeFromReports && !parentExcluded;
+    });
+  });
+
+  /** Monthly spending commitments only (excludes investment-type categories).
+   *  Used where planned is compared against actual spend (reports). */
+  readonly plannedSpendTotal = computed(() =>
+    this.plannedSpending().reduce((sum, p) => sum + monthlyEquivalent(p), 0),
   );
 
   async load(includeArchived = false, force = false): Promise<void> {

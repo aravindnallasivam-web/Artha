@@ -27,6 +27,7 @@ import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.s
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
 import { TransactionType } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
+import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from './expenses.store';
@@ -36,6 +37,7 @@ import { ExpensesStore } from './expenses.store';
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    AmountInputDirective,
     CategoryPickerComponent,
     IonBackButton,
     IonButton,
@@ -67,6 +69,13 @@ import { ExpensesStore } from './expenses.store';
         <ion-title>
           {{ mode() === 'edit' ? 'Edit ' : 'New ' }}{{ isIncome() ? 'income' : 'expense' }}
         </ion-title>
+        @if (mode() === 'edit' && !isIncome()) {
+          <ion-buttons slot="end">
+            <ion-button (click)="makeRecurring()" aria-label="Make recurring">
+              <ion-icon name="calendar-outline" slot="icon-only"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        }
       </ion-toolbar>
     </ion-header>
 
@@ -89,12 +98,11 @@ import { ExpensesStore } from './expenses.store';
                 <span class="cur">{{ isIncome() ? '+' : '' }}{{ currencySymbol() }}</span>
                 <input
                   class="amount-input"
-                  type="number"
+                  type="text"
                   inputmode="decimal"
-                  step="0.01"
-                  min="0"
                   placeholder="0"
                   formControlName="amount"
+                  arthaAmount
                   (focus)="selectAll($event)"
                   aria-label="Amount"
                 />
@@ -336,6 +344,24 @@ export class ExpenseEditPage implements OnInit {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** Turn this expense into a planned (recurring) bill — prefill the planned
+      editor with its amount, category, name and day, for the user to confirm. */
+  protected makeRecurring(): void {
+    const raw = this.form.getRawValue();
+    const date = this.dateValue();
+    const day = date ? Number(date.slice(8, 10)) : NaN;
+    const catName = raw.categoryId ? this.categoriesStore.byId()[raw.categoryId]?.name ?? null : null;
+    void this.router.navigate(['/planned-expenses/new'], {
+      state: {
+        name: raw.note?.trim() || catName || '',
+        amount: raw.amount || null,
+        categoryId: raw.categoryId || null,
+        dayOfMonth: Number.isFinite(day) && day >= 1 && day <= 31 ? day : null,
+        intervalMonths: 1,
+      },
+    });
   }
 
   async save(): Promise<void> {

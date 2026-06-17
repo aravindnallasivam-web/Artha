@@ -233,16 +233,15 @@ ion-card-title,
  *  Keyboard-aware bottom UI
  *  ------------------------------------------------------------
  *  NativeUiService toggles `keyboard-open` on <body> while the soft
- *  keyboard is up. The WebView resizes (KeyboardResize.Native), so the
- *  fixed tab bar would sit *on top* of the keyboard and the sticky save
- *  bar's tab-bar clearance would leave an awkward gap. While typing, hide
- *  the tab bar and collapse the clearance so the save button sits right
- *  above the keyboard. No-op on web (the class is never added there).
+ *  keyboard is up. The WebView resizes (KeyboardResize.Native), so any
+ *  bottom-anchored UI (the tab bar, the sticky save bar, a floating action
+ *  button) would otherwise ride up and float above the keyboard. While
+ *  typing, hide all of them; they reappear when the keyboard closes and the
+ *  user taps Save/Add. No-op on web (the class is never added there).
  * ============================================================ */
-body.keyboard-open .m-tabs {
+body.keyboard-open .m-tabs,
+body.keyboard-open .save-bar,
+body.keyboard-open ion-fab {
   display: none;
-}
-body.keyboard-open .save-bar {
-  padding-bottom: 12px !important;
 }
 

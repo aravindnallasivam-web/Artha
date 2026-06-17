@@ -22,6 +22,7 @@ import {
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
+import { AppLockService } from '../../core/security/app-lock.service';
 import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { environment } from '../../../environments/environment';
@@ -115,6 +116,35 @@ import { SettingsStore } from './settings.store';
             </ion-segment>
           </div>
         </ion-list>
+
+        @if (appLock.isSupported()) {
+          <p class="section-title">Security</p>
+          <ion-list inset="true" class="card">
+            <ion-item lines="none">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="lock-closed"></ion-icon>
+              </span>
+              <ion-toggle
+                labelPlacement="start"
+                justify="space-between"
+                [checked]="appLockEnabled()"
+                [disabled]="!appLockAvailable()"
+                (ionChange)="onAppLockToggle($event)"
+              >
+                <ion-label class="ion-text-wrap">
+                  <h2>App lock</h2>
+                  <p>
+                    @if (appLockAvailable()) {
+                      Require fingerprint, face, or device PIN to open Artha.
+                    } @else {
+                      Set up a fingerprint, face or screen lock on your device to use this.
+                    }
+                  </p>
+                </ion-label>
+              </ion-toggle>
+            </ion-item>
+          </ion-list>
+        }
 
         @if (sms.isSupported()) {
           <p class="section-title">Automation</p>
@@ -319,6 +349,7 @@ export class SettingsPage implements OnInit {
   protected readonly store = inject(SettingsStore);
   protected readonly session = inject(SessionService);
   protected readonly sms = inject(SmsCaptureService);
+  protected readonly appLock = inject(AppLockService);
   protected readonly theme = inject(ThemeService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
@@ -331,6 +362,8 @@ export class SettingsPage implements OnInit {
   protected readonly smsIgnoredCount = signal(0);
   protected readonly smsMappingCount = signal(0);
   protected readonly smsAutoAdd = signal(true);
+  protected readonly appLockEnabled = signal(false);
+  protected readonly appLockAvailable = signal(false);
   protected readonly appVersion = signal(environment.version);
 
   /** Up to two uppercased initials for the profile avatar. */
@@ -346,7 +379,19 @@ export class SettingsPage implements OnInit {
     this.smsIgnoredCount.set(this.sms.ignoredCount());
     this.smsMappingCount.set(this.sms.mappingCount());
     this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+    this.appLockEnabled.set(this.appLock.isEnabled());
+    void this.appLock.isAvailable().then((a) => this.appLockAvailable.set(a));
     void this.loadVersion();
+  }
+
+  /** Toggle the biometric app lock; reflects the real state if auth is cancelled. */
+  async onAppLockToggle(event: Event): Promise<void> {
+    const checked = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false;
+    const ok = await this.appLock.setEnabled(checked);
+    this.appLockEnabled.set(this.appLock.isEnabled());
+    if (checked && !ok) {
+      await this.notifier.notifyError('Could not enable app lock — authentication was cancelled.');
+    }
   }
 
   /** On a device, show the real installed version + build number. */

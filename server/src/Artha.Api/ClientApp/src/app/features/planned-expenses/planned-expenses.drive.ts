@@ -13,7 +13,6 @@ import {
   newId,
 } from '../../core/drive/drive-schema';
 import {
-  PlannedCycle,
   PlannedExpense,
   PlannedExpenseUpsertRequest,
 } from '../../core/models/planned-expense.model';
@@ -47,7 +46,7 @@ export class PlannedExpensesDriveService {
       categoryId: request.categoryId?.trim() ? request.categoryId : null,
       dayOfMonth: request.dayOfMonth,
       archived: false,
-      cycle: normalizeCycle(request.cycle),
+      intervalMonths: clampInterval(request.intervalMonths),
     };
     await this.repo.write<PlannedExpenseList>(
       DRIVE_FILES.plannedExpenses,
@@ -78,7 +77,9 @@ export class PlannedExpensesDriveService {
       amount: request.amount,
       categoryId: request.categoryId?.trim() ? request.categoryId : null,
       dayOfMonth: request.dayOfMonth,
-      cycle: normalizeCycle(request.cycle),
+      intervalMonths: clampInterval(request.intervalMonths),
+      // Clear the legacy field so it can't contradict intervalMonths.
+      cycle: undefined,
     };
     await this.repo.write<PlannedExpenseList>(
       DRIVE_FILES.plannedExpenses,
@@ -115,6 +116,9 @@ export class PlannedExpensesDriveService {
     if (request.dayOfMonth !== null && (request.dayOfMonth < 1 || request.dayOfMonth > 31)) {
       throw badRequest('Day of month must be between 1 and 31.');
     }
+    if (!Number.isFinite(request.intervalMonths) || request.intervalMonths < 1 || request.intervalMonths > 60) {
+      throw badRequest('Repeat interval must be between 1 and 60 months.');
+    }
     if (request.categoryId?.trim()) {
       const categories = await this.repo.read<CategoryList>(DRIVE_FILES.categories);
       const category = (categories?.document.items ?? []).find((c) => c.id === request.categoryId);
@@ -125,7 +129,9 @@ export class PlannedExpensesDriveService {
   }
 }
 
-/** Only 'monthly' or 'yearly' are valid; anything else means monthly. */
-function normalizeCycle(cycle: string | null | undefined): PlannedCycle {
-  return cycle?.toLowerCase() === 'yearly' ? 'yearly' : 'monthly';
+/** Clamp the repeat interval to a whole number of months in [1, 60]. */
+function clampInterval(months: number | null | undefined): number {
+  const n = Math.round(Number(months));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(60, n);
 }

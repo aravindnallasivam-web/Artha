@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="server/src/Artha.Api/ClientApp/public/icon.png" alt="Artha" width="112" height="112" />
+
 # Artha
 
 **Your money, your data.** A private, serverless personal‑finance app for Android, iOS, desktop and web — where every expense, account and loan lives in *your* Google Drive, not on someone else's server.
@@ -18,6 +20,26 @@ Most finance apps make you hand your transaction history to their servers. Artha
 - 💸 **No running costs** — serverless means it's cheap to operate and easy to self‑host.
 - 📵 **Works offline‑first** — a local cache serves the UI instantly and syncs to Drive in the background.
 - 📲 **Captures spending automatically** (Android) — reads bank/UPI SMS on‑device and turns them into expenses.
+
+---
+
+## Screenshots
+
+> Screens live in [`docs/screenshots/`](docs/screenshots). Drop in PNGs with the
+> filenames below and they'll show up here automatically.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/dashboard.png" alt="Dashboard" width="240" /><br/><sub>Dashboard</sub></td>
+    <td align="center"><img src="docs/screenshots/expenses.png" alt="Expenses" width="240" /><br/><sub>Expenses</sub></td>
+    <td align="center"><img src="docs/screenshots/add-expense.png" alt="Add expense" width="240" /><br/><sub>Add expense</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/reports.png" alt="Reports" width="240" /><br/><sub>Reports</sub></td>
+    <td align="center"><img src="docs/screenshots/categories.png" alt="Categories" width="240" /><br/><sub>Categories &amp; subcategories</sub></td>
+    <td align="center"><img src="docs/screenshots/sms-capture.png" alt="SMS capture" width="240" /><br/><sub>SMS capture</sub></td>
+  </tr>
+</table>
 
 ---
 
