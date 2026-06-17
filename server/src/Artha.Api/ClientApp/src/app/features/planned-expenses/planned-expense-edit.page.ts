@@ -3,6 +3,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
+  AlertController,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -49,6 +50,13 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           <ion-back-button defaultHref="/planned-expenses"></ion-back-button>
         </ion-buttons>
         <ion-title>{{ mode() === 'edit' ? 'Edit planned expense' : 'New planned expense' }}</ion-title>
+        @if (mode() === 'edit') {
+          <ion-buttons slot="end">
+            <ion-button color="danger" (click)="remove()" aria-label="Delete planned expense">
+              <ion-icon slot="icon-only" name="trash-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        }
       </ion-toolbar>
     </ion-header>
 
@@ -226,6 +234,7 @@ export class PlannedExpenseEditPage implements OnInit {
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly alertCtrl = inject(AlertController);
 
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
@@ -339,5 +348,36 @@ export class PlannedExpenseEditPage implements OnInit {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /** Delete (archive) this planned expense, after confirming. */
+  async remove(): Promise<void> {
+    const id = this.editingId;
+    if (!id) {
+      return;
+    }
+    const alert = await this.alertCtrl.create({
+      header: 'Delete planned expense?',
+      message: 'It will be removed from your planned list.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: () => {
+            void (async () => {
+              try {
+                await this.store.remove(id);
+                await this.router.navigate(['/planned-expenses']);
+              } catch {
+                await this.notifier.notifyError('Could not delete planned expense.');
+              }
+            })();
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 }
