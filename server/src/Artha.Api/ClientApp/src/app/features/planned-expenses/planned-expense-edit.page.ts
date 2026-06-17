@@ -18,6 +18,7 @@ import {
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { DriveRequestError } from '../../core/drive/drive-errors';
+import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { PlannedExpenseUpsertRequest, intervalOf } from '../../core/models/planned-expense.model';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
@@ -30,6 +31,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
   imports: [
     DecimalPipe,
     ReactiveFormsModule,
+    AmountInputDirective,
     CategoryPickerComponent,
     IonBackButton,
     IonButton,
@@ -73,12 +75,11 @@ import { PlannedExpensesStore } from './planned-expenses.store';
                 <span class="cur">{{ currencySymbol() }}</span>
                 <input
                   class="amount-input"
-                  type="number"
+                  type="text"
                   inputmode="decimal"
-                  step="0.01"
-                  min="0"
                   placeholder="0"
                   formControlName="amount"
+                  arthaAmount
                   (focus)="selectAll($event)"
                   aria-label="Amount"
                 />
