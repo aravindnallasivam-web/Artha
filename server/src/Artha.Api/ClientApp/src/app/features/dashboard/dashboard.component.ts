@@ -15,6 +15,7 @@ import { SessionService } from '../../core/auth/session.service';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { LoansStore } from '../loans/loans.store';
+import { monthlyEquivalent } from '../../core/models/planned-expense.model';
 import { PlannedExpensesStore } from '../planned-expenses/planned-expenses.store';
 import { ReportsApi } from '../reports/reports.api';
 import { SettingsStore } from '../settings/settings.store';
@@ -171,6 +172,28 @@ interface CategorySlice {
               <div class="loans-count">
                 {{ activeLoans().length }} active {{ activeLoans().length === 1 ? 'loan' : 'loans' }}
               </div>
+            </a>
+          }
+
+          <!-- 3b · Planned expenses -->
+          @if (plannedItems().length > 0) {
+            <a class="card planned" routerLink="/planned-expenses">
+              <div class="card-header">
+                <h2 class="card-title">Planned this month</h2>
+                <span class="card-link">Manage <ion-icon name="chevron-forward"></ion-icon></span>
+              </div>
+              <div class="planned-total num">{{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }}</div>
+              <ul class="planned-list">
+                @for (p of plannedPreview(); track p.id) {
+                  <li class="planned-row">
+                    <span class="planned-name">{{ p.name }}</span>
+                    <span class="planned-amt num">{{ p.monthly | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                  </li>
+                }
+              </ul>
+              @if (plannedItems().length > plannedPreview().length) {
+                <div class="planned-more">+{{ plannedItems().length - plannedPreview().length }} more</div>
+              }
             </a>
           }
 
@@ -342,6 +365,18 @@ interface CategorySlice {
     .loan-fig-value { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
     .loans-count { padding: 10px 16px 0; font-size: 11.5px; color: var(--artha-text-muted); }
 
+    /* 3b · Planned expenses */
+    .planned { padding: 4px 4px 12px; text-decoration: none; }
+    .planned-total {
+      padding: 0 16px; font-size: 20px; font-weight: 800;
+      letter-spacing: -0.02em; color: var(--artha-text);
+    }
+    .planned-list { list-style: none; margin: 10px 0 0; padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
+    .planned-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+    .planned-name { color: var(--artha-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px; }
+    .planned-amt { font-weight: 700; color: var(--artha-text); }
+    .planned-more { padding: 10px 16px 0; font-size: 11.5px; color: var(--artha-text-muted); }
+
     /* 4 + 5 · main grid */
     .main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .card { padding: 4px 4px 12px; display: flex; flex-direction: column; }
@@ -460,6 +495,14 @@ export class DashboardComponent implements OnInit {
   });
 
   protected readonly plannedTotal = computed(() => this.plannedStore.plannedTotal());
+  protected readonly plannedItems = computed(() => this.plannedStore.active());
+  /** Largest few planned bills (monthly-equivalent) for the dashboard card. */
+  protected readonly plannedPreview = computed(() =>
+    [...this.plannedItems()]
+      .map((p) => ({ id: p.id, name: p.name, monthly: monthlyEquivalent(p) }))
+      .sort((a, b) => b.monthly - a.monthly)
+      .slice(0, 4),
+  );
   protected readonly budgetLeft = computed(() => this.plannedTotal() - this.totalSpent());
   protected readonly overBudget = computed(() => this.plannedTotal() > 0 && this.budgetLeft() < 0);
   protected readonly budgetPct = computed(() => {
