@@ -48,6 +48,24 @@ export class DriveBootstrap {
     this.inFlight = null;
   }
 
+  /**
+   * Delete every Artha file from the signed-in account's Drive appDataFolder and
+   * clear the local cache. Used by "Reset all my data" — the app should reload
+   * afterwards so a fresh set of defaults is seeded.
+   */
+  async resetAllData(): Promise<void> {
+    const files = await this.drive.list();
+    for (const file of files) {
+      try {
+        await this.drive.delete(file.id);
+      } catch {
+        // Keep going — best-effort wipe.
+      }
+    }
+    await this.cache.clear();
+    this.reset();
+  }
+
   private async run(): Promise<void> {
     // Fast path: a cached accounts.json means we're already set up — no network.
     if (await this.cache.has(DRIVE_FILES.accounts)) {

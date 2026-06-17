@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import {
+  AlertController,
   IonContent,
   IonHeader,
   IonIcon,
@@ -23,6 +24,7 @@ import {
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
+import { DriveBootstrap } from '../../core/drive/drive-bootstrap.service';
 import { DriveSharingService } from '../../core/drive/drive-sharing.service';
 import { InboundShare, OutboundShare } from '../../core/models/shared-ledger.model';
 import { SharedLedgerService } from '../shared-ledger/shared-ledger.service';
@@ -322,11 +324,20 @@ import { SettingsStore } from './settings.store';
 
         <p class="section-title">Account</p>
         <ion-list inset="true" class="card">
-          <ion-item button detail="false" lines="none" (click)="signOut()">
+          <ion-item button detail="false" lines="full" (click)="signOut()">
             <span class="icon-chip chip-danger" slot="start">
               <ion-icon name="log-out-outline"></ion-icon>
             </span>
             <ion-label color="danger">Sign out</ion-label>
+          </ion-item>
+          <ion-item button detail="false" lines="none" [disabled]="resetting()" (click)="resetData()">
+            <span class="icon-chip chip-danger" slot="start">
+              <ion-icon name="trash"></ion-icon>
+            </span>
+            <ion-label color="danger" class="ion-text-wrap">
+              <h2>{{ resetting() ? 'Resetting…' : 'Reset all my data' }}</h2>
+              <p>Permanently delete this account's Artha data from your Google Drive.</p>
+            </ion-label>
           </ion-item>
         </ion-list>
 
@@ -439,6 +450,8 @@ export class SettingsPage implements OnInit {
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
+  private readonly alertCtrl = inject(AlertController);
+  private readonly bootstrap = inject(DriveBootstrap);
 
   protected readonly currencies = SUPPORTED_CURRENCIES;
   protected readonly smsEnabled = signal(false);
@@ -454,6 +467,7 @@ export class SettingsPage implements OnInit {
   protected readonly shareBusy = signal(false);
   protected readonly inShare = signal<InboundShare | null>(null);
   protected readonly connectBusy = signal(false);
+  protected readonly resetting = signal(false);
   protected readonly appVersion = signal(environment.version);
 
   /** Up to two uppercased initials for the profile avatar. */
@@ -678,6 +692,38 @@ export class SettingsPage implements OnInit {
     if (value) {
       this.theme.setPreference(value);
     }
+  }
+
+  /** Permanently delete this account's Artha data from Drive, then reload. */
+  async resetData(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Reset all my data?',
+      message:
+        'This permanently deletes all Artha data (expenses, categories, accounts, loans, planned) from this Google account’s Drive. This cannot be undone.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete everything',
+          role: 'destructive',
+          handler: () => {
+            void (async () => {
+              this.resetting.set(true);
+              try {
+                await this.bootstrap.resetAllData();
+                window.location.reload();
+              } catch (err) {
+                this.resetting.set(false);
+                await this.notifier.notifyError(
+                  err instanceof Error ? err.message : 'Could not reset data.',
+                );
+              }
+            })();
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 
   async signOut(): Promise<void> {
