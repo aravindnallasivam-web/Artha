@@ -67,6 +67,13 @@ import { ExpensesStore } from './expenses.store';
         <ion-title>
           {{ mode() === 'edit' ? 'Edit ' : 'New ' }}{{ isIncome() ? 'income' : 'expense' }}
         </ion-title>
+        @if (mode() === 'edit' && !isIncome()) {
+          <ion-buttons slot="end">
+            <ion-button (click)="makeRecurring()" aria-label="Make recurring">
+              <ion-icon name="calendar-outline" slot="icon-only"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        }
       </ion-toolbar>
     </ion-header>
 
@@ -336,6 +343,24 @@ export class ExpenseEditPage implements OnInit {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** Turn this expense into a planned (recurring) bill — prefill the planned
+      editor with its amount, category, name and day, for the user to confirm. */
+  protected makeRecurring(): void {
+    const raw = this.form.getRawValue();
+    const date = this.dateValue();
+    const day = date ? Number(date.slice(8, 10)) : NaN;
+    const catName = raw.categoryId ? this.categoriesStore.byId()[raw.categoryId]?.name ?? null : null;
+    void this.router.navigate(['/planned-expenses/new'], {
+      state: {
+        name: raw.note?.trim() || catName || '',
+        amount: raw.amount || null,
+        categoryId: raw.categoryId || null,
+        dayOfMonth: Number.isFinite(day) && day >= 1 && day <= 31 ? day : null,
+        cycle: 'monthly',
+      },
+    });
   }
 
   async save(): Promise<void> {

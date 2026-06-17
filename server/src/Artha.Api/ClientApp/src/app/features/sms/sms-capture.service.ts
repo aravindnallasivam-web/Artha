@@ -960,9 +960,12 @@ export class SmsCaptureService {
 
   // ----- Auto-add (log known vendors without approval) -----
 
-  /** Whether known-vendor expenses are logged automatically. Default on. */
+  /**
+   * Whether known-vendor expenses are logged automatically. Opt-in (off by
+   * default): auto-save only happens when the user turns it on in Settings.
+   */
   isAutoAddEnabled(): boolean {
-    return localStorage.getItem(AUTO_ADD_KEY) !== '0';
+    return localStorage.getItem(AUTO_ADD_KEY) === '1';
   }
 
   setAutoAdd(enabled: boolean): void {

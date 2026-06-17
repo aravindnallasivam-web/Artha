@@ -262,6 +262,24 @@ export class PlannedExpenseEditPage implements OnInit {
             dayOfMonth: item.dayOfMonth,
           });
         }
+      } else {
+        // Prefill when launched from an expense's "Make recurring" action.
+        const p = (history.state ?? {}) as Partial<{
+          name: string;
+          amount: number;
+          categoryId: string | null;
+          dayOfMonth: number | null;
+          cycle: PlannedCycle;
+        }>;
+        if (p.name || p.amount != null) {
+          this.form.patchValue({
+            name: p.name ?? '',
+            amount: p.amount ?? null,
+            cycle: p.cycle ?? 'monthly',
+            categoryId: p.categoryId ?? null,
+            dayOfMonth: p.dayOfMonth ?? null,
+          });
+        }
       }
     } finally {
       this.loading.set(false);
