@@ -23,7 +23,12 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { PlannedExpense, monthlyEquivalent } from '../../core/models/planned-expense.model';
+import {
+  PlannedExpense,
+  cadenceLabel,
+  intervalOf,
+  monthlyEquivalent,
+} from '../../core/models/planned-expense.model';
 import { CategoriesStore } from '../categories/categories.store';
 import { SettingsStore } from '../settings/settings.store';
 import { PlannedExpensesStore } from './planned-expenses.store';
@@ -79,11 +84,6 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           </div>
           <div class="sum-foot">
             {{ store.active().length }} bill{{ store.active().length === 1 ? '' : 's' }} committed
-            @if (monthlyBillsTotal() > 0 && yearlyBillsTotal() > 0) {
-              ·
-              {{ monthlyBillsTotal() | currency: settings.currency() : 'symbol' : '1.0-0' }}/mo recurring +
-              {{ yearlyBillsTotal() | currency: settings.currency() : 'symbol' : '1.0-0' }}/yr annual
-            }
           </div>
         </ion-card-content>
       </ion-card>
@@ -109,15 +109,15 @@ import { PlannedExpensesStore } from './planned-expenses.store';
                   @if (item.dayOfMonth) {
                     <p>Due day {{ item.dayOfMonth }}</p>
                   }
-                  @if (item.cycle === 'yearly') {
-                    <p>Yearly · ≈ {{ monthlyEq(item) | currency: settings.currency() }}/mo</p>
+                  @if (interval(item) > 1) {
+                    <p>{{ cadence(item) }} · ≈ {{ monthlyEq(item) | currency: settings.currency() }}/mo</p>
                   }
                   @if (item.archived) {
                     <ion-note color="medium"> · archived</ion-note>
                   }
                 </ion-label>
                 <ion-note slot="end">
-                  {{ item.amount | currency: settings.currency() }}{{ item.cycle === 'yearly' ? ' /yr' : ' /mo' }}
+                  {{ item.amount | currency: settings.currency() }} {{ suffix(item) }}
                 </ion-note>
               </ion-item>
               @if (!item.archived) {
@@ -174,18 +174,6 @@ export class PlannedExpensesListPage implements OnInit {
 
   /** Total committed per year: monthly-equivalent total × 12. */
   protected readonly annualTotal = computed(() => this.store.plannedTotal() * 12);
-  /** Sum of true monthly-cycle bills (their per-month amount). */
-  protected readonly monthlyBillsTotal = computed(() =>
-    this.store.active()
-      .filter((p) => p.cycle === 'monthly')
-      .reduce((sum, p) => sum + p.amount, 0),
-  );
-  /** Sum of true yearly-cycle bills (their per-year amount). */
-  protected readonly yearlyBillsTotal = computed(() =>
-    this.store.active()
-      .filter((p) => p.cycle === 'yearly')
-      .reduce((sum, p) => sum + p.amount, 0),
-  );
 
   ngOnInit(): void {
     void this.store.load();
@@ -205,6 +193,22 @@ export class PlannedExpensesListPage implements OnInit {
 
   protected monthlyEq(item: PlannedExpense): number {
     return monthlyEquivalent(item);
+  }
+
+  protected interval(item: PlannedExpense): number {
+    return intervalOf(item);
+  }
+
+  protected cadence(item: PlannedExpense): string {
+    return cadenceLabel(item);
+  }
+
+  /** Short amount suffix: /mo, /yr, or /Nmo. */
+  protected suffix(item: PlannedExpense): string {
+    const n = intervalOf(item);
+    if (n === 1) return '/mo';
+    if (n === 12) return '/yr';
+    return `/${n}mo`;
   }
 
   add(): void {

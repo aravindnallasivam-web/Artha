@@ -18,7 +18,7 @@ import {
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { DriveRequestError } from '../../core/drive/drive-errors';
-import { PlannedCycle, PlannedExpenseUpsertRequest } from '../../core/models/planned-expense.model';
+import { PlannedExpenseUpsertRequest, intervalOf } from '../../core/models/planned-expense.model';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { SettingsStore } from '../settings/settings.store';
@@ -68,9 +68,7 @@ import { PlannedExpensesStore } from './planned-expenses.store';
           <div class="wrap">
             <!-- Amount hero -->
             <div class="amount">
-              <div class="amount-label">
-                {{ form.controls.cycle.value === 'yearly' ? 'YEARLY AMOUNT' : 'MONTHLY AMOUNT' }}
-              </div>
+              <div class="amount-label">AMOUNT PER PAYMENT</div>
               <div class="amount-row">
                 <span class="cur">{{ currencySymbol() }}</span>
                 <input
@@ -85,28 +83,34 @@ import { PlannedExpensesStore } from './planned-expenses.store';
                   aria-label="Amount"
                 />
               </div>
-              @if (form.controls.cycle.value === 'yearly' && form.controls.amount.value) {
+              @if (intervalValue() > 1 && form.controls.amount.value) {
                 <div class="amount-sub">
-                  ≈ {{ currencySymbol() }}{{ +form.controls.amount.value / 12 | number: '1.0-0' }} / month in reports
+                  ≈ {{ currencySymbol() }}{{ +form.controls.amount.value / intervalValue() | number: '1.0-0' }} / month in reports
                 </div>
               }
             </div>
 
-            <!-- Billing cycle -->
-            <div class="section-label">Billing cycle</div>
+            <!-- Repeat frequency -->
+            <div class="section-label">Repeats every</div>
             <div class="chips">
-              <button
-                type="button"
-                class="chip"
-                [class.sel]="form.controls.cycle.value === 'monthly'"
-                (click)="setCycle('monthly')"
-              >Monthly</button>
-              <button
-                type="button"
-                class="chip"
-                [class.sel]="form.controls.cycle.value === 'yearly'"
-                (click)="setCycle('yearly')"
-              >Yearly</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 1" (click)="setInterval(1)">Monthly</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 3" (click)="setInterval(3)">3 months</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 6" (click)="setInterval(6)">6 months</button>
+              <button type="button" class="chip" [class.sel]="intervalValue() === 12" (click)="setInterval(12)">Yearly</button>
+            </div>
+            <div class="card">
+              <ion-item lines="none">
+                <ion-input
+                  label="Every (months)"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="60"
+                  placeholder="e.g. 4"
+                  formControlName="intervalMonths"
+                ></ion-input>
+              </ion-item>
             </div>
 
             <!-- Name -->
@@ -243,7 +247,7 @@ export class PlannedExpenseEditPage implements OnInit {
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(60)]],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
-    cycle: ['monthly' as PlannedCycle, Validators.required],
+    intervalMonths: [1, [Validators.required, Validators.min(1), Validators.max(60)]],
     categoryId: [null as string | null],
     dayOfMonth: [null as number | null, [Validators.min(1), Validators.max(31)]],
   });
@@ -267,7 +271,7 @@ export class PlannedExpenseEditPage implements OnInit {
           this.form.patchValue({
             name: item.name,
             amount: item.amount,
-            cycle: item.cycle,
+            intervalMonths: intervalOf(item),
             categoryId: item.categoryId,
             dayOfMonth: item.dayOfMonth,
           });
@@ -279,13 +283,13 @@ export class PlannedExpenseEditPage implements OnInit {
           amount: number;
           categoryId: string | null;
           dayOfMonth: number | null;
-          cycle: PlannedCycle;
+          intervalMonths: number;
         }>;
         if (p.name || p.amount != null) {
           this.form.patchValue({
             name: p.name ?? '',
             amount: p.amount ?? null,
-            cycle: p.cycle ?? 'monthly',
+            intervalMonths: p.intervalMonths ?? 1,
             categoryId: p.categoryId ?? null,
             dayOfMonth: p.dayOfMonth ?? null,
           });
@@ -296,8 +300,13 @@ export class PlannedExpenseEditPage implements OnInit {
     }
   }
 
-  protected setCycle(cycle: PlannedCycle): void {
-    this.form.patchValue({ cycle });
+  /** Current interval value (coerced to a number) for the template. */
+  protected intervalValue(): number {
+    return Number(this.form.controls.intervalMonths.value) || 1;
+  }
+
+  protected setInterval(months: number): void {
+    this.form.patchValue({ intervalMonths: months });
   }
 
   protected selectAll(event: Event): void {
@@ -325,7 +334,7 @@ export class PlannedExpenseEditPage implements OnInit {
     const payload: PlannedExpenseUpsertRequest = {
       name: (raw.name ?? '').trim(),
       amount: Number(raw.amount),
-      cycle: raw.cycle,
+      intervalMonths: Number(raw.intervalMonths) || 1,
       categoryId: raw.categoryId || null,
       dayOfMonth: raw.dayOfMonth != null && raw.dayOfMonth !== ('' as unknown as number)
         ? Number(raw.dayOfMonth)

@@ -358,7 +358,7 @@ export class ExpenseEditPage implements OnInit {
         amount: raw.amount || null,
         categoryId: raw.categoryId || null,
         dayOfMonth: Number.isFinite(day) && day >= 1 && day <= 31 ? day : null,
-        cycle: 'monthly',
+        intervalMonths: 1,
       },
     });
   }

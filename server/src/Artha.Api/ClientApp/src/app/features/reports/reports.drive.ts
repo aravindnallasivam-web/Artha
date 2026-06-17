@@ -17,6 +17,7 @@ import {
 } from '../../core/drive/drive-schema';
 import { Category } from '../../core/models/category.model';
 import { Expense } from '../../core/models/expense.model';
+import { monthlyEquivalent } from '../../core/models/planned-expense.model';
 import {
   CategoryBreakdown,
   MonthSummary,
@@ -69,8 +70,8 @@ export class ReportsDriveService {
       currency,
       total: sum(counted),
       count: counted.length,
-      // A yearly planned expense contributes its monthly share (amount / 12).
-      plannedTotal: planned.reduce((t, p) => t + (p.cycle === 'yearly' ? p.amount / 12 : p.amount), 0),
+      // Each planned bill contributes its monthly share (amount / interval).
+      plannedTotal: planned.reduce((t, p) => t + monthlyEquivalent(p), 0),
       plannedCount: planned.length,
       byCategory,
     };
