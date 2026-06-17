@@ -46,12 +46,14 @@ export class GoogleOAuthService {
       refresh_token?: string;
       expires_in: number;
       id_token: string;
+      scope?: string;
     };
     const expiresAt = new Date(Date.now() + body.expires_in * 1000).toISOString();
     await this.tokens.set({
       accessToken: body.access_token,
       refreshToken: body.refresh_token ?? null,
       expiresAt,
+      scope: body.scope ?? null,
     });
 
     return { user: userFromIdToken(body.id_token), expiresAt };

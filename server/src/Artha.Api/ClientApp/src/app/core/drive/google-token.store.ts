@@ -26,6 +26,8 @@ export interface GoogleTokens {
   refreshToken: string | null;
   /** ISO timestamp when the access token expires. */
   expiresAt: string;
+  /** Space-separated scopes Google actually granted (from the token response). */
+  scope?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -51,6 +53,13 @@ export class GoogleTokenStore {
   async hasTokens(): Promise<boolean> {
     await this.ensureLoaded();
     return this.tokens !== null;
+  }
+
+  /** Whether the current grant includes a given OAuth scope (full URL or suffix). */
+  async hasScope(scope: string): Promise<boolean> {
+    await this.ensureLoaded();
+    const granted = (this.tokens?.scope ?? '').split(/\s+/).filter(Boolean);
+    return granted.some((s) => s === scope || s.endsWith('/' + scope));
   }
 
   /** A valid access token, refreshing first if it is expired or near expiry. */
@@ -88,12 +97,19 @@ export class GoogleTokenStore {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Token refresh failed (HTTP ${res.status}).`);
     }
-    const body = res.data as { access_token: string; expires_in: number; refresh_token?: string };
+    const body = res.data as {
+      access_token: string;
+      expires_in: number;
+      refresh_token?: string;
+      scope?: string;
+    };
     const next: GoogleTokens = {
       accessToken: body.access_token,
       // Google usually omits a fresh refresh_token on refresh — keep the old one.
       refreshToken: body.refresh_token ?? current.refreshToken,
       expiresAt: new Date(Date.now() + body.expires_in * 1000).toISOString(),
+      // Refresh responses usually omit scope — keep what was granted at consent.
+      scope: body.scope ?? current.scope ?? null,
     };
     await this.set(next);
     return next.accessToken;

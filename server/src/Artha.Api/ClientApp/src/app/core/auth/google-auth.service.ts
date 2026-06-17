@@ -212,6 +212,15 @@ export class GoogleAuthService {
     return response;
   }
 
+  /**
+   * Whether the current Google grant includes the `drive.file` scope used for
+   * family sharing. Existing users (granted before sharing existed) won't have
+   * it until they re-consent via beginLogin().
+   */
+  async hasSharingScope(): Promise<boolean> {
+    return this.googleTokens.hasScope('drive.file');
+  }
+
   async logout(): Promise<void> {
     // Local-only sign-out: drop the Google tokens, reset the first-run guard,
     // and clear the session. (Tokens can be fully revoked from the user's

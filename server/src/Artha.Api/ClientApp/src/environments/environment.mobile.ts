@@ -27,6 +27,7 @@ export const environment = {
       'email',
       'profile',
       'https://www.googleapis.com/auth/drive.appdata',
+      'https://www.googleapis.com/auth/drive.file',
     ],
   },
 };
