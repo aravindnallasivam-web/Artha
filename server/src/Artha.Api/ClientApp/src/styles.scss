@@ -15,7 +15,10 @@
 @import '@ionic/angular/css/flex-utils.css';
 
 /* Follow system preference for dark mode */
-@import '@ionic/angular/css/palettes/dark.system.css';
+/* Class-based dark palette: ThemeService toggles `.ion-palette-dark` on <html>
+   based on the user's choice (System / Light / Dark). Using the class palette
+   (not dark.system.css) lets us force light/dark regardless of the OS setting. */
+@import '@ionic/angular/css/palettes/dark.class.css';
 
 /* ============================================================
  *  Artha design tokens — clean fintech palette
@@ -122,33 +125,32 @@ ion-content {
   }
 }
 
-/* Dark-mode token overrides. Ionic's dark palette flips its own tokens
-   above; we re-flip Artha-specific ones here so cards/text colors land
-   correctly when the system is in dark mode. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --artha-bg:            #0b1220;  /* deeper than slate-900 for less glare */
-    --artha-surface:       #111827;
-    --artha-surface-2:     #1e293b;
-    --artha-border:        #1f2937;
-    --artha-border-strong: #334155;
-    --artha-text:          #f1f5f9;
-    --artha-text-muted:    #cbd5e1;
-    --artha-text-subtle:   #64748b;
+/* Dark-mode token overrides, driven by the `.ion-palette-dark` class that
+   ThemeService toggles on <html>. This re-flips the Artha-specific tokens to
+   match Ionic's class palette, so cards/text land correctly in dark mode
+   whether it was chosen explicitly or resolved from the system setting. */
+.ion-palette-dark {
+  --artha-bg:            #0b1220;  /* deeper than slate-900 for less glare */
+  --artha-surface:       #111827;
+  --artha-surface-2:     #1e293b;
+  --artha-border:        #1f2937;
+  --artha-border-strong: #334155;
+  --artha-text:          #f1f5f9;
+  --artha-text-muted:    #cbd5e1;
+  --artha-text-subtle:   #64748b;
 
-    --artha-accent-tint:   rgba(99, 102, 241, 0.18);
-    --artha-positive-tint: rgba(16, 185, 129, 0.16);
-    --artha-negative-tint: rgba(244, 63, 94, 0.16);
+  --artha-accent-tint:   rgba(99, 102, 241, 0.18);
+  --artha-positive-tint: rgba(16, 185, 129, 0.16);
+  --artha-negative-tint: rgba(244, 63, 94, 0.16);
 
-    --ion-background-color: var(--artha-bg);
-    --ion-background-color-rgb: 11, 18, 32;
-    --ion-text-color:       var(--artha-text);
-    --ion-text-color-rgb:   241, 245, 249;
-    --ion-item-background:  var(--artha-surface);
-    --ion-card-background:  var(--artha-surface);
-    --ion-toolbar-background: var(--artha-surface);
-    --ion-tab-bar-background: var(--artha-surface);
-  }
+  --ion-background-color: var(--artha-bg);
+  --ion-background-color-rgb: 11, 18, 32;
+  --ion-text-color:       var(--artha-text);
+  --ion-text-color-rgb:   241, 245, 249;
+  --ion-item-background:  var(--artha-surface);
+  --ion-card-background:  var(--artha-surface);
+  --ion-toolbar-background: var(--artha-surface);
+  --ion-tab-bar-background: var(--artha-surface);
 }
 
 /* Typography — tighten the Ionic defaults. */
@@ -209,3 +211,38 @@ ion-card-title,
     padding-inline: 8px;
   }
 }
+
+/* ============================================================
+ *  Floating action buttons vs. the mobile bottom tab bar
+ *  ------------------------------------------------------------
+ *  Below 768px the shell renders a fixed bottom tab bar (.m-tabs,
+ *  ~56px + safe-area). A bottom-anchored ion-fab (Add account /
+ *  category / planned expense) would otherwise sit *behind* it and
+ *  be untappable. Lift it clear of the bar. At >=768px the tab bar
+ *  is gone (side pane takes over), so no offset is needed.
+ * ============================================================ */
+@media (max-width: 767.98px) {
+  ion-fab[vertical="bottom"] {
+    /* Ionic already anchors the FAB at bottom: 10px + safe-area, so this
+       offset only needs to clear the ~56px tab bar itself. */
+    margin-bottom: 60px;
+  }
+}
+
+/* ============================================================
+ *  Keyboard-aware bottom UI
+ *  ------------------------------------------------------------
+ *  NativeUiService toggles `keyboard-open` on <body> while the soft
+ *  keyboard is up. The WebView resizes (KeyboardResize.Native), so the
+ *  fixed tab bar would sit *on top* of the keyboard and the sticky save
+ *  bar's tab-bar clearance would leave an awkward gap. While typing, hide
+ *  the tab bar and collapse the clearance so the save button sits right
+ *  above the keyboard. No-op on web (the class is never added there).
+ * ============================================================ */
+body.keyboard-open .m-tabs {
+  display: none;
+}
+body.keyboard-open .save-bar {
+  padding-bottom: 12px !important;
+}
+

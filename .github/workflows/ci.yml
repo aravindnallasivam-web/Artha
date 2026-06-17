@@ -6,44 +6,30 @@ on:
   pull_request:
     branches: [main]
 
+# Serverless app: the deliverable is the Capacitor web/Android client under
+# server/src/Artha.Api/ClientApp. This job type-checks and builds the SPA.
 jobs:
   build:
-    name: build (.NET 10 + Node 22 -> single artifact)
+    name: build (Angular SPA)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/src/Artha.Api/ClientApp
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: server/src/Artha.Api/ClientApp/package-lock.json
 
-      - name: Restore .NET
-        working-directory: server
-        run: dotnet restore Artha.slnx
+      - name: Install
+        run: npm ci
 
-      - name: Build
-        working-directory: server
-        run: dotnet build Artha.slnx --no-restore --configuration Release
-
-      - name: Test
-        working-directory: server
-        run: dotnet test Artha.slnx --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: server-test-results
-          path: server/**/TestResults/*.trx
-
-      - name: Publish (builds the Angular SPA into wwwroot via PublishSpa target)
-        working-directory: server
-        run: dotnet publish src/Artha.Api/Artha.Api.csproj --configuration Release --no-build --output publish /p:UseAppHost=false
+      - name: Build (mobile config)
+        run: npm run build:mobile
 
       - uses: actions/upload-artifact@v4
         with:
-          name: artha-publish
-          path: server/publish
+          name: artha-web-dist
+          path: server/src/Artha.Api/ClientApp/dist

@@ -1,21 +1,18 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+// Thin pass-through to the Drive-backed service. Kept as `ReportsApi` so the
+// store's injection point is unchanged after the serverless cutover.
 import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../environments/environment';
 import { MonthlyReport, YearlyReport } from '../../core/models/report.model';
+import { ReportsDriveService } from './reports.drive';
 
 @Injectable({ providedIn: 'root' })
 export class ReportsApi {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/api/reports`;
+  private readonly drive = inject(ReportsDriveService);
 
   monthly(year: number, month: number): Promise<MonthlyReport> {
-    const params = new HttpParams().set('year', year).set('month', month);
-    return firstValueFrom(this.http.get<MonthlyReport>(`${this.baseUrl}/monthly`, { params }));
+    return this.drive.monthly(year, month);
   }
 
   yearly(year: number): Promise<YearlyReport> {
-    const params = new HttpParams().set('year', year);
-    return firstValueFrom(this.http.get<YearlyReport>(`${this.baseUrl}/yearly`, { params }));
+    return this.drive.yearly(year);
   }
 }

@@ -20,7 +20,10 @@ const config: CapacitorConfig = {
       fadeOutDuration: 300,
       backgroundColor: '#ffffff',
       showSpinner: false,
+      // The splash drawable is a full-bleed vector (theme-aware background +
+      // centred logo); CENTER_CROP makes it fill the screen on any aspect.
       androidScaleType: 'CENTER_CROP',
+      androidSplashResourceName: 'splash_screen',
     },
     StatusBar: {
       // Don't draw the web view under the status bar on Android; the bar gets a

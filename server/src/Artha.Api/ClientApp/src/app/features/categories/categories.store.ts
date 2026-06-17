@@ -2,6 +2,15 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Category, CategoryUpsertRequest } from '../../core/models/category.model';
 import { CategoriesApi } from './categories.api';
 
+/** One entry in a category <select>: a top-level category or a subcategory. */
+export interface CategoryOption {
+  id: string;
+  name: string;
+  /** Display label — the plain name, or an indented name for a subcategory. */
+  label: string;
+  isChild: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CategoriesStore {
   private readonly api = inject(CategoriesApi);
@@ -28,6 +37,61 @@ export class CategoriesStore {
     }
     return map;
   });
+
+  /** Active top-level categories (no parent). */
+  readonly topLevel = computed(() => this.active().filter((c) => !c.parentId));
+
+  /** Active subcategories grouped by their parent id, each list name-sorted. */
+  readonly childrenByParent = computed(() => {
+    const map: Record<string, Category[]> = {};
+    for (const c of this.active()) {
+      if (c.parentId) {
+        (map[c.parentId] ??= []).push(c);
+      }
+    }
+    for (const list of Object.values(map)) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return map;
+  });
+
+  /** Active subcategories of a given parent, name-sorted. */
+  subcategoriesOf(parentId: string): Category[] {
+    return this.childrenByParent()[parentId] ?? [];
+  }
+
+  /**
+   * Flat, ordered options for a category <select>: each top-level category
+   * followed by its subcategories (indented). Single source of truth for every
+   * category picker so the hierarchy shows consistently everywhere.
+   */
+  readonly pickerOptions = computed<CategoryOption[]>(() => {
+    const tops = [...this.topLevel()].sort((a, b) => a.name.localeCompare(b.name));
+    const out: CategoryOption[] = [];
+    for (const top of tops) {
+      out.push({ id: top.id, name: top.name, label: top.name, isChild: false });
+      for (const child of this.subcategoriesOf(top.id)) {
+        out.push({ id: child.id, name: child.name, label: `  ${child.name}`, isChild: true });
+      }
+    }
+    return out;
+  });
+
+  /** The top-level ancestor id for a category (itself if already top-level). */
+  rootIdOf(id: string): string {
+    return this.byId()[id]?.parentId ?? id;
+  }
+
+  /** "Parent · Child" for a subcategory, or just the name for a top-level one. */
+  pathLabel(id: string): string {
+    const map = this.byId();
+    const cat = map[id];
+    if (!cat) {
+      return '';
+    }
+    const parent = cat.parentId ? map[cat.parentId] : undefined;
+    return parent ? `${parent.name} · ${cat.name}` : cat.name;
+  }
 
   async load(includeArchived = false, force = false): Promise<void> {
     if (!force

@@ -4,12 +4,24 @@ export interface Category {
   color: string | null;
   icon: string | null;
   archived: boolean;
+  /** When true, this category's expenses are left out of report totals. */
+  excludeFromReports: boolean;
+  /**
+   * Parent category id for a subcategory, or null for a top-level category.
+   * The hierarchy is a single level deep: a category with a parent cannot
+   * itself be a parent. Absent on data written before subcategories existed,
+   * which is treated as top-level (null).
+   */
+  parentId: string | null;
 }
 
 export interface CategoryUpsertRequest {
   name: string;
   color: string | null;
   icon: string | null;
+  excludeFromReports: boolean;
+  /** Parent id when creating/saving a subcategory; null for top-level. */
+  parentId: string | null;
 }
 
 /** Preset colour swatches offered in the category editor. */
@@ -26,10 +38,24 @@ export const CATEGORY_COLORS: string[] = [
  * registered in core/icons.ts so it renders.
  */
 export const CATEGORY_ICONS: string[] = [
-  'restaurant', 'fast-food', 'cafe', 'cart', 'basket', 'bag-handle',
-  'car', 'bus', 'train', 'airplane', 'home', 'build',
-  'flash', 'water', 'wifi', 'phone-portrait', 'tv', 'game-controller',
-  'musical-notes', 'film', 'fitness', 'medkit', 'heart', 'school',
-  'book', 'gift', 'shirt', 'paw', 'leaf', 'cash',
-  'card', 'receipt', 'pricetag', 'umbrella',
+  // Food & drink
+  'restaurant', 'fast-food', 'cafe', 'pizza', 'ice-cream', 'nutrition',
+  'fish', 'egg', 'beer', 'wine',
+  // Shopping
+  'cart', 'basket', 'bag-handle', 'storefront', 'gift', 'shirt', 'glasses',
+  // Transport
+  'car', 'bus', 'train', 'airplane', 'bicycle', 'boat',
+  // Home & bills
+  'home', 'bed', 'key', 'build', 'construct', 'hammer', 'flash', 'water',
+  'wifi', 'phone-portrait', 'call', 'mail', 'tv',
+  // Health
+  'medkit', 'medical', 'bandage', 'heart', 'fitness', 'barbell',
+  // Kids & fun
+  'game-controller', 'balloon', 'happy', 'musical-notes', 'film', 'ticket',
+  // Education & hobbies
+  'school', 'book', 'library', 'color-palette', 'brush',
+  // Work & money
+  'briefcase', 'business', 'people', 'cash', 'card', 'receipt', 'pricetag',
+  // Misc
+  'paw', 'leaf', 'flower', 'football', 'basketball', 'sparkles', 'cut', 'umbrella',
 ];

@@ -1,4 +1,6 @@
 import { Component, effect, inject, signal } from '@angular/core';
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 
 @Component({
@@ -7,6 +9,7 @@ import { GoogleAuthService } from '../../core/auth/google-auth.service';
   template: `
     <main class="login-shell">
       <section class="login-card">
+        <img class="brand-logo" src="artha-logo.svg" alt="Artha" width="88" height="88" />
         <h1>Artha</h1>
         <p class="subtitle">Track expenses. Own your data.</p>
         <p class="description">
@@ -44,6 +47,7 @@ import { GoogleAuthService } from '../../core/auth/google-auth.service';
       box-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
       text-align: center;
     }
+    .brand-logo { display: block; width: 88px; height: 88px; margin: 0 auto 12px; }
     h1 { margin: 0 0 8px; font-size: 32px; color: #0f172a; letter-spacing: -0.02em; }
     .subtitle { margin: 0 0 16px; color: #475569; font-weight: 500; }
     .description { margin: 0 0 24px; color: #64748b; font-size: 14px; line-height: 1.5; }
@@ -82,6 +86,17 @@ export class LoginComponent {
         this.loading.set(false);
       }
     });
+
+    // If the user returns from the OAuth browser without completing (so we're
+    // still on this screen), free the button from its "Redirecting…" state. A
+    // successful sign-in navigates away before this matters.
+    if (Capacitor.isNativePlatform()) {
+      void App.addListener('resume', () => {
+        if (this.loading()) {
+          setTimeout(() => this.loading.set(false), 400);
+        }
+      });
+    }
   }
 
   async signIn(): Promise<void> {

@@ -11,6 +11,19 @@ def arthaVersionCode = arthaRunNumber ? arthaRunNumber.toInteger() : 1
 android {
     namespace = "com.artha.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    // Sign every build with a fixed, committed debug keystore so the app's
+    // signature is stable across CI builds. Without this, each ephemeral CI
+    // runner generates a throwaway ~/.android/debug.keystore, changing the
+    // signature every build and making Android refuse to install updates
+    // ("App not installed") over a previously installed APK.
+    signingConfigs {
+        debug {
+            storeFile file("artha-debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
     defaultConfig {
         applicationId "com.artha.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -28,6 +41,8 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Use the same stable key for release-style local installs too.
+            signingConfig signingConfigs.debug
         }
     }
 }

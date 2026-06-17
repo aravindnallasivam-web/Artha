@@ -6,6 +6,10 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.provider.Telephony;
 import android.telephony.SmsMessage;
@@ -27,6 +31,20 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     /** SharedPreferences the JS layer writes the ignored-sender list into. */
     static final String PREFS = "artha_sms";
     static final String KEY_IGNORED = "ignored_senders";
+    /** JSON {normalisedSender: accountName} of learned account mappings (JS-synced). */
+    static final String KEY_ACCOUNT_NAMES = "account_names";
+    /** JSON {merchantKey: categoryName} of learned category mappings (JS-synced). */
+    static final String KEY_CATEGORY_NAMES = "category_names";
+    /** Extra set on the "Add" action's launch intent so the app logs straight away. */
+    static final String EXTRA_ACTION_ADD = "artha_action_add";
+
+    // The SMS behind the most recent notification, stashed so the app can open
+    // the confirm dialog straight from it (no inbox re-scan) when tapped.
+    static final String KEY_PENDING_BODY = "pending_sms_body";
+    static final String KEY_PENDING_ADDRESS = "pending_sms_address";
+    static final String KEY_PENDING_DATE = "pending_sms_date";
+    /** Extra set on the launch intent so the app knows it was opened from the alert. */
+    static final String EXTRA_OPEN_SMS = "artha_open_sms";
 
     private static final String CHANNEL_ID = "artha_sms";
     private static final int NOTIF_ID = 4201;
@@ -79,7 +97,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             return;
         }
 
-        postNotification(context, amount.group(1));
+        postNotification(context, amount.group(1), address, body);
     }
 
     private boolean isIgnored(Context ctx, String sender) {
@@ -99,6 +117,61 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         return false;
     }
 
+    /** The app's launcher icon (colored logo) as a Bitmap, for setLargeIcon. */
+    private Bitmap appLogoBitmap(Context ctx) {
+        try {
+            Drawable d = ctx.getPackageManager().getApplicationIcon(ctx.getPackageName());
+            if (d instanceof BitmapDrawable) {
+                return ((BitmapDrawable) d).getBitmap();
+            }
+            // Adaptive/vector icons: render the drawable into a bitmap.
+            int w = Math.max(1, d.getIntrinsicWidth());
+            int h = Math.max(1, d.getIntrinsicHeight());
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bmp);
+            d.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+            d.draw(canvas);
+            return bmp;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private org.json.JSONObject readJson(Context ctx, String key) {
+        String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "");
+        if (raw == null || raw.isEmpty()) {
+            return new org.json.JSONObject();
+        }
+        try {
+            return new org.json.JSONObject(raw);
+        } catch (org.json.JSONException e) {
+            return new org.json.JSONObject();
+        }
+    }
+
+    /** Learned account name for this sender, or null. */
+    private String accountNameFor(Context ctx, String sender) {
+        if (sender == null || sender.isEmpty()) {
+            return null;
+        }
+        return readJson(ctx, KEY_ACCOUNT_NAMES).optString(normalizeSender(sender), null);
+    }
+
+    /** Learned category name for this SMS: the first learned merchant key the
+     *  body contains (avoids fragile merchant re-parsing). Null if none match. */
+    private String categoryNameFor(Context ctx, String body) {
+        org.json.JSONObject map = readJson(ctx, KEY_CATEGORY_NAMES);
+        String hay = body.toLowerCase().replaceAll("[^a-z0-9]", "");
+        java.util.Iterator<String> keys = map.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!key.isEmpty() && hay.contains(key)) {
+                return map.optString(key, null);
+            }
+        }
+        return null;
+    }
+
     /** Must match the JS normalizeSender(): strip operator prefix, keep A-Z0-9. */
     private static String normalizeSender(String sender) {
         return sender.toUpperCase()
@@ -106,7 +179,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .replaceAll("[^A-Z0-9]", "");
     }
 
-    private void postNotification(Context context, String amount) {
+    private void postNotification(Context context, String amount, String address, String body) {
         NotificationManager nm =
             (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
@@ -119,9 +192,19 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             nm.createNotificationChannel(channel);
         }
 
+        // Stash the triggering SMS so a tap can open the confirm dialog straight
+        // from it, without waiting on an inbox re-scan.
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_PENDING_BODY, body)
+            .putString(KEY_PENDING_ADDRESS, address)
+            .putLong(KEY_PENDING_DATE, System.currentTimeMillis())
+            .apply();
+
         Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (launch != null) {
             launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            launch.putExtra(EXTRA_OPEN_SMS, true);
         }
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -129,13 +212,41 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         }
         PendingIntent contentIntent = PendingIntent.getActivity(context, 0, launch, flags);
 
+        // Both the account (by sender) and category (a learned merchant key found
+        // in the body) must resolve to offer the one-tap "Add" action.
+        String accountName = accountNameFor(context, address);
+        String categoryName = categoryNameFor(context, body);
+        boolean canAdd = accountName != null && !accountName.isEmpty()
+            && categoryName != null && !categoryName.isEmpty();
+
+        String text = canAdd
+            ? "₹" + amount + " · " + categoryName + " · " + accountName
+            : "₹" + amount + " — tap to review and log it in Artha";
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.getApplicationInfo().icon)
             .setContentTitle("Expense detected")
-            .setContentText("₹" + amount + " — tap to review and log it in Artha")
+            .setContentText(text)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentIntent);
+
+        // Show the app logo as the notification's large icon.
+        Bitmap logo = appLogoBitmap(context);
+        if (logo != null) {
+            builder.setLargeIcon(logo);
+        }
+
+        if (canAdd) {
+            Intent addLaunch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+            if (addLaunch != null) {
+                addLaunch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                addLaunch.putExtra(EXTRA_OPEN_SMS, true);
+                addLaunch.putExtra(EXTRA_ACTION_ADD, true);
+                PendingIntent addIntent = PendingIntent.getActivity(context, 1, addLaunch, flags);
+                builder.addAction(0, "Add to " + categoryName, addIntent);
+            }
+        }
 
         nm.notify(NOTIF_ID, builder.build());
     }

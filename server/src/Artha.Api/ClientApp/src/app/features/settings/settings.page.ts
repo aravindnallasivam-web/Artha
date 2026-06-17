@@ -1,5 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import {
   IonContent,
   IonHeader,
@@ -7,8 +9,9 @@ import {
   IonItem,
   IonLabel,
   IonList,
-  IonListHeader,
   IonNote,
+  IonSegment,
+  IonSegmentButton,
   IonSelect,
   IonSelectOption,
   IonSpinner,
@@ -19,10 +22,14 @@ import {
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
+import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
+import { environment } from '../../../environments/environment';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
 import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
+import { SmsMappingsModal } from '../sms/sms-mappings.modal';
+import { SmsTrainingWizardModal } from '../sms/sms-training.wizard.modal';
 import { SettingsStore } from './settings.store';
 
 @Component({
@@ -35,8 +42,9 @@ import { SettingsStore } from './settings.store';
     IonItem,
     IonLabel,
     IonList,
-    IonListHeader,
     IonNote,
+    IonSegment,
+    IonSegmentButton,
     IonSelect,
     IonSelectOption,
     IonSpinner,
@@ -45,7 +53,7 @@ import { SettingsStore } from './settings.store';
     IonToolbar,
   ],
   template: `
-    <ion-header>
+    <ion-header class="ion-no-border">
       <ion-toolbar>
         <ion-title>Settings</ion-title>
       </ion-toolbar>
@@ -55,9 +63,22 @@ import { SettingsStore } from './settings.store';
       @if (store.loading()) {
         <div class="loading"><ion-spinner></ion-spinner></div>
       } @else {
-        <ion-list inset="true">
-          <ion-list-header><ion-label>Preferences</ion-label></ion-list-header>
+        @if (session.currentUser(); as user) {
+          <section class="profile">
+            <div class="avatar">{{ initials(user.name) }}</div>
+            <div class="who">
+              <h2>{{ user.name }}</h2>
+              <p>{{ user.email }}</p>
+            </div>
+          </section>
+        }
+
+        <p class="section-title">Preferences</p>
+        <ion-list inset="true" class="card">
           <ion-item lines="none">
+            <span class="icon-chip chip-accent" slot="start">
+              <ion-icon name="cash-outline"></ion-icon>
+            </span>
             <ion-select
               label="Currency"
               labelPlacement="stacked"
@@ -72,10 +93,36 @@ import { SettingsStore } from './settings.store';
           </ion-item>
         </ion-list>
 
+        <p class="section-title">Appearance</p>
+        <ion-list inset="true" class="card">
+          <ion-item lines="none">
+            <span class="icon-chip chip-accent" slot="start">
+              <ion-icon name="contrast-outline"></ion-icon>
+            </span>
+            <ion-label>Theme</ion-label>
+          </ion-item>
+          <div class="seg-wrap">
+            <ion-segment [value]="theme.preference()" (ionChange)="onThemeChange($event)">
+              <ion-segment-button value="system">
+                <ion-label>System</ion-label>
+              </ion-segment-button>
+              <ion-segment-button value="light">
+                <ion-label>Light</ion-label>
+              </ion-segment-button>
+              <ion-segment-button value="dark">
+                <ion-label>Dark</ion-label>
+              </ion-segment-button>
+            </ion-segment>
+          </div>
+        </ion-list>
+
         @if (sms.isSupported()) {
-          <ion-list inset="true">
-            <ion-list-header><ion-label>Automation</ion-label></ion-list-header>
-            <ion-item>
+          <p class="section-title">Automation</p>
+          <ion-list inset="true" class="card">
+            <ion-item [lines]="smsEnabled() ? 'inset' : 'none'">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="chatbubble-ellipses-outline"></ion-icon>
+              </span>
               <ion-toggle
                 labelPlacement="start"
                 justify="space-between"
@@ -89,44 +136,89 @@ import { SettingsStore } from './settings.store';
                 </ion-label>
               </ion-toggle>
             </ion-item>
+            @if (smsEnabled()) {
+              <ion-item lines="none">
+                <span class="icon-chip chip-positive" slot="start">
+                  <ion-icon name="flash-outline"></ion-icon>
+                </span>
+                <ion-toggle
+                  labelPlacement="start"
+                  justify="space-between"
+                  [checked]="smsAutoAdd()"
+                  (ionChange)="onAutoAddToggle($event)"
+                >
+                  <ion-label class="ion-text-wrap">
+                    <h2>Auto-add known expenses</h2>
+                    <p>When the vendor's category and account are already learned, log it
+                      automatically and just notify you — no approval needed.</p>
+                  </ion-label>
+                </ion-toggle>
+              </ion-item>
+            }
+          </ion-list>
+
+          <ion-list inset="true" class="card">
+            @if (sms.pendingCount() > 0) {
+              <ion-item button detail="true" [disabled]="smsBusy()" (click)="reviewPending()">
+                <span class="icon-chip chip-warning" slot="start">
+                  <ion-icon name="hourglass-outline"></ion-icon>
+                </span>
+                <ion-label>Pending expenses</ion-label>
+                <ion-note slot="end" class="pill">{{ sms.pendingCount() }}</ion-note>
+              </ion-item>
+            }
+            <ion-item button detail="true" (click)="trainSms()">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="school-outline"></ion-icon>
+              </span>
+              <ion-label class="ion-text-wrap">
+                <h2>Train SMS recognition</h2>
+                <p>Teach it your banks &amp; categories</p>
+              </ion-label>
+            </ion-item>
             <ion-item button detail="false" [disabled]="smsBusy()" (click)="scanSms()">
-              <ion-icon name="search-outline" slot="start" color="medium"></ion-icon>
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="search-outline"></ion-icon>
+              </span>
               <ion-label>Scan recent messages</ion-label>
               @if (smsBusy()) { <ion-spinner slot="end"></ion-spinner> }
             </ion-item>
+            @if (smsMappingCount() > 0) {
+              <ion-item button detail="true" (click)="manageMappings()">
+                <span class="icon-chip chip-muted" slot="start">
+                  <ion-icon name="git-merge-outline"></ion-icon>
+                </span>
+                <ion-label>Learned mappings</ion-label>
+                <ion-note slot="end">{{ smsMappingCount() }}</ion-note>
+              </ion-item>
+            }
             @if (smsIgnoredCount() > 0) {
-              <ion-item button (click)="manageIgnored()">
-                <ion-icon name="close-outline" slot="start" color="medium"></ion-icon>
+              <ion-item button detail="true" lines="none" (click)="manageIgnored()">
+                <span class="icon-chip chip-muted" slot="start">
+                  <ion-icon name="close-circle-outline"></ion-icon>
+                </span>
                 <ion-label>Ignored senders</ion-label>
                 <ion-note slot="end">{{ smsIgnoredCount() }}</ion-note>
               </ion-item>
             }
-            <ion-item lines="none" class="footnote">
-              <ion-label class="ion-text-wrap">
-                <ion-note color="medium">
-                  Reads bank SMS on this device only — messages are never uploaded.
-                </ion-note>
-              </ion-label>
-            </ion-item>
           </ion-list>
+          <p class="hint">
+            <ion-icon name="lock-closed-outline"></ion-icon>
+            Reads bank SMS on this device only — messages are never uploaded.
+          </p>
         }
 
-        <ion-list inset="true">
-          <ion-list-header><ion-label>Account</ion-label></ion-list-header>
-          @if (session.currentUser(); as user) {
-            <ion-item lines="full">
-              <ion-icon name="person-circle-outline" slot="start" color="medium" class="avatar"></ion-icon>
-              <ion-label class="ion-text-wrap">
-                <h2>{{ user.name }}</h2>
-                <p>{{ user.email }}</p>
-              </ion-label>
-            </ion-item>
-          }
-          <ion-item button detail="false" (click)="signOut()">
-            <ion-icon name="log-out-outline" slot="start" color="danger"></ion-icon>
+        <p class="section-title">Account</p>
+        <ion-list inset="true" class="card">
+          <ion-item button detail="false" lines="none" (click)="signOut()">
+            <span class="icon-chip chip-danger" slot="start">
+              <ion-icon name="log-out-outline"></ion-icon>
+            </span>
             <ion-label color="danger">Sign out</ion-label>
           </ion-item>
         </ion-list>
+
+        <p class="version">Artha · {{ appVersion() }}</p>
       }
     </ion-content>
   `,
@@ -134,20 +226,100 @@ import { SettingsStore } from './settings.store';
     .loading {
       display: flex; align-items: center; justify-content: center; padding: 48px;
     }
-    ion-list-header ion-label {
-      font-size: 13px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.4px; color: var(--ion-color-medium);
+
+    /* Profile hero */
+    .profile {
+      display: flex; align-items: center; gap: 14px;
+      margin: 12px 16px 4px;
+      padding: 18px 16px;
+      background: var(--artha-surface);
+      border: 1px solid var(--artha-border);
+      border-radius: var(--artha-radius-lg);
+      box-shadow: var(--artha-shadow-sm);
     }
-    .footnote { --min-height: 0; }
-    .footnote ion-note { font-size: 12.5px; line-height: 1.45; }
-    .avatar { font-size: 34px; }
-    h2 { font-weight: 600; }
+    .avatar {
+      width: 52px; height: 52px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--artha-accent), var(--artha-accent-hover));
+    }
+    .who { min-width: 0; }
+    .who h2 { margin: 0; font-size: 17px; font-weight: 700; color: var(--artha-text); }
+    .who p {
+      margin: 2px 0 0; font-size: 13px; color: var(--artha-text-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Section labels */
+    .section-title {
+      margin: 22px 20px 8px;
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--artha-text-subtle);
+    }
+
+    /* Cards */
+    ion-list.card {
+      margin: 0 16px;
+      padding: 4px 0;
+      border-radius: var(--artha-radius-lg);
+      border: 1px solid var(--artha-border);
+      box-shadow: var(--artha-shadow-sm);
+      overflow: hidden;
+      background: var(--artha-surface);
+    }
+    ion-list.card + ion-list.card { margin-top: 12px; }
+    .seg-wrap { padding: 0 14px 12px; }
+    .seg-wrap ion-segment { --background: var(--artha-surface-2); }
+    ion-list.card ion-item {
+      --background: transparent;
+      --padding-start: 14px;
+      --inner-padding-end: 12px;
+      --min-height: 58px;
+    }
+    ion-item h2 { font-size: 15px; font-weight: 600; margin: 0; }
+    ion-item p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--artha-text-muted); }
+
+    /* Leading icon chips */
+    .icon-chip {
+      width: 32px; height: 32px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 12px 0 0; flex-shrink: 0;
+    }
+    .icon-chip ion-icon { font-size: 18px; }
+    .chip-accent   { background: var(--artha-accent-tint);   color: var(--artha-accent); }
+    .chip-positive { background: var(--artha-positive-tint); color: var(--artha-positive); }
+    .chip-danger   { background: var(--artha-negative-tint); color: var(--artha-negative); }
+    .chip-warning  { background: rgba(245, 158, 11, 0.15);   color: var(--artha-warning); }
+    .chip-muted    { background: var(--artha-surface-2);     color: var(--artha-text-muted); }
+
+    /* Trailing counts */
+    ion-note[slot="end"] { font-weight: 600; align-self: center; }
+    ion-note.pill {
+      background: var(--artha-accent); color: #fff;
+      min-width: 22px; height: 22px; padding: 0 7px;
+      border-radius: 11px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 12px;
+    }
+
+    /* Privacy hint */
+    .hint {
+      display: flex; align-items: flex-start; gap: 7px;
+      margin: 10px 22px 0; font-size: 12.5px; line-height: 1.5;
+      color: var(--artha-text-subtle);
+    }
+    .hint ion-icon { font-size: 14px; margin-top: 2px; flex-shrink: 0; }
+
+    .version {
+      margin: 28px 0 10px; text-align: center;
+      font-size: 12px; color: var(--artha-text-subtle);
+    }
   `],
 })
 export class SettingsPage implements OnInit {
   protected readonly store = inject(SettingsStore);
   protected readonly session = inject(SessionService);
   protected readonly sms = inject(SmsCaptureService);
+  protected readonly theme = inject(ThemeService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
@@ -157,11 +329,62 @@ export class SettingsPage implements OnInit {
   protected readonly smsEnabled = signal(false);
   protected readonly smsBusy = signal(false);
   protected readonly smsIgnoredCount = signal(0);
+  protected readonly smsMappingCount = signal(0);
+  protected readonly smsAutoAdd = signal(true);
+  protected readonly appVersion = signal(environment.version);
+
+  /** Up to two uppercased initials for the profile avatar. */
+  protected initials(name: string): string {
+    const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+    const letters = parts.slice(0, 2).map((p) => p[0]).join('');
+    return letters.toUpperCase() || '?';
+  }
 
   ngOnInit(): void {
     void this.store.load();
     this.smsEnabled.set(this.sms.isEnabled());
     this.smsIgnoredCount.set(this.sms.ignoredCount());
+    this.smsMappingCount.set(this.sms.mappingCount());
+    this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+    void this.loadVersion();
+  }
+
+  /** On a device, show the real installed version + build number. */
+  private async loadVersion(): Promise<void> {
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
+    try {
+      const info = await App.getInfo();
+      this.appVersion.set(`${info.version} (build ${info.build})`);
+    } catch {
+      // Keep the web fallback from the environment.
+    }
+  }
+
+  onAutoAddToggle(event: Event): void {
+    const checked = (event as CustomEvent<{ checked: boolean }>).detail.checked;
+    this.sms.setAutoAdd(checked);
+    this.smsAutoAdd.set(checked);
+  }
+
+  async trainSms(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: SmsTrainingWizardModal });
+    await modal.present();
+    await modal.onWillDismiss();
+    // The wizard may enable capture, learn mappings (even without logging),
+    // ignore senders, and toggle auto-add — refresh everything it touches.
+    this.smsEnabled.set(this.sms.isEnabled());
+    this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+    this.smsMappingCount.set(this.sms.mappingCount());
+    this.smsIgnoredCount.set(this.sms.ignoredCount());
+  }
+
+  async manageMappings(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: SmsMappingsModal });
+    await modal.present();
+    await modal.onWillDismiss();
+    this.smsMappingCount.set(this.sms.mappingCount());
   }
 
   async manageIgnored(): Promise<void> {
@@ -209,6 +432,11 @@ export class SettingsPage implements OnInit {
     }
   }
 
+  /** Open the persistent queue of detected-but-unattended expenses. */
+  async reviewPending(): Promise<void> {
+    await this.sms.reviewPending();
+  }
+
   async onCurrencyChange(event: Event): Promise<void> {
     const value = (event as CustomEvent<{ value: string }>).detail?.value;
     if (!value || value === this.store.currency()) {
@@ -219,6 +447,13 @@ export class SettingsPage implements OnInit {
       await this.notifier.notifyInfo(`Currency changed to ${value}.`);
     } catch (err) {
       await this.notifier.notifyError('Could not update currency.');
+    }
+  }
+
+  onThemeChange(event: Event): void {
+    const value = (event as CustomEvent<{ value: ThemePreference }>).detail?.value;
+    if (value) {
+      this.theme.setPreference(value);
     }
   }
 

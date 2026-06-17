@@ -105,6 +105,9 @@ import { BalanceSyncService } from './balance-sync.service';
                     @if (bankName(acc); as bn) {
                       <span class="chip">{{ bn }}</span>
                     }
+                    @if (simChip(acc); as sim) {
+                      <span class="chip chip--sim">{{ sim }}</span>
+                    }
                   </div>
                 </div>
                 <div class="acc-right">
@@ -200,6 +203,9 @@ import { BalanceSyncService } from './balance-sync.service';
       background: var(--artha-surface-2); color: var(--artha-text-muted);
       white-space: nowrap;
     }
+    .chip--sim {
+      background: var(--artha-accent-tint, #eaf1ff); color: var(--artha-accent, #2f6df6);
+    }
     .acc-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
     .acc-balance {
       font-weight: 700; font-size: 15px; color: var(--artha-text);
@@ -231,6 +237,8 @@ export class AccountsListPage implements OnInit {
 
   protected readonly defaultAccountId = DEFAULT_ACCOUNT_ID;
   protected readonly view = signal<'active' | 'archived'>('active');
+  /** Friendly SIM labels keyed by subscription id (for the per-account chip). */
+  protected readonly simLabels = signal<Record<number, string>>({});
 
   protected readonly visible = computed(() =>
     this.view() === 'active'
@@ -250,6 +258,21 @@ export class AccountsListPage implements OnInit {
 
   ngOnInit(): void {
     void this.store.load();
+    if (this.balanceSync.isSupported()) {
+      void this.balanceSync.simLabels().then((m) => this.simLabels.set(m));
+    }
+  }
+
+  /** Chip text for the SIM an account's balance enquiry uses, or null. */
+  protected simChip(acc: Account): string | null {
+    if (!this.canSync(acc)) {
+      return null;
+    }
+    const subId = this.balanceSync.rememberedSim(acc.id);
+    if (subId == null) {
+      return null;
+    }
+    return this.simLabels()[subId] ?? null;
   }
 
   protected accountsLabel(): string {

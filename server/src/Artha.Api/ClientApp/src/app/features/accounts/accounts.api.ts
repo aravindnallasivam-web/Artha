@@ -1,29 +1,26 @@
-import { HttpClient } from '@angular/common/http';
+// Thin pass-through to the Drive-backed service. Kept as `AccountsApi` so the
+// store's injection point is unchanged after the serverless cutover.
 import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../environments/environment';
 import { Account, AccountUpsertRequest } from '../../core/models/account.model';
+import { AccountsDriveService } from './accounts.drive';
 
 @Injectable({ providedIn: 'root' })
 export class AccountsApi {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/api/accounts`;
+  private readonly drive = inject(AccountsDriveService);
 
   list(includeArchived = false): Promise<Account[]> {
-    const params: Record<string, string> = {};
-    if (includeArchived) params['includeArchived'] = 'true';
-    return firstValueFrom(this.http.get<Account[]>(this.baseUrl, { params }));
+    return this.drive.list(includeArchived);
   }
 
   create(request: AccountUpsertRequest): Promise<Account> {
-    return firstValueFrom(this.http.post<Account>(this.baseUrl, request));
+    return this.drive.create(request);
   }
 
   update(id: string, request: AccountUpsertRequest): Promise<Account> {
-    return firstValueFrom(this.http.put<Account>(`${this.baseUrl}/${id}`, request));
+    return this.drive.update(id, request);
   }
 
   remove(id: string): Promise<void> {
-    return firstValueFrom(this.http.delete<void>(`${this.baseUrl}/${id}`));
+    return this.drive.remove(id);
   }
 }

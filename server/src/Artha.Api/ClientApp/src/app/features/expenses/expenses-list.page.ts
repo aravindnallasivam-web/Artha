@@ -10,14 +10,11 @@ import {
   IonSpinner,
   IonTitle,
   IonToolbar,
-  ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
-import { ImportResultResponse } from '../../core/models/import.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
-import { ExpenseImportModal } from './expense-import.modal';
 import { ExpensesStore } from './expenses.store';
 
 type ViewMode = 'list' | 'day' | 'month';
@@ -62,9 +59,6 @@ const TODAY_ISO = toIsoDate(new Date());
       <ion-toolbar>
         <ion-title>Expenses</ion-title>
         <ion-buttons slot="end">
-          <ion-button (click)="openImport()" aria-label="Import expenses">
-            <ion-icon slot="icon-only" name="cloud-upload-outline"></ion-icon>
-          </ion-button>
           <ion-button (click)="add()" aria-label="Add expense">
             <ion-icon slot="icon-only" name="add"></ion-icon>
           </ion-button>
@@ -266,8 +260,8 @@ const TODAY_ISO = toIsoDate(new Date());
                               @if (expense.note) { · {{ expense.note }} }
                             </p>
                           </div>
-                          <span class="row-amount num">
-                            {{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
+                          <span class="row-amount num" [class.income]="expense.type === 'income'">
+                            {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
                           </span>
                           <button
                             type="button"
@@ -343,8 +337,8 @@ const TODAY_ISO = toIsoDate(new Date());
                             @if (expense.note) { · {{ expense.note }} }
                           </p>
                         </div>
-                        <span class="row-amount num">
-                          {{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
+                        <span class="row-amount num" [class.income]="expense.type === 'income'">
+                          {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
                         </span>
                         <button
                           type="button"
@@ -716,6 +710,7 @@ const TODAY_ISO = toIsoDate(new Date());
       font-size: 14px; font-weight: 600;
       color: var(--artha-text);
     }
+    .row-amount.income { color: var(--artha-positive); }
     .row-delete {
       width: 28px; height: 28px;
       border: 0; background: transparent;
@@ -951,6 +946,11 @@ const TODAY_ISO = toIsoDate(new Date());
       .cell-total { font-size: 10px; }
       .day-summary-total { font-size: 30px; }
     }
+    /* Clear the fixed bottom tab bar (mobile-only, <768px) plus the
+       home-indicator safe area so the last expense isn't hidden. */
+    @media (max-width: 767.98px) {
+      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+    }
   `],
 })
 export class ExpensesListPage implements OnInit {
@@ -960,7 +960,6 @@ export class ExpensesListPage implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly notifier = inject(ConflictNotifierService);
-  private readonly modalCtrl = inject(ModalController);
 
   protected readonly weekdays = WEEKDAYS;
 
@@ -1021,11 +1020,11 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly monthTotal = computed(() =>
-    this.monthExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
+    this.monthExpenses().reduce((sum, e) => (countsAsSpend(e) ? sum + e.amount : sum), 0),
   );
 
   protected readonly monthCount = computed(() =>
-    this.monthExpenses().filter((e) => !e.excluded).length,
+    this.monthExpenses().filter(countsAsSpend).length,
   );
 
   protected readonly dailyAverage = computed(() => {
@@ -1046,7 +1045,7 @@ export class ExpensesListPage implements OnInit {
         groups.set(e.date, g);
       }
       g.items.push(e);
-      if (!e.excluded) g.total += e.amount;
+      if (countsAsSpend(e)) g.total += e.amount;
     }
     return Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date));
   });
@@ -1059,7 +1058,7 @@ export class ExpensesListPage implements OnInit {
   );
 
   protected readonly selectedDayTotal = computed(() =>
-    this.selectedDayExpenses().reduce((sum, e) => (e.excluded ? sum : sum + e.amount), 0),
+    this.selectedDayExpenses().reduce((sum, e) => (countsAsSpend(e) ? sum + e.amount : sum), 0),
   );
 
   protected readonly calendar = computed<CalendarCell[]>(() => {
@@ -1067,7 +1066,7 @@ export class ExpensesListPage implements OnInit {
     const month = this.viewMonth();
     const totals = new Map<string, { total: number; count: number }>();
     for (const g of this.dayGroups()) {
-      totals.set(g.date, { total: g.total, count: g.items.filter((e) => !e.excluded).length });
+      totals.set(g.date, { total: g.total, count: g.items.filter(countsAsSpend).length });
     }
 
     // Build a 6-row grid starting on Sunday for visual consistency.
@@ -1251,33 +1250,6 @@ export class ExpensesListPage implements OnInit {
     void this.router.navigate(['/expenses', 'new']);
   }
 
-  protected async openImport(): Promise<void> {
-    const modal = await this.modalCtrl.create({ component: ExpenseImportModal });
-    await modal.present();
-
-    const { role, data } = await modal.onWillDismiss<ImportResultResponse>();
-    if (role !== 'imported' || !data) {
-      return;
-    }
-
-    // New categories/accounts may have been created, and expenses added across
-    // months — force-refresh the relevant stores so the UI reflects the import.
-    await Promise.all([
-      this.categoriesStore.load(/* includeArchived */ true, /* force */ true),
-      this.accountsStore.load(/* includeArchived */ true, /* force */ true),
-      this.loadMonth(/* force */ true),
-    ]);
-
-    const parts = [`Imported ${data.importedCount} expense${data.importedCount === 1 ? '' : 's'}.`];
-    if (data.createdCategories.length > 0) {
-      parts.push(`Created ${data.createdCategories.length} categor${data.createdCategories.length === 1 ? 'y' : 'ies'}.`);
-    }
-    if (data.createdAccounts.length > 0) {
-      parts.push(`Created ${data.createdAccounts.length} account${data.createdAccounts.length === 1 ? '' : 's'}.`);
-    }
-    await this.notifier.notifyInfo(parts.join(' '));
-  }
-
   protected edit(id: string): void {
     void this.router.navigate(['/expenses', id]);
   }
@@ -1295,6 +1267,11 @@ export class ExpensesListPage implements OnInit {
     const prefix = monthPrefix(this.viewYear(), this.viewMonth());
     await this.expensesStore.load(prefix, prefix, force);
   }
+}
+
+/** Whether a transaction counts toward spending totals (not income, not excluded). */
+function countsAsSpend(e: Expense): boolean {
+  return !e.excluded && e.type !== 'income';
 }
 
 function monthPrefix(year: number, month: number): string {

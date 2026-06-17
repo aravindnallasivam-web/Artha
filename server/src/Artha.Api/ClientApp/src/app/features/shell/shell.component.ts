@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { SyncIndicatorComponent } from '../../core/sync/sync-indicator.component';
 import {
   IonApp,
   IonContent,
@@ -38,6 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
       { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
       { path: '/planned-expenses', label: 'Planned', icon: 'calendar-outline', iconActive: 'calendar' },
       { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
+      { path: '/loans', label: 'Loans', icon: 'cash-outline', iconActive: 'cash' },
     ],
   },
   {
@@ -71,6 +73,7 @@ const TABS: NavItem[] = [
     IonMenu,
     IonRouterOutlet,
     IonSplitPane,
+    SyncIndicatorComponent,
   ],
   template: `
     <ion-app>
@@ -156,6 +159,8 @@ const TABS: NavItem[] = [
           </a>
         }
       </nav>
+
+      <artha-sync-indicator></artha-sync-indicator>
     </ion-app>
   `,
   styles: [`

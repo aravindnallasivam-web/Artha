@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- Send a balance-enquiry SMS to the bank when the user taps "Sync balance". -->
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Read the active SIMs so the user can pick which one sends the
+         balance-enquiry SMS on a dual-SIM phone. Requested on demand. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Post a notification when a bank SMS arrives while the app is closed. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -32,11 +35,18 @@
             </intent-filter>
 
             <!--
-                OAuth deep link: the bridge page at
-                https://<deployed-app>/auth/callback/mobile bounces to
-                com.artha.app://auth/callback?code=...&state=... which
-                this filter routes back into the app.
+                OAuth deep link (serverless): the Android OAuth client redirects
+                to the reversed-client-id custom scheme
+                com.googleusercontent.apps.<client-id>:/oauth2redirect?code=...
+                which this filter routes back into the app. The legacy
+                com.artha.app scheme is kept for any other deep links.
             -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.googleusercontent.apps.952436597649-6bpd2mli17eg30falj66bqpt8p5svvso" />
+            </intent-filter>
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

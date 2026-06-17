@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   IonButton,
@@ -8,6 +8,7 @@ import {
   IonIcon,
   IonSpinner,
   IonTitle,
+  IonToggle,
   IonToolbar,
   ModalController,
 } from '@ionic/angular/standalone';
@@ -28,6 +29,7 @@ import { CategoriesStore } from './categories.store';
     IonContent,
     IonIcon,
     IonSpinner,
+    IonToggle,
   ],
   template: `
     <ion-header>
@@ -63,6 +65,24 @@ import { CategoriesStore } from './categories.store';
         maxlength="40"
         [disabled]="saving()"
       />
+
+      <label class="field-label" for="cat-parent">Parent category</label>
+      @if (editingHasChildren()) {
+        <p class="parent-note">This category has subcategories, so it stays a top-level category.</p>
+      } @else {
+        <select
+          id="cat-parent"
+          class="text-field"
+          [ngModel]="parentId() ?? ''"
+          (ngModelChange)="onParentChange($event)"
+          [disabled]="saving()"
+        >
+          <option value="">None — top-level category</option>
+          @for (p of parentOptions(); track p.id) {
+            <option [value]="p.id">{{ p.name }}</option>
+          }
+        </select>
+      }
 
       <div class="field-label-row">
         <span class="field-label">Colour</span>
@@ -114,6 +134,22 @@ import { CategoriesStore } from './categories.store';
             <ion-icon [name]="ic"></ion-icon>
           </button>
         }
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-text">
+          <span class="toggle-title">Exclude from reports</span>
+          <span class="toggle-hint">
+            Hide this category's expenses from report totals and charts — handy
+            for investments, transfers or savings.
+          </span>
+        </div>
+        <ion-toggle
+          [checked]="excludeFromReports()"
+          (ionChange)="excludeFromReports.set($event.detail.checked)"
+          [disabled]="saving()"
+          aria-label="Exclude from reports"
+        ></ion-toggle>
       </div>
 
       <button
@@ -175,6 +211,11 @@ import { CategoriesStore } from './categories.store';
       background: var(--artha-surface, #fff);
     }
     .text-field:focus { outline: 2px solid var(--artha-accent, #2f6df6); outline-offset: -1px; }
+    select.text-field { appearance: auto; -webkit-appearance: auto; }
+    .parent-note {
+      margin: 0; font-size: 12px; line-height: 1.4;
+      color: var(--artha-text-muted, #555);
+    }
 
     .swatches {
       display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px;
@@ -206,6 +247,23 @@ import { CategoriesStore } from './categories.store';
       color: var(--artha-accent, #2f6df6);
     }
 
+    .toggle-row {
+      display: flex; align-items: center; gap: 12px;
+      margin-top: 24px; padding: 12px 14px;
+      border-radius: var(--artha-radius, 12px);
+      background: var(--artha-surface-2, #f3f4f6);
+    }
+    .toggle-text { flex: 1; min-width: 0; }
+    .toggle-title {
+      display: block; font-size: 14px; font-weight: 600;
+      color: var(--artha-text, #111);
+    }
+    .toggle-hint {
+      display: block; margin-top: 2px;
+      font-size: 12px; line-height: 1.35;
+      color: var(--artha-text-muted, #555);
+    }
+
     .save-btn {
       width: 100%; margin-top: 24px;
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -221,6 +279,8 @@ import { CategoriesStore } from './categories.store';
 export class CategoryEditModal implements OnInit {
   /** Set via modal componentProps. Absent => creating a new category. */
   category?: Category;
+  /** Preselect a parent when adding a subcategory from a parent's card. */
+  defaultParentId?: string | null;
 
   private readonly modalCtrl = inject(ModalController);
   private readonly store = inject(CategoriesStore);
@@ -232,14 +292,34 @@ export class CategoryEditModal implements OnInit {
   protected readonly name = signal('');
   protected readonly color = signal<string | null>(CATEGORY_COLORS[10]);
   protected readonly icon = signal<string | null>(null);
+  protected readonly excludeFromReports = signal(false);
+  protected readonly parentId = signal<string | null>(null);
   protected readonly saving = signal(false);
+
+  /** Top-level categories that can be a parent (excludes the one being edited). */
+  protected readonly parentOptions = computed(() =>
+    this.store.topLevel().filter((c) => c.id !== this.category?.id),
+  );
+
+  /** Editing a category that already has subcategories: it must stay top-level. */
+  protected readonly editingHasChildren = computed(
+    () => !!this.category && this.store.subcategoriesOf(this.category.id).length > 0,
+  );
 
   ngOnInit(): void {
     if (this.category) {
       this.name.set(this.category.name);
       this.color.set(this.category.color);
       this.icon.set(this.category.icon);
+      this.excludeFromReports.set(this.category.excludeFromReports);
+      this.parentId.set(this.category.parentId ?? null);
+    } else if (this.defaultParentId) {
+      this.parentId.set(this.defaultParentId);
     }
+  }
+
+  protected onParentChange(value: string): void {
+    this.parentId.set(value || null);
   }
 
   protected async save(): Promise<void> {
@@ -248,14 +328,21 @@ export class CategoryEditModal implements OnInit {
       return;
     }
     this.saving.set(true);
-    const payload = { name, color: this.color(), icon: this.icon() };
+    const payload = {
+      name,
+      color: this.color(),
+      icon: this.icon(),
+      excludeFromReports: this.excludeFromReports(),
+      // A category that already has subcategories must stay top-level.
+      parentId: this.editingHasChildren() ? null : this.parentId(),
+    };
     try {
-      if (this.category) {
-        await this.store.update(this.category.id, payload);
-      } else {
-        await this.store.add(payload);
-      }
-      await this.modalCtrl.dismiss(true, 'saved');
+      const saved = this.category
+        ? await this.store.update(this.category.id, payload)
+        : await this.store.add(payload);
+      // Return the saved category so callers (e.g. the inline "New category"
+      // flow in the picker) can select it immediately.
+      await this.modalCtrl.dismiss(saved, 'saved');
     } catch {
       this.saving.set(false);
       await this.notifier.notifyError(
