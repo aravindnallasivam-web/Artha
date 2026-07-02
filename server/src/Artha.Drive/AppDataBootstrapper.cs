@@ -50,42 +50,42 @@ public sealed class AppDataBootstrapper
             var manifestExists = await drive.GetByNameAsync(DriveFileNames.Manifest, cancellationToken) is not null;
             var defaultCurrency = DefaultCurrencyFor(profile.Locale);
 
-            // accounts.json (always — this is the marker file for "fully bootstrapped")
+            if (!manifestExists)
+            {
+                // Brand-new user — seed categories/settings/manifest. Existing
+                // pre-M5 users already have these and only lack accounts.json.
+                var categories = BuildDefaultCategories();
+                var settings = new SettingsDocument(
+                    SchemaVersion: SchemaVersions.Current,
+                    Currency: defaultCurrency,
+                    FirstRunCompleted: false,
+                    Locale: profile.Locale);
+                var manifest = new Manifest(
+                    SchemaVersion: SchemaVersions.Current,
+                    Shards: Array.Empty<string>(),
+                    CreatedAt: DateTimeOffset.UtcNow);
+
+                var categoryRepo = new AppDataRepository<CategoryList>(drive);
+                var settingsRepo = new AppDataRepository<SettingsDocument>(drive);
+                var manifestRepo = new AppDataRepository<Manifest>(drive);
+
+                await categoryRepo.WriteAsync(DriveFileNames.Categories, new CategoryList(SchemaVersions.Current, categories), cancellationToken);
+                await settingsRepo.WriteAsync(DriveFileNames.Settings, settings, cancellationToken);
+                await manifestRepo.WriteAsync(DriveFileNames.Manifest, manifest, cancellationToken);
+            }
+
+            // accounts.json is written LAST because it is the "fully
+            // bootstrapped" marker the fast-path check keys off. Writing it
+            // first opened a window where a concurrent first-run request could
+            // see the marker, skip the gate, and then read categories/settings/
+            // manifest that hadn't been written yet — surfacing an empty,
+            // half-initialised app on first launch.
             var accounts = BuildDefaultAccounts(defaultCurrency);
             var accountRepo = new AppDataRepository<AccountList>(drive);
             await accountRepo.WriteAsync(
                 DriveFileNames.Accounts,
                 new AccountList(SchemaVersions.Current, accounts),
                 cancellationToken);
-
-            if (manifestExists)
-            {
-                // Existing user — they had categories/settings/manifest from
-                // a pre-M5 bootstrap. Seeding accounts is enough; their old
-                // expenses fall back to acc-cash via the API layer.
-                return;
-            }
-
-            var categories = BuildDefaultCategories();
-            var settings = new SettingsDocument(
-                SchemaVersion: SchemaVersions.Current,
-                Currency: defaultCurrency,
-                FirstRunCompleted: false,
-                Locale: profile.Locale);
-            var manifest = new Manifest(
-                SchemaVersion: SchemaVersions.Current,
-                Shards: Array.Empty<string>(),
-                CreatedAt: DateTimeOffset.UtcNow);
-
-            var categoryRepo = new AppDataRepository<CategoryList>(drive);
-            var settingsRepo = new AppDataRepository<SettingsDocument>(drive);
-            var manifestRepo = new AppDataRepository<Manifest>(drive);
-
-            // Order matters: write data files first, then manifest last so a
-            // crashed bootstrap doesn't leave a manifest pointing at nothing.
-            await categoryRepo.WriteAsync(DriveFileNames.Categories, new CategoryList(SchemaVersions.Current, categories), cancellationToken);
-            await settingsRepo.WriteAsync(DriveFileNames.Settings, settings, cancellationToken);
-            await manifestRepo.WriteAsync(DriveFileNames.Manifest, manifest, cancellationToken);
         }
         finally
         {
