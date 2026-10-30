@@ -48,6 +48,9 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
 
     private static final String CHANNEL_ID = "artha_sms";
     private static final int NOTIF_ID = 4201;
+    /** Broadcast action handled by SmsActionReceiver to dismiss the notification. */
+    static final String ACTION_DISMISS = "com.artha.app.SMS_DISMISS";
+    static final String EXTRA_NOTIF_ID = "artha_notif_id";
 
     // Lightweight mirror of the JS parser, just enough to decide whether to notify.
     private static final Pattern AMOUNT = Pattern.compile("(?i)(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)");
@@ -186,9 +189,14 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             return;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // IMPORTANCE_HIGH gets the heads-up banner and is the minimum
+            // required for setFullScreenIntent to actually take over the lock
+            // screen. (DEFAULT would silently fall back to a tray entry.)
             NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "Expense detection", NotificationManager.IMPORTANCE_DEFAULT);
+                CHANNEL_ID, "Expense detection", NotificationManager.IMPORTANCE_HIGH);
             channel.setDescription("Alerts when a bank SMS looks like an expense");
+            channel.enableLights(true);
+            channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
             nm.createNotificationChannel(channel);
         }
 
@@ -228,8 +236,17 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .setContentTitle("Expense detected")
             .setContentText(text)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(contentIntent);
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(contentIntent)
+            // Elevate to a lock-screen takeover (like an incoming call) so the
+            // user can approve/dismiss without unlocking first. On Android 14+
+            // the OS downgrades this to a heads-up banner unless the user has
+            // granted USE_FULL_SCREEN_INTENT in Settings → App → Full-screen
+            // notifications. The in-app Settings page links out to that
+            // permission screen when the feature is toggled on.
+            .setFullScreenIntent(contentIntent, true);
 
         // Show the app logo as the notification's large icon.
         Bitmap logo = appLogoBitmap(context);
@@ -247,6 +264,16 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
                 builder.addAction(0, "Add to " + categoryName, addIntent);
             }
         }
+
+        // Dismiss action: silent — fires SmsActionReceiver which just cancels
+        // the notification without launching the app. Also acts as the swipe-
+        // away deleteIntent so swipe-to-dismiss goes through the same path.
+        Intent dismissIntent = new Intent(context, SmsActionReceiver.class)
+            .setAction(ACTION_DISMISS)
+            .putExtra(EXTRA_NOTIF_ID, NOTIF_ID);
+        PendingIntent dismissPending = PendingIntent.getBroadcast(context, 2, dismissIntent, flags);
+        builder.addAction(0, "Dismiss", dismissPending);
+        builder.setDeleteIntent(dismissPending);
 
         nm.notify(NOTIF_ID, builder.build());
     }

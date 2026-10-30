@@ -65,6 +65,18 @@ export interface SmsReaderPlugin {
    * the review dialog). Lets the app log straight from the notification.
    */
   consumePendingSms(): Promise<{ message: SmsMessage | null; autoLog?: boolean }>;
+  /**
+   * Report whether the Expense Detection notification will take over the lock
+   * screen on arrival. `supported` is false on web/iOS; `granted` is true on
+   * Android ≤ 13 (auto-granted via manifest) and reflects the user's choice on
+   * Android 14+ (where Full-screen notifications must be granted per-app).
+   */
+  canUseFullScreenIntent(): Promise<{ supported: boolean; granted: boolean }>;
+  /**
+   * Open the system Settings page where Android 14+ users grant Full-screen
+   * notifications for Artha. No-op on older OSes.
+   */
+  openFullScreenIntentSettings(): Promise<void>;
   addListener(
     eventName: 'smsReceived',
     listenerFunc: (message: SmsMessage) => void,

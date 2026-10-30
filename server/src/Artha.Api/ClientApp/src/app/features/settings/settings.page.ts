@@ -184,6 +184,32 @@ import { SettingsStore } from './settings.store';
                   </ion-label>
                 </ion-toggle>
               </ion-item>
+              <!-- Full-screen lock-screen takeover (USE_FULL_SCREEN_INTENT).
+                   On Android <=13 the manifest permission is auto-granted and
+                   fullScreenGranted() is true at startup — the toggle shows
+                   as ON and is informational. On Android 14+ the user must
+                   grant it in system Settings; tapping the item opens the
+                   right page via SmsCaptureService.openFullScreenIntentSettings. -->
+              <ion-item button detail="false" (click)="onLockScreenAlertTap()">
+                <span class="icon-chip chip-accent" slot="start">
+                  <ion-icon name="notifications-outline"></ion-icon>
+                </span>
+                <ion-label class="ion-text-wrap">
+                  <h2>Lock-screen expense alert</h2>
+                  <p>
+                    @if (sms.fullScreenGranted() === true) {
+                      Detected expenses pop over the lock screen like an incoming call.
+                    } @else if (sms.fullScreenGranted() === false) {
+                      Tap to allow Full-screen notifications so detected expenses pop over the lock screen.
+                    } @else {
+                      Not available on this device.
+                    }
+                  </p>
+                </ion-label>
+                <ion-note slot="end" class="pill" [class.pill-muted]="sms.fullScreenGranted() !== true">
+                  {{ sms.fullScreenGranted() === true ? 'On' : 'Off' }}
+                </ion-note>
+              </ion-item>
             }
           </ion-list>
 
@@ -330,6 +356,12 @@ import { SettingsStore } from './settings.store';
       border-radius: 11px; display: inline-flex; align-items: center; justify-content: center;
       font-size: 12px;
     }
+    ion-note.pill.pill-muted {
+      /* Off state for the lock-screen alert row: visibly inactive but still
+         legible against the Settings card background. */
+      background: var(--artha-surface-2, var(--ion-color-step-100));
+      color: var(--artha-text-subtle, var(--ion-color-step-500));
+    }
 
     /* Privacy hint */
     .hint {
@@ -379,6 +411,10 @@ export class SettingsPage implements OnInit {
     this.smsIgnoredCount.set(this.sms.ignoredCount());
     this.smsMappingCount.set(this.sms.mappingCount());
     this.smsAutoAdd.set(this.sms.isAutoAddEnabled());
+    // Prime the lock-screen alert state in case this page is the user's first
+    // route (bindResume() in SmsCaptureService also refreshes on every app
+    // resume so toggling the system permission reflects back without reload).
+    void this.sms.refreshFullScreenState();
     this.appLockEnabled.set(this.appLock.isEnabled());
     void this.appLock.isAvailable().then((a) => this.appLockAvailable.set(a));
     void this.loadVersion();
@@ -480,6 +516,18 @@ export class SettingsPage implements OnInit {
   /** Open the persistent queue of detected-but-unattended expenses. */
   async reviewPending(): Promise<void> {
     await this.sms.reviewPending();
+  }
+
+  /**
+   * Lock-screen alert row tap. On Android ≤13 the permission is auto-granted
+   * (`fullScreenGranted() === true`) so the row is informational — tapping it
+   * briefly re-opens the system settings page in case the user wants to turn
+   * it off. On Android 14+ with the permission denied, tapping routes to the
+   * system Full-screen notifications screen where the user can grant it; on
+   * `resume` the SMS service re-polls and the UI flips to On automatically.
+   */
+  async onLockScreenAlertTap(): Promise<void> {
+    await this.sms.openFullScreenIntentSettings();
   }
 
   async onCurrencyChange(event: Event): Promise<void> {

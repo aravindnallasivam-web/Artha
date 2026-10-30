@@ -353,6 +353,62 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /**
+     * Report whether the Expense Detection notification will fire as a lock-
+     * screen takeover ("full-screen intent"). Returns true on Android 13 and
+     * below (the manifest permission is auto-granted). On Android 14+ returns
+     * NotificationManager.canUseFullScreenIntent() — false until the user
+     * grants Full-screen notifications under App info for Artha.
+     */
+    @PluginMethod
+    public void canUseFullScreenIntent(PluginCall call) {
+        JSObject ret = new JSObject();
+        if (Build.VERSION.SDK_INT < 34) {
+            ret.put("granted", true);
+            ret.put("supported", true);
+            call.resolve(ret);
+            return;
+        }
+        android.app.NotificationManager nm = (android.app.NotificationManager)
+            getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        ret.put("granted", nm != null && nm.canUseFullScreenIntent());
+        ret.put("supported", true);
+        call.resolve(ret);
+    }
+
+    /**
+     * Open the system settings page where the user grants Full-screen
+     * notifications for Artha (Android 14+ only). No-op on older OSes where
+     * the permission is auto-granted.
+     */
+    @PluginMethod
+    public void openFullScreenIntentSettings(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 34) {
+            call.resolve();
+            return;
+        }
+        try {
+            Intent intent = new Intent(android.provider.Settings
+                .ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            // Fallback: generic app info screen.
+            try {
+                Intent fallback = new Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                fallback.setData(Uri.parse("package:" + getContext().getPackageName()));
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(fallback);
+                call.resolve();
+            } catch (Exception e2) {
+                call.reject("Could not open Full-screen notifications settings");
+            }
+        }
+    }
+
     private void registerReceiver() {
         if (receiver != null) {
             return;

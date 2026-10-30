@@ -104,6 +104,14 @@ export class SmsCaptureService {
   private reviewing = false;
   private confirming = false;
 
+  // ----- Lock-screen takeover (Android 14+ full-screen notification) -----
+  // Null = not yet queried / not supported (iOS, web). On Android we populate
+  // on first `isSupported()` + enable path and refresh on resume so the UI
+  // reflects whatever the user chose on the system settings page.
+  private readonly _fullScreenGranted = signal<boolean | null>(null);
+  /** Reactive: true once Android grants USE_FULL_SCREEN_INTENT, null off-Android. */
+  readonly fullScreenGranted = this._fullScreenGranted.asReadonly();
+
   // ----- Ignored senders -----
 
   /** Normalised senders the user has chosen to skip. */
@@ -201,6 +209,40 @@ export class SmsCaptureService {
   /** SMS capture only exists on Android. */
   isSupported(): boolean {
     return Capacitor.getPlatform() === 'android';
+  }
+
+  /**
+   * Refresh the cached USE_FULL_SCREEN_INTENT state from the native layer.
+   * Safe to call repeatedly — a no-op off-Android. Call on app resume so a
+   * grant made from the system settings page reflects back into the UI
+   * without a restart.
+   */
+  async refreshFullScreenState(): Promise<void> {
+    if (!this.isSupported()) {
+      this._fullScreenGranted.set(null);
+      return;
+    }
+    try {
+      const result = await SmsReader.canUseFullScreenIntent();
+      this._fullScreenGranted.set(result.granted);
+    } catch {
+      this._fullScreenGranted.set(null);
+    }
+  }
+
+  /**
+   * Open Android's Full-screen notifications settings for this app. On <14
+   * the permission is auto-granted so this is a no-op. We also refresh the
+   * cached state after a short delay so the UI updates when the user comes
+   * back from the settings page.
+   */
+  async openFullScreenIntentSettings(): Promise<void> {
+    if (!this.isSupported()) return;
+    try {
+      await SmsReader.openFullScreenIntentSettings();
+    } catch {
+      // Receiver already logs; swallow so the UI toggle doesn't throw.
+    }
   }
 
   isEnabled(): boolean {
@@ -363,8 +405,14 @@ export class SmsCaptureService {
       return;
     }
     this.resumeBound = true;
+    // Prime the full-screen-intent state now that we know we're on Android +
+    // enabled, so the Settings page toggle reflects reality on first paint.
+    void this.refreshFullScreenState();
     void App.addListener('resume', () => {
       void (async () => {
+        // Refresh in case the user came back from the system settings page
+        // where they just granted / revoked Full-screen notifications.
+        void this.refreshFullScreenState();
         const handled = await this.handlePendingNotification();
         await this.catchUp(/* present */ !handled);
       })();
