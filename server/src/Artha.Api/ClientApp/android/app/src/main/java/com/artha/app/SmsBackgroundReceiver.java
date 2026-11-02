@@ -295,12 +295,13 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentIntent)
-            // Elevate to a lock-screen takeover (like an incoming call) so the
-            // user can approve/dismiss without unlocking first. On Android 14+
-            // the OS downgrades this to a heads-up banner unless the user has
-            // granted USE_FULL_SCREEN_INTENT in Settings → App → Full-screen
-            // notifications. The in-app Settings page links out to that
-            // permission screen when the feature is toggled on.
+            // Backup path to the takeover for the screen-off / locked case,
+            // and the fallback when Background Activity Launch is refused
+            // (some OEMs, future restrictions). The primary path is the
+            // direct context.startActivity(prompt) below. On Android 14+ the
+            // OS also requires USE_FULL_SCREEN_INTENT to be granted under
+            // Settings → App → Full-screen notifications; the in-app Settings
+            // row deep-links to that screen.
             .setFullScreenIntent(fullScreenIntent, true);
 
         // Show the app logo as the notification's large icon.
@@ -339,5 +340,20 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         builder.setDeleteIntent(dismissPending);
 
         nm.notify(NOTIF_ID, builder.build());
+
+        // Directly launch the Activity — the MyGate / NoBroker trick.
+        // setFullScreenIntent only renders as a takeover when the screen is
+        // off / locked; on an unlocked phone Android downgrades it to a heads-
+        // up banner. SMS_RECEIVED broadcasts, however, grant us Background
+        // Activity Launch (one of the system-exempt broadcasts), so a direct
+        // startActivity() pops the prompt over whatever the user was doing —
+        // exactly how a visitor-approval screen behaves. The notification
+        // still goes out as the shade entry / fallback.
+        try {
+            context.startActivity(prompt);
+        } catch (Exception ignored) {
+            // BAL may be refused on some OEMs or with changed restrictions —
+            // the notification + its full-screen intent are the fallback.
+        }
     }
 }
