@@ -78,6 +78,54 @@ export class AiProviderService {
     }
   }
 
+  /**
+   * Models the provider offers for this key, newest first for Claude. Throws a
+   * readable error when the key or URL is wrong.
+   */
+  async listModels(config: AiProviderConfig): Promise<NamedRef[]> {
+    if (config.kind === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      try {
+        const models: NamedRef[] = [];
+        for await (const m of this.claudeClient(Anthropic, config).models.list()) {
+          models.push({ id: m.id, name: m.display_name || m.id });
+        }
+        return models;
+      } catch (err) {
+        throw new Error(claudeErrorMessage(Anthropic, err));
+      }
+    }
+    if (config.kind === 'openai-compatible') {
+      const baseUrl = config.baseUrl.trim().replace(/\/+$/, '');
+      const headers: Record<string, string> = {};
+      if (config.apiKey.trim()) headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/models`, { headers });
+      } catch {
+        throw new Error(`Couldn't reach ${baseUrl}. Check the URL and that the server allows requests from the app (CORS).`);
+      }
+      if (!res.ok) throw new Error(`The provider returned ${res.status} when listing models.`);
+      const data = (await res.json()) as { data?: { id?: string; name?: string }[] };
+      return (data.data ?? [])
+        .filter((m): m is { id: string; name?: string } => typeof m.id === 'string')
+        .map((m) => ({ id: m.id, name: m.name || m.id }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return [];
+  }
+
+  private claudeClient(Anthropic: typeof AnthropicClient, config: AiProviderConfig): AnthropicClient {
+    // Bring-your-own-key: the key is the user's own and stays on their device,
+    // so calling the API straight from the WebView is intended here.
+    return new Anthropic({
+      apiKey: config.apiKey.trim(),
+      dangerouslyAllowBrowser: true,
+      timeout: 30_000,
+      maxRetries: 1,
+    });
+  }
+
   /** Make one tiny request with `config` (not necessarily saved) and throw a readable error on failure. */
   async test(config: AiProviderConfig): Promise<void> {
     const result = await this.classifyWith(
@@ -123,14 +171,7 @@ export class AiProviderService {
   private async callClaude(config: AiProviderConfig, prompt: string, schema: Record<string, unknown>): Promise<unknown> {
     // Loaded on first use so the SDK stays out of the startup bundle.
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    // Bring-your-own-key: the key is the user's own and stays on their device,
-    // so calling the API straight from the WebView is intended here.
-    const client = new Anthropic({
-      apiKey: config.apiKey,
-      dangerouslyAllowBrowser: true,
-      timeout: 30_000,
-      maxRetries: 1,
-    });
+    const client = this.claudeClient(Anthropic, config);
     const model = config.model || DEFAULT_CLAUDE_MODEL;
     const base = {
       model,
