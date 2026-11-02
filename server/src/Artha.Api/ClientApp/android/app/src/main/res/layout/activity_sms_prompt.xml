@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SmsPromptActivity layout — rendered OVER the lock screen when a bank-SMS
+     expense is detected and USE_FULL_SCREEN_INTENT is granted. The MyGate /
+     NoBroker visitor-approval pattern: zero-chrome native screen, big amount,
+     two large circular action buttons, no need to unlock first. -->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/prompt_background"
+    android:fitsSystemWindows="true">
+
+    <!-- Top: brand + "Expense detected" eyebrow -->
+    <LinearLayout
+        android:id="@+id/prompt_brand"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="48dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="@string/app_name" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="@string/app_name"
+            android:textColor="@color/prompt_text"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:letterSpacing="-0.01"
+            android:fontFamily="sans-serif-medium" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/prompt_eyebrow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/prompt_title"
+        android:textColor="@color/prompt_text_muted"
+        android:textSize="13sp"
+        android:letterSpacing="0.08"
+        android:textAllCaps="true"
+        android:fontFamily="sans-serif-medium"
+        app:layout_constraintTop_toBottomOf="@id/prompt_brand"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Centre: huge amount + merchant / category / account -->
+    <TextView
+        android:id="@+id/prompt_amount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="₹0"
+        android:textColor="@color/prompt_text"
+        android:textSize="68sp"
+        android:fontFamily="sans-serif"
+        android:letterSpacing="-0.03"
+        android:fontFeatureSettings="tnum"
+        android:includeFontPadding="false"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.38" />
+
+    <TextView
+        android:id="@+id/prompt_merchant"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:text=""
+        android:textColor="@color/prompt_text"
+        android:textSize="17sp"
+        android:fontFamily="sans-serif-medium"
+        android:textAlignment="center"
+        android:maxLines="1"
+        android:ellipsize="end"
+        app:layout_constraintTop_toBottomOf="@id/prompt_amount"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <TextView
+        android:id="@+id/prompt_meta"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text=""
+        android:textColor="@color/prompt_text_muted"
+        android:textSize="14sp"
+        android:fontFamily="sans-serif"
+        app:layout_constraintTop_toBottomOf="@id/prompt_merchant"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Bottom: two large circular buttons, Dismiss (left) + Approve (right).
+         When mappings aren't learned we hide these and show the single
+         "Open Artha to review" button instead (JavaScript — ahem, Java —
+         logic in the Activity swaps visibility). -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/prompt_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="48dp"
+        android:paddingEnd="48dp"
+        android:paddingBottom="56dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Dismiss (red circle) -->
+        <LinearLayout
+            android:id="@+id/prompt_dismiss_group"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+
+            <ImageButton
+                android:id="@+id/prompt_dismiss_btn"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:background="@drawable/prompt_btn_dismiss"
+                android:src="@drawable/ic_prompt_close"
+                android:contentDescription="@string/prompt_dismiss"
+                android:scaleType="center" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/prompt_dismiss"
+                android:textColor="@color/prompt_text"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
+
+        <!-- Approve (green circle) -->
+        <LinearLayout
+            android:id="@+id/prompt_approve_group"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+
+            <ImageButton
+                android:id="@+id/prompt_approve_btn"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:background="@drawable/prompt_btn_approve"
+                android:src="@drawable/ic_prompt_check"
+                android:contentDescription="@string/prompt_approve"
+                android:scaleType="center" />
+
+            <TextView
+                android:id="@+id/prompt_approve_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/prompt_approve"
+                android:textColor="@color/prompt_text"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
+
+        <!-- Fallback: single CTA when we don't know category + account.
+             Visibility is swapped in SmsPromptActivity. -->
+        <Button
+            android:id="@+id/prompt_review_btn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@string/prompt_review"
+            android:textColor="@color/prompt_text"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif-medium"
+            android:background="@drawable/prompt_btn_approve"
+            android:paddingTop="18dp"
+            android:paddingBottom="18dp"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Thin link at the bottom to open the full app (for edit / review). -->
+    <TextView
+        android:id="@+id/prompt_open_link"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:text="@string/prompt_open"
+        android:textColor="@color/prompt_text_muted"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif-medium"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        app:layout_constraintBottom_toTopOf="@id/prompt_actions"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

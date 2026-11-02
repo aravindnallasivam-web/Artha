@@ -87,6 +87,21 @@
         <receiver
             android:name=".SmsActionReceiver"
             android:exported="false" />
+
+        <!-- Lock-screen takeover for a bank-SMS expense. Launched by the
+             background receiver's full-screen intent and renders above the
+             keyguard without unlocking (MyGate / NoBroker visitor-approval
+             pattern). singleInstance + excludeFromRecents + noHistory so it
+             never piles up or appears in Recents — it's a modal, not a page. -->
+        <activity
+            android:name=".SmsPromptActivity"
+            android:theme="@style/AppTheme.SmsPrompt"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleInstance"
+            android:exported="false" />
     </application>
 
     <!-- Permissions -->

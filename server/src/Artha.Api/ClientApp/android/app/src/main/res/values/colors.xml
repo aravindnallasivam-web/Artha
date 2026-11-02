@@ -2,4 +2,22 @@
 <resources>
     <!-- Launch splash background (light). Matches the web artha-bg token. -->
     <color name="splash_background">#F8FAFC</color>
+
+    <!-- SMS prompt (lock-screen takeover) palette. Mirrors the web
+         --artha-accent / lock-wallpaper tokens so the native screen reads
+         as the same product as the WebView. -->
+    <color name="prompt_bg_top">#0B1120</color>
+    <color name="prompt_bg_mid">#1E1B4B</color>
+    <color name="prompt_bg_bot">#312E81</color>
+    <color name="prompt_accent">#6366F1</color>
+    <color name="prompt_accent_dark">#4F46E5</color>
+    <color name="prompt_text">#FFFFFF</color>
+    <color name="prompt_text_muted">#B4B9C9</color>
+    <color name="prompt_text_subtle">#7A7F93</color>
+    <color name="prompt_approve">#10B981</color>
+    <color name="prompt_approve_dark">#047857</color>
+    <color name="prompt_dismiss">#F43F5E</color>
+    <color name="prompt_dismiss_dark">#9F1239</color>
+    <color name="prompt_card">#1C1E2A</color>
+    <color name="prompt_card_border">#2A2D3C</color>
 </resources>

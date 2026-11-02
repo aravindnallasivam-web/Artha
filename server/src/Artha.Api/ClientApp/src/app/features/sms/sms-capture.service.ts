@@ -4,7 +4,7 @@ import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
-import { SmsMessage, SmsReader } from '../../core/native/sms-reader';
+import { PreApprovedEntry, SmsMessage, SmsReader } from '../../core/native/sms-reader';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
@@ -267,7 +267,11 @@ export class SmsCaptureService {
     const status = await SmsReader.checkPermissions().catch(() => null);
     if (status?.sms === 'granted') {
       await this.startWatching();
-      // Fast path first: if we were opened by tapping a notification, show its
+      // Drain anything approved from the lock-screen prompt first — those are
+      // explicit user approvals; they should land before we consider the
+      // tapped notification or the backlog scan.
+      await this.drainPreApproved();
+      // Fast path next: if we were opened by tapping a notification, show its
       // confirm dialog straight away before the slower full catch-up scan, and
       // don't also auto-open the whole backlog list on top of it.
       const handled = await this.handlePendingNotification();
@@ -413,10 +417,112 @@ export class SmsCaptureService {
         // Refresh in case the user came back from the system settings page
         // where they just granted / revoked Full-screen notifications.
         void this.refreshFullScreenState();
+        // Drain any lock-screen-approved entries first (silent log), then
+        // handle the tapped-notification fast path, then the backlog.
+        await this.drainPreApproved();
         const handled = await this.handlePendingNotification();
         await this.catchUp(/* present */ !handled);
       })();
     });
+  }
+
+  /**
+   * Pull every entry the user approved from the lock-screen prompt (or the
+   * notification's Approve button) and log it silently. The native layer
+   * captured the account + category NAMES at post time, so we resolve by name
+   * to the current store ids — ensuring the entry lands on the account the
+   * mapping actually points at today, even if ids have shifted. Each log is
+   * followed by a brief toast so the user sees what happened.
+   */
+  private async drainPreApproved(): Promise<void> {
+    if (!this.isSupported()) {
+      return;
+    }
+    let entries: PreApprovedEntry[] = [];
+    try {
+      const result = await SmsReader.consumePreApproved();
+      entries = result.entries ?? [];
+    } catch {
+      return;
+    }
+    if (entries.length === 0) {
+      return;
+    }
+    await this.ensureStores();
+    const added: ParsedExpense[] = [];
+    for (const entry of entries) {
+      const parsed = parseExpenseSms({
+        address: entry.address,
+        body: entry.body,
+        date: entry.date,
+      });
+      if (!parsed) {
+        continue;
+      }
+      // The user already approved this on the lock screen; drop any queued
+      // copy so the review backlog doesn't double it up.
+      this.removePending([this.pendingKey(parsed)]);
+
+      const accountId = this.accountIdByName(entry.account)
+        ?? this.learnedAccountId(parsed);
+      const categoryId = this.categoryIdByName(entry.category)
+        ?? this.learnedCategoryId(parsed);
+      if (!accountId || !categoryId) {
+        // Native shouldn't have let this through — the Approve button is only
+        // offered when BOTH the sender and merchant mappings resolve. Fall
+        // back to leaving it in the pending queue for manual review.
+        this.enqueue(parsed);
+        continue;
+      }
+      // Duplicate guard: a rapid double-tap on Approve, or an inbox re-read
+      // that re-parsed the same message, should not create a second expense.
+      const existing = await this.fetchExisting([monthOf(parsed.date)]);
+      if (this.findDuplicate(parsed, existing)) {
+        continue;
+      }
+      try {
+        await this.expensesStore.add({
+          date: parsed.date,
+          amount: parsed.amount,
+          categoryId,
+          accountId,
+          note: parsed.merchant ?? parsed.sender ?? null,
+          excluded: false,
+          type: parsed.type,
+        });
+      } catch {
+        continue;
+      }
+      this.rememberAccount(parsed, accountId);
+      this.rememberCategory(parsed, categoryId);
+      if (parsed.balance != null) {
+        await this.syncBalance(accountId, parsed.balance);
+      }
+      added.push(parsed);
+    }
+    if (added.length > 0) {
+      await this.notifyAutoAdded(added);
+    }
+  }
+
+  private accountIdByName(name: string | null | undefined): string | null {
+    if (!name) {
+      return null;
+    }
+    const match = this.accountsStore
+      .items()
+      .find((a) => !a.archived && a.name === name);
+    return match ? match.id : null;
+  }
+
+  private categoryIdByName(name: string | null | undefined): string | null {
+    if (!name) {
+      return null;
+    }
+    const match = this.categoriesStore
+      .items()
+      .find((c) => !c.archived && c.name === name);
+    return match ? match.id : null;
   }
 
   /** Turn capture off and stop the live watcher. */

@@ -47,9 +47,11 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     static final String EXTRA_OPEN_SMS = "artha_open_sms";
 
     private static final String CHANNEL_ID = "artha_sms";
-    private static final int NOTIF_ID = 4201;
+    static final int NOTIF_ID = 4201;
     /** Broadcast action handled by SmsActionReceiver to dismiss the notification. */
     static final String ACTION_DISMISS = "com.artha.app.SMS_DISMISS";
+    /** Broadcast action handled by SmsActionReceiver to pre-approve the expense. */
+    static final String ACTION_APPROVE = "com.artha.app.SMS_APPROVE";
     static final String EXTRA_NOTIF_ID = "artha_notif_id";
 
     // Lightweight mirror of the JS parser, just enough to decide whether to notify.
@@ -175,6 +177,36 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         return null;
     }
 
+    /**
+     * Very rough merchant/payee hint pulled from the SMS body — only used as
+     * a one-line subtitle on the lock-screen prompt. The real parser lives
+     * in the web layer; this is just enough signal to make the Activity
+     * useful before the WebView ever boots. Returns null when nothing
+     * matches, so the UI can collapse the merchant row.
+     */
+    static String merchantHint(String body) {
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        // "at <merchant>" / "to <merchant>" — stops at punctuation or " on ".
+        Matcher m = Pattern.compile(
+            "(?i)\\b(?:at|to|towards|for)\\s+([A-Z0-9&'\\.\\- ]{3,40}?)" +
+            "(?=\\s+(?:on|dated|from|via|using|a/c|avl|bal|ref)\\b|[.,\\n]|$)"
+        ).matcher(body);
+        if (m.find()) {
+            String hit = m.group(1).trim();
+            if (!hit.isEmpty()) {
+                return hit;
+            }
+        }
+        // UPI VPA pattern — "VPA someone@bank" or "to someone@bank".
+        Matcher upi = Pattern.compile("(?i)([a-z0-9._\\-]{2,})@[a-z]{2,}").matcher(body);
+        if (upi.find()) {
+            return upi.group(1);
+        }
+        return null;
+    }
+
     /** Must match the JS normalizeSender(): strip operator prefix, keep A-Z0-9. */
     private static String normalizeSender(String sender) {
         return sender.toUpperCase()
@@ -209,23 +241,46 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .putLong(KEY_PENDING_DATE, System.currentTimeMillis())
             .apply();
 
-        Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        if (launch != null) {
-            launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            launch.putExtra(EXTRA_OPEN_SMS, true);
-        }
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            flags |= PendingIntent.FLAG_IMMUTABLE;
-        }
-        PendingIntent contentIntent = PendingIntent.getActivity(context, 0, launch, flags);
-
         // Both the account (by sender) and category (a learned merchant key found
         // in the body) must resolve to offer the one-tap "Add" action.
         String accountName = accountNameFor(context, address);
         String categoryName = categoryNameFor(context, body);
         boolean canAdd = accountName != null && !accountName.isEmpty()
             && categoryName != null && !categoryName.isEmpty();
+
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+
+        // Tapping the notification body opens the WebView via MainActivity.
+        Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (launch != null) {
+            launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            launch.putExtra(EXTRA_OPEN_SMS, true);
+        }
+        PendingIntent contentIntent = PendingIntent.getActivity(context, 0, launch, flags);
+
+        // The full-screen intent, on the other hand, points at SmsPromptActivity:
+        // a dedicated lock-screen takeover (MyGate / NoBroker visitor-approval
+        // pattern) that renders over the keyguard and handles Approve / Dismiss
+        // WITHOUT booting the WebView. Carries every extra the Activity needs
+        // so the user never waits on an inbox re-scan or a web-layer boot.
+        Intent prompt = new Intent(context, SmsPromptActivity.class);
+        prompt.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+            | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            | Intent.FLAG_ACTIVITY_NO_HISTORY);
+        prompt.putExtra(SmsPromptActivity.EXTRA_AMOUNT_DISPLAY, "₹" + amount);
+        prompt.putExtra(SmsPromptActivity.EXTRA_MERCHANT, merchantHint(body));
+        prompt.putExtra(SmsPromptActivity.EXTRA_CATEGORY, categoryName);
+        prompt.putExtra(SmsPromptActivity.EXTRA_ACCOUNT, accountName);
+        prompt.putExtra(SmsPromptActivity.EXTRA_BODY, body);
+        prompt.putExtra(SmsPromptActivity.EXTRA_ADDRESS, address);
+        prompt.putExtra(SmsPromptActivity.EXTRA_DATE, System.currentTimeMillis());
+        prompt.putExtra(SmsPromptActivity.EXTRA_CAN_ADD, canAdd);
+        prompt.putExtra(SmsPromptActivity.EXTRA_NOTIF_ID, NOTIF_ID);
+        PendingIntent fullScreenIntent =
+            PendingIntent.getActivity(context, 3, prompt, flags);
 
         String text = canAdd
             ? "₹" + amount + " · " + categoryName + " · " + accountName
@@ -246,7 +301,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             // granted USE_FULL_SCREEN_INTENT in Settings → App → Full-screen
             // notifications. The in-app Settings page links out to that
             // permission screen when the feature is toggled on.
-            .setFullScreenIntent(contentIntent, true);
+            .setFullScreenIntent(fullScreenIntent, true);
 
         // Show the app logo as the notification's large icon.
         Bitmap logo = appLogoBitmap(context);
@@ -255,14 +310,22 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         }
 
         if (canAdd) {
-            Intent addLaunch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-            if (addLaunch != null) {
-                addLaunch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                addLaunch.putExtra(EXTRA_OPEN_SMS, true);
-                addLaunch.putExtra(EXTRA_ACTION_ADD, true);
-                PendingIntent addIntent = PendingIntent.getActivity(context, 1, addLaunch, flags);
-                builder.addAction(0, "Add to " + categoryName, addIntent);
-            }
+            // Silent Approve: fires SmsActionReceiver which enqueues the
+            // pre-approved entry and cancels the notification. Does NOT open
+            // the WebView — same pattern as the lock-screen Approve button.
+            Intent approveIntent = new Intent(context, SmsActionReceiver.class)
+                .setAction(ACTION_APPROVE)
+                .putExtra(EXTRA_NOTIF_ID, NOTIF_ID)
+                .putExtra(SmsPromptActivity.EXTRA_AMOUNT_DISPLAY, "₹" + amount)
+                .putExtra(SmsPromptActivity.EXTRA_MERCHANT, merchantHint(body))
+                .putExtra(SmsPromptActivity.EXTRA_CATEGORY, categoryName)
+                .putExtra(SmsPromptActivity.EXTRA_ACCOUNT, accountName)
+                .putExtra(SmsPromptActivity.EXTRA_BODY, body)
+                .putExtra(SmsPromptActivity.EXTRA_ADDRESS, address)
+                .putExtra(SmsPromptActivity.EXTRA_DATE, System.currentTimeMillis());
+            PendingIntent approvePending =
+                PendingIntent.getBroadcast(context, 1, approveIntent, flags);
+            builder.addAction(0, "Add to " + categoryName, approvePending);
         }
 
         // Dismiss action: silent — fires SmsActionReceiver which just cancels

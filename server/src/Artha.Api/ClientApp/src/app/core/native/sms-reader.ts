@@ -17,6 +17,23 @@ export interface SmsPermissionStatus {
   phone?: PermissionState;
 }
 
+/**
+ * One pre-approved SMS entry: the original message plus the account / category
+ * the native mapper resolved at post time. Written by the lock-screen Approve
+ * (SmsPromptActivity) and the notification's Approve action (SmsActionReceiver);
+ * drained by the web layer on next organic resume.
+ */
+export interface PreApprovedEntry {
+  address: string;
+  body: string;
+  date: number;
+  amountDisplay: string;
+  merchant: string;
+  category: string;
+  account: string;
+  approvedAt: number;
+}
+
 /** An active SIM card, for choosing which one sends a balance-enquiry SMS. */
 export interface SimCard {
   /** Subscription id passed back to sendSms to bind to this SIM. */
@@ -65,6 +82,14 @@ export interface SmsReaderPlugin {
    * the review dialog). Lets the app log straight from the notification.
    */
   consumePendingSms(): Promise<{ message: SmsMessage | null; autoLog?: boolean }>;
+  /**
+   * Drain the pre-approved queue — entries written by the lock-screen Approve
+   * button (SmsPromptActivity) and the notification's Approve action (silent,
+   * no WebView boot). Each entry carries the original SMS plus the resolved
+   * account / category, so the web layer can log the expense without
+   * re-prompting. Cleared on read — entries are handed out exactly once.
+   */
+  consumePreApproved(): Promise<{ entries: PreApprovedEntry[] }>;
   /**
    * Report whether the Expense Detection notification will take over the lock
    * screen on arrival. `supported` is false on web/iOS; `granted` is true on

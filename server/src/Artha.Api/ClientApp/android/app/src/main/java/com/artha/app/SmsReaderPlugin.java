@@ -354,6 +354,50 @@ public class SmsReaderPlugin extends Plugin {
     }
 
     /**
+     * Drain the pre-approved queue: entries written by the lock-screen Approve
+     * button (SmsPromptActivity) and by the notification's Approve action
+     * button (SmsActionReceiver). Each entry carries the original SMS plus
+     * the account / category the background mapper resolved, so the web
+     * layer can log the expense without re-prompting the user. Clears the
+     * queue atomically — the caller gets each entry exactly once.
+     */
+    @PluginMethod
+    public void consumePreApproved(PluginCall call) {
+        android.content.SharedPreferences prefs = getContext()
+            .getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE);
+        String raw = prefs.getString(SmsPromptActivity.KEY_PRE_APPROVED, "[]");
+        JSArray entries = new JSArray();
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject row = arr.optJSONObject(i);
+                if (row == null) {
+                    continue;
+                }
+                JSObject out = new JSObject();
+                out.put("address", row.optString("address", ""));
+                out.put("body", row.optString("body", ""));
+                out.put("date", row.optLong("date", 0L));
+                out.put("amountDisplay", row.optString("amountDisplay", ""));
+                out.put("merchant", row.optString("merchant", ""));
+                out.put("category", row.optString("category", ""));
+                out.put("account", row.optString("account", ""));
+                out.put("approvedAt", row.optLong("approvedAt", 0L));
+                entries.put(out);
+            }
+        } catch (org.json.JSONException ignored) {
+            // Fall through with whatever we accumulated; drop the malformed queue.
+        }
+        // Clear atomically — anything written after this read belongs to the
+        // next drain, and the entries we handed out must never be seen twice.
+        prefs.edit().remove(SmsPromptActivity.KEY_PRE_APPROVED).apply();
+
+        JSObject ret = new JSObject();
+        ret.put("entries", entries);
+        call.resolve(ret);
+    }
+
+    /**
      * Report whether the Expense Detection notification will fire as a lock-
      * screen takeover ("full-screen intent"). Returns true on Android 13 and
      * below (the manifest permission is auto-granted). On Android 14+ returns

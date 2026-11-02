@@ -4,4 +4,13 @@
     <string name="title_activity_main">Artha</string>
     <string name="package_name">com.artha.app</string>
     <string name="custom_url_scheme">com.artha.app</string>
+
+    <!-- SMS prompt (lock-screen takeover). -->
+    <string name="prompt_title">Expense detected</string>
+    <string name="prompt_approve">Add</string>
+    <string name="prompt_dismiss">Dismiss</string>
+    <string name="prompt_open">Open Artha to edit</string>
+    <string name="prompt_review">Open Artha to review</string>
+    <string name="prompt_added">Added · syncs on next open</string>
+    <string name="prompt_dismissed">Dismissed</string>
 </resources>

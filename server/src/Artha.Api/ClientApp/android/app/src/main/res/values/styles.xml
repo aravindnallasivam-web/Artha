@@ -22,4 +22,20 @@
              (new) launcher icon is shown as the splash icon by default. -->
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/splash_background</item>
     </style>
+
+    <!-- Theme for SmsPromptActivity — the MyGate-style lock-screen takeover
+         that appears when the OS fires the SMS full-screen intent. No action
+         bar, no title, translucent system bars so the gradient paints to the
+         very edges, and a drawable background that is painted during the
+         window transition so there's no white flash on open. -->
+    <style name="AppTheme.SmsPrompt" parent="Theme.AppCompat.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/prompt_bg_mid</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

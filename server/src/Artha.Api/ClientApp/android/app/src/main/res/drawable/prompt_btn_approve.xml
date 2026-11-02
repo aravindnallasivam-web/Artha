@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Circular button for the Approve action on SmsPromptActivity. Uses a
+     ripple so the tap feedback matches system expectations. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#80FFFFFF">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/prompt_approve" />
+        </shape>
+    </item>
+</ripple>
