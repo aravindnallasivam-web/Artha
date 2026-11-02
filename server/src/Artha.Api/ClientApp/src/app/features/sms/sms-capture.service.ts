@@ -14,6 +14,7 @@ import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { SmsScanRangeModal } from './sms-scan-range.modal';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
+import { AiProviderService, AiSuggestion } from '../../core/ai/ai-provider.service';
 
 const ENABLED_KEY = 'artha.sms.captureEnabled';
 // Watermark: epoch ms of the newest message we've already offered, so the
@@ -39,6 +40,11 @@ const RESOLVED_TTL_MS = 24 * 60 * 60 * 1000;
 // When on, a detected expense whose vendor (category) and account are already
 // learned is logged automatically and the user is just notified.
 const AUTO_ADD_KEY = 'artha.sms.autoAdd';
+// AI suggestions per pending key, so each SMS is sent to the provider at most once.
+const AI_SUGGEST_KEY = 'artha.sms.aiSuggestions';
+const AI_SUGGEST_LIMIT = 200;
+// Don't hold a review screen open longer than this waiting on the provider.
+const AI_WAIT_MS = 8000;
 
 /** A detected expense waiting in the persistent queue. */
 interface PendingItem {
@@ -84,6 +90,8 @@ export class SmsCaptureService {
   private readonly expensesStore = inject(ExpensesStore);
   private readonly settingsStore = inject(SettingsStore);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly ai = inject(AiProviderService);
+  private aiSuggestions: Record<string, AiSuggestion> = this.loadAiSuggestions();
 
   private listener: PluginListenerHandle | null = null;
   private resumeBound = false;
@@ -866,14 +874,17 @@ export class SmsCaptureService {
       // On the notification fast-path we skip the duplicate-check Drive read so
       // the confirm dialog appears immediately (a freshly-detected SMS is very
       // unlikely to be already logged).
-      const existing = skipDuplicateCheck ? [] : await this.fetchExisting([monthOf(parsed.date)]);
+      const [existing, ai] = await Promise.all([
+        skipDuplicateCheck ? Promise.resolve([] as Expense[]) : this.fetchExisting([monthOf(parsed.date)]),
+        this.aiSuggestFor(parsed),
+      ]);
       const modal = await this.modalCtrl.create({
         component: SmsConfirmModal,
         componentProps: {
           parsed,
           duplicate: skipDuplicateCheck ? null : this.findDuplicate(parsed, existing),
-          categoryId: this.resolveCategoryId(parsed),
-          accountId: this.resolveAccountId(parsed),
+          categoryId: this.resolveCategoryId(parsed, ai),
+          accountId: this.resolveAccountId(parsed, ai),
           canDismiss: true,
         },
       });
@@ -1001,11 +1012,13 @@ export class SmsCaptureService {
     currency: string;
   }> {
     await this.ensureStores();
-    const existing = await this.fetchExisting([
-      ...new Set(items.map((i) => monthOf(i.parsed.date))),
+    const [existing, suggestions] = await Promise.all([
+      this.fetchExisting([...new Set(items.map((i) => monthOf(i.parsed.date)))]),
+      Promise.all(items.map((i) => this.aiSuggestFor(i.parsed))),
     ]);
-    const candidates: SmsCandidateRow[] = items.map((i) => {
+    const candidates: SmsCandidateRow[] = items.map((i, idx) => {
       const p = i.parsed;
+      const ai = suggestions[idx];
       const duplicate = this.findDuplicate(p, existing);
       return {
         key: i.key,
@@ -1014,9 +1027,9 @@ export class SmsCaptureService {
         selected: !duplicate,
         amount: p.amount,
         date: p.date,
-        categoryId: this.resolveCategoryId(p),
-        accountId: this.resolveAccountId(p),
-        note: p.merchant ?? p.sender ?? null,
+        categoryId: this.resolveCategoryId(p, ai),
+        accountId: this.resolveAccountId(p, ai),
+        note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
         excluded: false,
       };
     });
@@ -1263,7 +1276,56 @@ export class SmsCaptureService {
     }
   }
 
-  private resolveCategoryId(parsed: ParsedExpense): string {
+  /**
+   * Ask the AI provider about an SMS, but only when the learned rules don't
+   * already know its category or account. Cached per SMS so it's asked once;
+   * gives up after AI_WAIT_MS so a review screen never hangs on the network.
+   */
+  private async aiSuggestFor(parsed: ParsedExpense): Promise<AiSuggestion | null> {
+    if (!this.ai.isEnabled()) {
+      return null;
+    }
+    if (this.learnedCategoryId(parsed) && this.learnedAccountId(parsed)) {
+      return null;
+    }
+    const key = this.pendingKey(parsed);
+    const cached = this.aiSuggestions[key];
+    if (cached) {
+      return cached;
+    }
+    const request = this.ai.classifySms(
+      { sender: parsed.sender, body: parsed.raw, amount: parsed.amount, date: parsed.date },
+      this.namedCategories(),
+      this.namedAccounts(),
+    );
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), AI_WAIT_MS));
+    // A late answer still lands in the cache for the next time this SMS is shown.
+    void request.then((s) => s && this.rememberAiSuggestion(key, s));
+    return Promise.race([request, timeout]);
+  }
+
+  private rememberAiSuggestion(key: string, suggestion: AiSuggestion): void {
+    this.aiSuggestions[key] = suggestion;
+    const keys = Object.keys(this.aiSuggestions);
+    for (const old of keys.slice(0, Math.max(0, keys.length - AI_SUGGEST_LIMIT))) {
+      delete this.aiSuggestions[old];
+    }
+    try {
+      localStorage.setItem(AI_SUGGEST_KEY, JSON.stringify(this.aiSuggestions));
+    } catch {
+      // Storage full or unavailable — the suggestion just isn't cached.
+    }
+  }
+
+  private loadAiSuggestions(): Record<string, AiSuggestion> {
+    try {
+      return JSON.parse(localStorage.getItem(AI_SUGGEST_KEY) ?? '{}') as Record<string, AiSuggestion>;
+    } catch {
+      return {};
+    }
+  }
+
+  private resolveCategoryId(parsed: ParsedExpense, ai?: AiSuggestion | null): string {
     const cats = this.categoriesStore.items().filter((c) => !c.archived);
     // 1) A mapping the user taught us for this merchant.
     const key = categoryKey(parsed.merchant);
@@ -1273,7 +1335,11 @@ export class SmsCaptureService {
         return mapped;
       }
     }
-    // 2) Keyword-guessed category name matched against the user's categories.
+    // 2) What the AI provider picked, when one is set up.
+    if (ai?.categoryId && cats.some((c) => c.id === ai.categoryId)) {
+      return ai.categoryId;
+    }
+    // 3) Keyword-guessed category name matched against the user's categories.
     const name = parsed.suggestedCategory;
     if (name) {
       const lower = name.toLowerCase();
@@ -1308,7 +1374,7 @@ export class SmsCaptureService {
     void this.syncNotificationMappings();
   }
 
-  private resolveAccountId(parsed: ParsedExpense): string {
+  private resolveAccountId(parsed: ParsedExpense, ai?: AiSuggestion | null): string {
     const accounts = this.accountsStore.items().filter((a) => !a.archived);
     // 1) A mapping the user taught us by confirming a prior SMS — try the
     //    card/account hint first (most specific), then the sender.
@@ -1319,14 +1385,18 @@ export class SmsCaptureService {
         return mapped;
       }
     }
-    // 2) Heuristic: the account's last-4 appears in an account name.
+    // 2) What the AI provider picked, when one is set up.
+    if (ai?.accountId && accounts.some((a) => a.id === ai.accountId)) {
+      return ai.accountId;
+    }
+    // 3) Heuristic: the account's last-4 appears in an account name.
     if (parsed.accountHint) {
       const byHint = accounts.find((a) => a.name.includes(parsed.accountHint!));
       if (byHint) {
         return byHint.id;
       }
     }
-    // 3) Fall back to the first account; the user's choice gets remembered.
+    // 4) Fall back to the first account; the user's choice gets remembered.
     return accounts[0]?.id ?? '';
   }
 

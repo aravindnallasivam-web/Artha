@@ -27,10 +27,12 @@ import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { environment } from '../../../environments/environment';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
+import { AiProviderService } from '../../core/ai/ai-provider.service';
 import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
 import { SmsMappingsModal } from '../sms/sms-mappings.modal';
 import { SmsTrainingWizardModal } from '../sms/sms-training.wizard.modal';
+import { AiProviderModal } from './ai-provider.modal';
 import { SettingsStore } from './settings.store';
 
 @Component({
@@ -211,6 +213,16 @@ import { SettingsStore } from './settings.store';
                 </ion-note>
               </ion-item>
             }
+            <ion-item button detail="true" (click)="openAiProvider()">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="sparkles-outline"></ion-icon>
+              </span>
+              <ion-label class="ion-text-wrap">
+                <h2>AI provider</h2>
+                <p>Suggest the category and account for SMS Artha can't match on its own.</p>
+              </ion-label>
+              <ion-note slot="end" class="pill" [class.pill-muted]="!ai.isEnabled()">{{ ai.label() }}</ion-note>
+            </ion-item>
           </ion-list>
 
           <ion-list inset="true" class="card">
@@ -387,6 +399,12 @@ export class SettingsPage implements OnInit {
   private readonly router = inject(Router);
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
+  protected readonly ai = inject(AiProviderService);
+
+  protected async openAiProvider(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: AiProviderModal });
+    await modal.present();
+  }
 
   protected readonly currencies = SUPPORTED_CURRENCIES;
   protected readonly smsEnabled = signal(false);
