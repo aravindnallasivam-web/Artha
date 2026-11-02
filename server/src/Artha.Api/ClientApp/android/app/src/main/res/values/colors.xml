@@ -4,7 +4,7 @@
     <color name="splash_background">#F8FAFC</color>
 
     <!-- SMS prompt (lock-screen takeover) palette. Mirrors the web
-         --artha-accent / lock-wallpaper tokens so the native screen reads
+         artha-accent and lock-wallpaper tokens so the native screen reads
          as the same product as the WebView. -->
     <color name="prompt_bg_top">#0B1120</color>
     <color name="prompt_bg_mid">#1E1B4B</color>
