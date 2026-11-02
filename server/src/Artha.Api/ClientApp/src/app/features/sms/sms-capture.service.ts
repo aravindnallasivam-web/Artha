@@ -45,6 +45,9 @@ const AI_SUGGEST_KEY = 'artha.sms.aiSuggestions';
 const AI_SUGGEST_LIMIT = 200;
 // Don't hold a review screen open longer than this waiting on the provider.
 const AI_WAIT_MS = 8000;
+// Bulk scan: parallel AI requests, and the longest the review list waits overall.
+const AI_BULK_CONCURRENCY = 4;
+const AI_BULK_WAIT_MS = 30000;
 
 /** A detected expense waiting in the persistent queue. */
 interface PendingItem {
@@ -574,33 +577,13 @@ export class SmsCaptureService {
     }
 
     await this.ensureStores();
-    // Pull existing expenses across the scanned months once, so we can flag
-    // ones already logged instead of creating duplicates.
-    const existing = await this.fetchExisting([...new Set(parsed.map((p) => monthOf(p.date)))]);
 
-    // Newest first (matches the inbox order); duplicates start unticked.
-    const candidates: SmsCandidateRow[] = parsed.map((p) => {
-      const duplicate = this.findDuplicate(p, existing);
-      return {
-        parsed: p,
-        duplicate,
-        selected: !duplicate,
-        amount: p.amount,
-        date: p.date,
-        categoryId: this.resolveCategoryId(p),
-        accountId: this.resolveAccountId(p),
-        note: p.merchant ?? p.sender ?? null,
-        excluded: false,
-      };
-    });
-
+    // Open the list straight away; duplicate lookup and AI suggestions fill it in.
     const modal = await this.modalCtrl.create({
       component: SmsBulkReviewModal,
       componentProps: {
-        candidates,
-        categories: this.namedCategories(),
-        accounts: this.namedAccounts(),
-        currency: this.settingsStore.currency(),
+        dataPromise: this.buildScanData(parsed),
+        loadingText: this.ai.isEnabled() ? 'Checking for duplicates and asking AI for categories…' : '',
       },
     });
     await modal.present();
@@ -1002,6 +985,82 @@ export class SmsCaptureService {
     } finally {
       this.reviewing = false;
     }
+  }
+
+  /** Build the scan rows: flag duplicates and pre-fill from learned rules, then AI. */
+  private async buildScanData(parsed: ParsedExpense[]): Promise<{
+    candidates: SmsCandidateRow[];
+    categories: { id: string; name: string }[];
+    accounts: { id: string; name: string }[];
+    currency: string;
+  }> {
+    // Pull existing expenses across the scanned months once, so we can flag
+    // ones already logged instead of creating duplicates.
+    const [existing, suggestions] = await Promise.all([
+      this.fetchExisting([...new Set(parsed.map((p) => monthOf(p.date)))]),
+      this.aiSuggestMany(parsed),
+    ]);
+    // Newest first (matches the inbox order); duplicates start unticked.
+    const candidates: SmsCandidateRow[] = parsed.map((p, idx) => {
+      const ai = suggestions[idx];
+      const duplicate = this.findDuplicate(p, existing);
+      return {
+        parsed: p,
+        duplicate,
+        selected: !duplicate,
+        amount: p.amount,
+        date: p.date,
+        categoryId: this.resolveCategoryId(p, ai),
+        accountId: this.resolveAccountId(p, ai),
+        note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
+        excluded: false,
+      };
+    });
+    return {
+      candidates,
+      categories: this.namedCategories(),
+      accounts: this.namedAccounts(),
+      currency: this.settingsStore.currency(),
+    };
+  }
+
+  /**
+   * AI suggestions for a batch of SMS. Messages from the same sender about the
+   * same merchant share one request, a few requests run at once, and whatever
+   * hasn't answered within AI_BULK_WAIT_MS falls back to the rule-based guess.
+   */
+  private async aiSuggestMany(parsed: ParsedExpense[]): Promise<(AiSuggestion | null)[]> {
+    const results: (AiSuggestion | null)[] = parsed.map(() => null);
+    if (!this.ai.isEnabled()) {
+      return results;
+    }
+    const groups = new Map<string, number[]>();
+    parsed.forEach((p, idx) => {
+      if (this.learnedCategoryId(p) && this.learnedAccountId(p)) {
+        return;
+      }
+      const merchant = categoryKey(p.merchant);
+      // Without a merchant, messages can't safely share a category guess.
+      const key = merchant ? `${normalizeSender(p.sender)}|${merchant}` : this.pendingKey(p);
+      groups.set(key, [...(groups.get(key) ?? []), idx]);
+    });
+    const queue = [...groups.values()];
+    const worker = async () => {
+      for (let members = queue.shift(); members; members = queue.shift()) {
+        const suggestion = await this.aiSuggestFor(parsed[members[0]]);
+        for (const idx of members) {
+          results[idx] = suggestion;
+        }
+      }
+    };
+    const workers = Array.from({ length: Math.min(AI_BULK_CONCURRENCY, queue.length) }, worker);
+    await Promise.race([
+      Promise.all(workers),
+      new Promise((resolve) => setTimeout(resolve, AI_BULK_WAIT_MS)),
+    ]);
+    // Stop handing out new requests once we've stopped waiting.
+    queue.length = 0;
+    return results;
   }
 
   /** Build the queue rows + reference data (the part that needs a network read). */

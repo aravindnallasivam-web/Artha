@@ -95,6 +95,9 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
 
     <ion-content class="bg">
       @if (loading()) {
+        @if (loadingText) {
+          <p class="loading-text">{{ loadingText }}</p>
+        }
         <div class="hero skel-hero">
           <ion-skeleton-text [animated]="true" style="width: 40%; height: 14px"></ion-skeleton-text>
           <ion-skeleton-text [animated]="true" style="width: 55%; height: 34px; margin-top: 10px"></ion-skeleton-text>
@@ -248,6 +251,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
       font-size: 12px; font-weight: 700; cursor: pointer;
     }
     .skel-hero { background: var(--artha-surface); box-shadow: none; }
+    .loading-text { margin: 4px 20px 10px; font-size: 13px; font-weight: 600; color: var(--artha-text-muted); }
 
     .hint-pill {
       display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -377,6 +381,8 @@ export class SmsBulkReviewModal implements OnInit {
   /** Queue mode: the list is the persistent pending queue, so rows carry a
       `key` and gain a per-row Dismiss action. */
   @Input() queueMode = false;
+  /** Shown under the skeleton while `dataPromise` is loading. */
+  @Input() loadingText = '';
   /**
    * Queue path: resolves to the rows + reference data once the (slow) duplicate
    * lookup finishes. Passing this lets the modal open instantly and show a
