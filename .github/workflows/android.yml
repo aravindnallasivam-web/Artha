@@ -36,12 +36,21 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
-
-      # Ensure the exact SDK platform + build-tools the project targets are
-      # present (the runner image may lag a release behind).
+      # The ubuntu-latest runner ships with the Android SDK pre-installed at
+      # $ANDROID_HOME; android-actions/setup-android@v3 is skipped because it
+      # still runs the legacy `sdkmanager tools` which Google retired, exiting
+      # non-zero before our build gets a chance. Accepting licenses + installing
+      # the exact packages we need (which may lag the runner image by a
+      # release) is enough.
       - name: Install Android SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
       # Gradle build/dependency caching keyed on the wrapper + gradle files.
       - uses: gradle/actions/setup-gradle@v4
