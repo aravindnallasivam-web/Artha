@@ -30,8 +30,8 @@
  * ============================================================ */
 :root {
   /* Brand */
-  --artha-accent:        #6366f1;  /* indigo-500 */
-  --artha-accent-hover:  #4f46e5;  /* indigo-600 */
+  --artha-accent:        #4f46e5;  /* indigo-600 */
+  --artha-accent-hover:  #4338ca;  /* indigo-700 */
   --artha-accent-tint:   #eef2ff;  /* indigo-50 */
   --artha-accent-contrast: #ffffff;
 
@@ -43,14 +43,19 @@
   --artha-warning:       #f59e0b;  /* amber-500 */
 
   /* Surface & text — light */
-  --artha-bg:            #f8fafc;  /* slate-50 — app background */
+  --artha-bg:            #f5f6fa;  /* cool grey — app background */
   --artha-surface:       #ffffff;  /* cards, sidebar */
   --artha-surface-2:     #f1f5f9;  /* slate-100 — subtle fills */
   --artha-border:        #e2e8f0;  /* slate-200 */
   --artha-border-strong: #cbd5e1;  /* slate-300 */
   --artha-text:          #0f172a;  /* slate-900 */
   --artha-text-muted:    #475569;  /* slate-600 */
-  --artha-text-subtle:   #94a3b8;  /* slate-400 */
+  --artha-text-subtle:   #64748b;  /* slate-500 — readable on white */
+
+  /* Floating bottom tab bar */
+  --artha-tabbar-bg:     #0f172a;
+  --artha-tabbar-fg:     #94a3b8;
+  --artha-tabbar-active: #ffffff;
 
   /* Elevation — single soft shadow used everywhere for consistency */
   --artha-shadow-sm:     0 1px 2px 0 rgba(15, 23, 42, 0.04);
@@ -61,17 +66,19 @@
   --artha-radius-sm:     8px;
   --artha-radius:        12px;
   --artha-radius-lg:     16px;
+  --artha-radius-xl:     22px;  /* cards */
+  --artha-radius-2xl:    24px;  /* hero / summary cards */
 
   /* Remap Ionic tokens so existing components pick up the new palette
      without per-page overrides. */
   --ion-color-primary:           var(--artha-accent);
-  --ion-color-primary-rgb:       99, 102, 241;
+  --ion-color-primary-rgb:       79, 70, 229;
   --ion-color-primary-contrast:  var(--artha-accent-contrast);
   --ion-color-primary-shade:     var(--artha-accent-hover);
   --ion-color-primary-tint:      var(--artha-accent-tint);
 
   --ion-background-color:        var(--artha-bg);
-  --ion-background-color-rgb:    248, 250, 252;
+  --ion-background-color-rgb:    245, 246, 250;
   --ion-text-color:              var(--artha-text);
   --ion-text-color-rgb:          15, 23, 42;
 
@@ -121,7 +128,8 @@ ion-content {
    uses the side pane and needs no offset. */
 @media (max-width: 767px) {
   [id="main-content"] ion-content {
-    --padding-bottom: 62px;
+    /* Floating tab bar: 68px tall, 16px off the bottom edge, plus breathing room. */
+    --padding-bottom: calc(104px + var(--ion-safe-area-bottom, 0px));
   }
 }
 
@@ -137,7 +145,14 @@ ion-content {
   --artha-border-strong: #334155;
   --artha-text:          #f1f5f9;
   --artha-text-muted:    #cbd5e1;
-  --artha-text-subtle:   #64748b;
+  --artha-text-subtle:   #94a3b8;
+
+  --artha-accent:        #6366f1;
+  --artha-accent-hover:  #818cf8;
+  --artha-tabbar-bg:     #1e293b;
+  --artha-tabbar-fg:     #94a3b8;
+  --artha-tabbar-active: #ffffff;
+  --ion-color-primary-rgb: 99, 102, 241;
 
   --artha-accent-tint:   rgba(99, 102, 241, 0.18);
   --artha-positive-tint: rgba(16, 185, 129, 0.16);
@@ -225,7 +240,7 @@ ion-card-title,
   ion-fab[vertical="bottom"] {
     /* Ionic already anchors the FAB at bottom: 10px + safe-area, so this
        offset only needs to clear the ~56px tab bar itself. */
-    margin-bottom: 60px;
+    margin-bottom: 92px;
   }
 }
 

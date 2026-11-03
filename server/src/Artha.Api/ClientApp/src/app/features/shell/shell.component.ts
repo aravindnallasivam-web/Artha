@@ -51,14 +51,14 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-// Primary destinations for the mobile bottom tab bar. Capped at five (the
-// standard maximum); Categories + Settings live under "More".
+// Mobile tab bar destinations; the shell inserts the centre Add button between
+// the second and third. Planned, loans, categories and settings live under
+// "More", reached from the avatar on Home.
 const TABS: NavItem[] = [
   { path: '/dashboard', label: 'Home', icon: 'home-outline', iconActive: 'home' },
   { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
   { path: '/reports', label: 'Reports', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
   { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
-  { path: '/more', label: 'More', icon: 'ellipsis-horizontal', iconActive: 'ellipsis-horizontal' },
 ];
 
 @Component({
@@ -140,14 +140,20 @@ const TABS: NavItem[] = [
         <ion-router-outlet id="main-content"></ion-router-outlet>
       </ion-split-pane>
 
-      <!-- Mobile-only bottom tab bar: primary navigation, thumb-reachable.
-           Replaces the floating hamburger. Hidden once the side pane is
-           visible (>=768px). -->
+      <!-- Mobile-only floating tab bar with a centre Add button. "More"
+           (planned, loans, categories, settings) lives behind the avatar on
+           Home. Hidden once the side pane is visible (>=768px). -->
       <nav class="m-tabs" aria-label="Primary">
-        @for (t of tabs; track t.path) {
+        @for (t of tabs; track t.path; let i = $index) {
+          @if (i === 2) {
+            <a routerLink="/expenses/new" class="m-add" aria-label="Add expense">
+              <ion-icon name="add" aria-hidden="true"></ion-icon>
+            </a>
+          }
           <a
             [routerLink]="t.path"
             routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: t.path === '/expenses' }"
             #rla="routerLinkActive"
             class="m-tab"
           >
@@ -302,43 +308,50 @@ const TABS: NavItem[] = [
     }
     .logout-btn ion-icon { font-size: 18px; }
 
-    /* ===== Mobile bottom tab bar ===== */
+    /* ===== Mobile floating tab bar ===== */
     .m-tabs {
       position: fixed;
-      left: 0; right: 0; bottom: 0;
+      left: 16px; right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom));
       z-index: 20;
-      display: flex;
-      background: var(--artha-surface);
-      border-top: 1px solid var(--artha-border);
-      padding-bottom: env(safe-area-inset-bottom);
-      box-shadow: 0 -1px 3px rgba(15, 23, 42, 0.04);
+      height: 68px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      align-items: center;
+      padding: 0 6px;
+      border-radius: 24px;
+      background: var(--artha-tabbar-bg);
+      box-shadow: 0 16px 32px -12px rgba(15, 23, 42, 0.45);
     }
     .m-tab {
-      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 3px;
-      padding: 8px 0 7px;
+      gap: 4px;
+      padding: 8px 0;
       text-decoration: none;
-      color: var(--artha-text-subtle);
-      font-size: 10px;
-      font-weight: 500;
+      color: var(--artha-tabbar-fg);
+      font-size: 11px;
+      font-weight: 600;
     }
-    .m-tab ion-icon {
-      font-size: 22px;
-      padding: 2px 16px;
-      border-radius: 13px;
-      transition: background 140ms ease, color 140ms ease;
-    }
+    .m-tab ion-icon { font-size: 22px; }
     .m-tab.active {
-      color: var(--artha-accent);
+      color: var(--artha-tabbar-active);
       font-weight: 700;
     }
-    .m-tab.active ion-icon {
-      color: var(--artha-accent);
-      background: var(--artha-accent-tint);
+    .m-add {
+      justify-self: center;
+      width: 52px; height: 52px;
+      border-radius: 18px;
+      background: var(--artha-accent);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      text-decoration: none;
+      transition: transform 120ms ease;
     }
+    .m-add:active { transform: scale(0.94); }
+    .m-add ion-icon { font-size: 26px; }
     /* The tab bar is mobile-only; the side pane takes over at >=768px. */
     @media (min-width: 768px) {
       .m-tabs { display: none; }
