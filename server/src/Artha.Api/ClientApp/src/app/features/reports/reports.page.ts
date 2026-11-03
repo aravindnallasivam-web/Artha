@@ -1,14 +1,7 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import {
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
 import { MONTH_LABELS, MonthSummary } from '../../core/models/report.model';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -42,334 +35,311 @@ interface CatRow {
   imports: [
     CurrencyPipe,
     IonContent,
-    IonHeader,
     IonIcon,
     IonSpinner,
-    IonTitle,
-    IonToolbar,
     DonutChartComponent,
     LineChartComponent,
     YearBarChartComponent,
   ],
   template: `
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Reports</ion-title>
-      </ion-toolbar>
-    </ion-header>
-
-    <ion-content class="ion-padding">
+    <ion-content>
       <div class="page">
-        <!-- Header -->
-        <header class="page-header">
-          <div class="view-switcher" role="tablist">
-            <button type="button" role="tab" [class.active]="view() === 'monthly'" (click)="setView('monthly')">
-              <span>Monthly</span>
-            </button>
-            <button type="button" role="tab" [class.active]="view() === 'yearly'" (click)="setView('yearly')">
-              <span>Yearly</span>
-            </button>
-          </div>
-          <div class="month-picker">
-            <button type="button" class="month-nav" (click)="stepBack()" aria-label="Previous period">
-              <ion-icon name="chevron-back"></ion-icon>
-            </button>
-            <span class="range-label">{{ rangeLabel() }}</span>
-            <button type="button" class="month-nav" (click)="stepForward()" [disabled]="!canStepForward()" aria-label="Next period">
-              <ion-icon name="chevron-forward"></ion-icon>
-            </button>
+        <header class="top">
+          <h1>Reports</h1>
+          <div class="seg" role="tablist" aria-label="Period">
+            <button type="button" role="tab" [attr.aria-selected]="view() === 'monthly'" [class.on]="view() === 'monthly'" (click)="setView('monthly')">Month</button>
+            <button type="button" role="tab" [attr.aria-selected]="view() === 'yearly'" [class.on]="view() === 'yearly'" (click)="setView('yearly')">Year</button>
           </div>
         </header>
 
+        <div class="stepper">
+          <button type="button" class="step" (click)="stepBack()" aria-label="Previous period">
+            <ion-icon name="chevron-back"></ion-icon>
+          </button>
+          <span class="range-label">{{ rangeLabel() }}</span>
+          <button type="button" class="step" (click)="stepForward()" [disabled]="!canStepForward()" aria-label="Next period">
+            <ion-icon name="chevron-forward"></ion-icon>
+          </button>
+        </div>
+
         @if (loading()) {
           <div class="state"><ion-spinner></ion-spinner></div>
+        } @else if (count() === 0) {
+          <div class="empty">
+            <span class="empty-badge"><ion-icon name="stats-chart-outline"></ion-icon></span>
+            <p>No spending recorded for {{ rangeLabel() }}.</p>
+          </div>
         } @else {
-          <!-- KPI cards -->
-          <section class="kpis">
-            <div class="kpi">
-              <p class="kpi-label">Total spent</p>
-              <p class="kpi-value num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</p>
+          <!-- Donut + key stats -->
+          <section class="card hero">
+            <div class="donut-col">
+              <artha-donut-chart
+                class="donut"
+                [segments]="donutSegments()"
+                [currency]="currency()"
+                [interactive]="true"
+                (segmentSelect)="onDonutSelect($event)"
+              ></artha-donut-chart>
+              @if (donutRoot()) {
+                <button type="button" class="link back" (click)="clearDonutDrill()">‹ {{ donutRootName() }}</button>
+              }
+            </div>
+            <div class="stats">
               @if (deltaInfo(); as d) {
-                <p class="kpi-sub" [class.up]="d.up" [class.down]="!d.up">{{ d.text }}</p>
+                <div class="stat">
+                  <span class="stat-label">vs previous month</span>
+                  <span class="stat-value num" [class.up]="d.up" [class.down]="!d.up">
+                    {{ d.up ? '↑' : '↓' }} {{ d.amount | currency: currency() : 'symbol' : '1.0-0' }}
+                  </span>
+                </div>
               } @else {
-                <p class="kpi-sub muted">{{ count() }} transactions</p>
+                <div class="stat">
+                  <span class="stat-label">Total spent</span>
+                  <span class="stat-value num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                </div>
               }
+              <div class="stat">
+                <span class="stat-label">{{ view() === 'monthly' ? 'Daily average' : 'Monthly average' }}</span>
+                <span class="stat-value num">{{ averageSpend() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Transactions</span>
+                <span class="stat-value num">{{ count() }}</span>
+              </div>
             </div>
-            <div class="kpi">
-              <p class="kpi-label">{{ view() === 'monthly' ? 'Daily average' : 'Monthly average' }}</p>
-              <p class="kpi-value num">{{ averageSpend() | currency: currency() : 'symbol' : '1.0-0' }}</p>
-              <p class="kpi-sub muted">{{ view() === 'monthly' ? 'per day' : 'per month' }}</p>
-            </div>
-            <div class="kpi">
-              <p class="kpi-label">Transactions</p>
-              <p class="kpi-value num">{{ count() }}</p>
-              <p class="kpi-sub muted">in {{ rangeLabel() }}</p>
-            </div>
-            <div class="kpi">
-              <p class="kpi-label">Top category</p>
-              @if (topCategory(); as tc) {
-                <p class="kpi-value sm">{{ tc.name }}</p>
-                <p class="kpi-sub muted">
-                  {{ tc.total | currency: currency() : 'symbol' : '1.0-0' }} · {{ percent(tc.total) }}%
-                </p>
-              } @else {
-                <p class="kpi-value sm">—</p>
-                <p class="kpi-sub muted">no spend</p>
+            <ul class="legend">
+              @for (seg of donutSegments(); track seg.label) {
+                <li>
+                  <span class="dot" [style.background]="seg.color"></span>
+                  <span class="legend-name">{{ seg.label }}</span>
+                  <span class="legend-pct">{{ percent(seg.value) }}%</span>
+                </li>
               }
-            </div>
+            </ul>
           </section>
 
-          @if (count() === 0) {
-            <div class="empty">
-              <ion-icon name="stats-chart-outline"></ion-icon>
-              <p>No spending recorded for {{ rangeLabel() }}.</p>
-            </div>
-          } @else {
-            <!-- Trend + donut -->
-            <section class="charts-row">
-              <div class="card trend-card">
-                <div class="card-head">
-                  <h2>{{ view() === 'monthly' ? 'Spending trend' : 'Monthly spend' }}</h2>
-                  <span class="card-sub">{{ view() === 'monthly' ? 'Daily spend across the month' : rangeLabel() }}</span>
-                </div>
-                @if (view() === 'monthly') {
-                  <artha-line-chart [series]="dailySeries()" [currency]="currency()"></artha-line-chart>
-                } @else {
-                  <artha-year-bar-chart [months]="monthSummaries()" [currency]="currency()"></artha-year-bar-chart>
+          <!-- Month bars -->
+          <section class="card">
+            @if (view() === 'monthly') {
+              <h2>Last 6 months</h2>
+              <div class="mbars">
+                @for (m of lastSixMonths(); track m.key) {
+                  <div class="mbar">
+                    <span class="mbar-fill" [class.current]="m.current" [style.height.%]="m.pct"
+                      [attr.aria-label]="m.label + ' ' + (m.total | currency: currency() : 'symbol' : '1.0-0')"></span>
+                    <span class="mbar-label" [class.current]="m.current">{{ m.label }}</span>
+                  </div>
                 }
               </div>
+            } @else {
+              <h2>Monthly spend · {{ rangeLabel() }}</h2>
+              <artha-year-bar-chart [months]="monthSummaries()" [currency]="currency()"></artha-year-bar-chart>
+            }
+          </section>
 
-              <div class="card donut-card">
-                <div class="card-head">
-                  <h2>By category</h2>
-                  @if (donutRoot()) {
-                    <button type="button" class="card-sub link" (click)="clearDonutDrill()">‹ {{ donutRootName() }}</button>
-                  } @else {
-                    <span class="card-sub">Share of spend</span>
-                  }
-                </div>
-                <div class="donut-body">
-                  <artha-donut-chart
-                    class="donut"
-                    [segments]="donutSegments()"
-                    [currency]="currency()"
-                    [interactive]="true"
-                    (segmentSelect)="onDonutSelect($event)"
-                  ></artha-donut-chart>
-                  <ul class="legend">
-                    @for (seg of donutSegments(); track seg.label) {
-                      <li>
-                        <span class="dot" [style.background]="seg.color"></span>
-                        <span class="legend-name">{{ seg.label }}</span>
-                        <span class="legend-pct">{{ percent(seg.value) }}%</span>
-                      </li>
-                    }
-                  </ul>
-                </div>
-              </div>
-            </section>
-
-            <!-- Category breakdown -->
+          @if (view() === 'monthly') {
             <section class="card">
-              <div class="card-head">
-                <h2>Category breakdown</h2>
-                <span class="card-sub">tap a row → filtered expenses</span>
-              </div>
-              <ul class="bars">
-                @for (row of byCategory(); track row.categoryId) {
-                  <li class="bar-row" (click)="openCategory(row.categoryId)">
-                    <div class="bar-top">
-                      <span class="bar-name">
+              <h2>Daily spending</h2>
+              <artha-line-chart [series]="dailySeries()" [currency]="currency()"></artha-line-chart>
+            </section>
+          }
+
+          <!-- Category breakdown -->
+          <section class="card list-card">
+            <div class="card-head">
+              <h2>Categories</h2>
+              <span class="card-sub">Tap to see expenses</span>
+            </div>
+            <ul class="cats">
+              @for (row of byCategory(); track row.categoryId) {
+                <li class="cat" (click)="openCategory(row.categoryId)">
+                  <span class="dot lg" [style.background]="row.color"></span>
+                  <div class="cat-body">
+                    <div class="cat-top">
+                      <span class="cat-name">
+                        {{ row.name }}
                         @if (row.children) {
                           <button
+                            type="button"
                             class="expand-btn"
                             [attr.aria-label]="'Toggle subcategories of ' + row.name"
+                            [attr.aria-expanded]="expandedCategories().has(row.categoryId)"
                             (click)="toggleCategory($event, row.categoryId)"
                           >
-                            <ion-icon
-                              [name]="expandedCategories().has(row.categoryId) ? 'chevron-down' : 'chevron-forward'"
-                            ></ion-icon>
+                            <ion-icon [name]="expandedCategories().has(row.categoryId) ? 'chevron-down' : 'chevron-forward'"></ion-icon>
                           </button>
                         }
-                        {{ row.name }}
                       </span>
-                      <span class="bar-amt num">{{ row.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                      <span class="cat-amt num">{{ row.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                     </div>
-                    <div class="bar-track">
-                      <div class="bar-fill" [style.width.%]="percent(row.total)" [style.background]="row.color"></div>
-                    </div>
-                  </li>
-                  @if (row.children && expandedCategories().has(row.categoryId)) {
-                    @for (child of row.children; track child.categoryId) {
-                      <li class="bar-row bar-row--child" (click)="openCategory(child.categoryId)">
-                        <div class="bar-top">
-                          <span class="bar-name">{{ child.name }}</span>
-                          <span class="bar-amt num">{{ child.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                    <div class="track"><div class="fill" [style.width.%]="share(row.total)" [style.background]="row.color"></div></div>
+                  </div>
+                </li>
+                @if (row.children && expandedCategories().has(row.categoryId)) {
+                  @for (child of row.children; track child.categoryId) {
+                    <li class="cat child" (click)="openCategory(child.categoryId)">
+                      <span class="dot" [style.background]="child.color"></span>
+                      <div class="cat-body">
+                        <div class="cat-top">
+                          <span class="cat-name">{{ child.name }}</span>
+                          <span class="cat-amt num">{{ child.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                         </div>
-                        <div class="bar-track">
-                          <div class="bar-fill" [style.width.%]="percent(child.total)" [style.background]="child.color"></div>
-                        </div>
-                      </li>
-                    }
-                  }
-                }
-              </ul>
-            </section>
-
-            <!-- Top merchants + by account -->
-            <section class="charts-row">
-              <div class="card">
-                <div class="card-head"><h2>Top merchants</h2></div>
-                @if (topMerchants().length === 0) {
-                  <p class="muted small">No merchant info.</p>
-                } @else {
-                  <ul class="merchants">
-                    @for (m of topMerchants(); track m.name) {
-                      <li>
-                        <span class="m-name">{{ m.name }}</span>
-                        <span class="m-amt num">{{ m.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                      </li>
-                    }
-                  </ul>
-                }
-              </div>
-
-              <div class="card">
-                <div class="card-head"><h2>By account</h2></div>
-                <ul class="bars">
-                  @for (a of byAccount(); track a.id) {
-                    <li class="bar-row static">
-                      <div class="bar-top">
-                        <span class="bar-name">{{ a.name }}</span>
-                        <span class="bar-amt num">{{ percent(a.total) }}%</span>
-                      </div>
-                      <div class="bar-track">
-                        <div class="bar-fill" [style.width.%]="percent(a.total)" [style.background]="a.color"></div>
+                        <div class="track"><div class="fill" [style.width.%]="share(child.total)" [style.background]="child.color"></div></div>
                       </div>
                     </li>
                   }
+                }
+              }
+            </ul>
+          </section>
+
+          <div class="two-col">
+            <section class="card list-card">
+              <h2>Top merchants</h2>
+              @if (topMerchants().length === 0) {
+                <p class="muted small">No merchant info.</p>
+              } @else {
+                <ul class="merchants">
+                  @for (m of topMerchants(); track m.name) {
+                    <li>
+                      <span class="m-name">{{ m.name }}</span>
+                      <span class="m-amt num">{{ m.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                    </li>
+                  }
                 </ul>
-              </div>
+              }
             </section>
-          }
+
+            <section class="card list-card">
+              <h2>By account</h2>
+              <ul class="cats">
+                @for (a of byAccount(); track a.id) {
+                  <li class="cat static">
+                    <span class="dot lg" [style.background]="a.color"></span>
+                    <div class="cat-body">
+                      <div class="cat-top">
+                        <span class="cat-name">{{ a.name }}</span>
+                        <span class="cat-amt num">{{ percent(a.total) }}%</span>
+                      </div>
+                      <div class="track"><div class="fill" [style.width.%]="percent(a.total)" [style.background]="a.color"></div></div>
+                    </div>
+                  </li>
+                }
+              </ul>
+            </section>
+          </div>
         }
       </div>
     </ion-content>
   `,
   styles: [`
-    .page-header {
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px;
+    .page {
+      display: flex; flex-direction: column; gap: 14px;
+      padding: calc(16px + var(--ion-safe-area-top, 0px)) 20px 24px;
+      max-width: 960px; margin: 0 auto;
     }
-    .view-switcher {
-      display: inline-flex; padding: 4px;
-      background: var(--artha-surface); border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius); box-shadow: var(--artha-shadow-sm);
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); }
+    .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--artha-surface-2); }
+    .seg button {
+      height: 32px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer;
+      background: transparent; color: var(--artha-text-muted); font: inherit; font-size: 12.5px; font-weight: 600;
     }
-    .view-switcher button {
-      border: 0; background: transparent; padding: 6px 14px; border-radius: 8px;
-      cursor: pointer; color: var(--artha-text-muted); font-size: 13px; font-weight: 500;
-      transition: background 120ms ease, color 120ms ease;
+    .seg button.on { background: var(--artha-surface); color: var(--artha-text); font-weight: 700; box-shadow: var(--artha-shadow); }
+
+    .stepper {
+      align-self: center; display: inline-flex; align-items: center; gap: 4px; padding: 4px;
+      border-radius: 999px; background: var(--artha-surface); border: 1px solid var(--artha-border);
     }
-    .view-switcher button:hover { color: var(--artha-text); }
-    .view-switcher button.active { background: var(--artha-accent-tint); color: var(--artha-accent); font-weight: 600; }
-    .month-picker {
-      margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px;
-      background: var(--artha-surface); border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius); box-shadow: var(--artha-shadow-sm);
+    .step {
+      width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+      color: var(--artha-text-muted); display: inline-flex; align-items: center; justify-content: center;
     }
-    .month-nav {
-      width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px;
-      cursor: pointer; color: var(--artha-text-muted);
-      display: inline-flex; align-items: center; justify-content: center;
-    }
-    .month-nav:hover { background: var(--artha-surface-2); color: var(--artha-text); }
-    .month-nav:disabled { opacity: 0.4; cursor: not-allowed; }
-    .month-nav ion-icon { font-size: 18px; }
-    .range-label { min-width: 96px; text-align: center; font-size: 14px; font-weight: 600; color: var(--artha-text); }
+    .step:hover { background: var(--artha-surface-2); color: var(--artha-text); }
+    .step:disabled { opacity: 0.35; cursor: default; }
+    .step ion-icon { font-size: 18px; }
+    .range-label { min-width: 110px; text-align: center; font-size: 14px; font-weight: 700; color: var(--artha-text); }
 
     .num { font-variant-numeric: tabular-nums; }
     .muted { color: var(--artha-text-muted); }
     .small { font-size: 13px; }
 
-    /* KPI cards */
-    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
-    .kpi {
-      background: var(--artha-surface); border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius); padding: 14px 16px; box-shadow: var(--artha-shadow-sm);
+    .card { padding: 16px 18px; border-radius: var(--artha-radius-2xl, 24px); background: var(--artha-surface); }
+    .card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 800; color: var(--artha-text); }
+    .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .card-sub { font-size: 12px; color: var(--artha-text-subtle); }
+    .list-card { padding-bottom: 8px; }
+
+    /* Donut hero */
+    .hero { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+    .donut-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
+    .donut { width: 150px; }
+    .link { border: 0; background: none; padding: 4px 6px; cursor: pointer; color: var(--artha-accent); font: inherit; font-size: 12.5px; font-weight: 700; }
+    .stats { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 12px; }
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat-label { font-size: 12px; font-weight: 600; color: var(--artha-text-subtle); }
+    .stat-value { font-size: 17px; font-weight: 800; color: var(--artha-text); }
+    .stat-value.up { color: var(--artha-negative); }
+    .stat-value.down { color: var(--artha-positive); }
+    .legend {
+      flex-basis: 100%; list-style: none; margin: 0; padding: 0;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px;
     }
-    .kpi-label { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--artha-text-muted); }
-    .kpi-value { margin: 0; font-size: 21px; font-weight: 700; color: var(--artha-text); }
-    .kpi-value.sm { font-size: 16px; }
-    .kpi-sub { margin: 6px 0 0; font-size: 11.5px; font-weight: 600; }
-    .kpi-sub.muted { color: var(--artha-text-subtle); font-weight: 500; }
-    .kpi-sub.up { color: var(--artha-negative, #dc2626); }
-    .kpi-sub.down { color: var(--artha-positive, #16a34a); }
+    .legend li { display: flex; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; }
+    .legend-name { flex: 1; min-width: 0; color: var(--artha-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .legend-pct { color: var(--artha-text-muted); font-weight: 700; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.lg { width: 10px; height: 10px; }
 
-    /* Cards + layout */
-    .card {
-      background: var(--artha-surface); border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius); padding: 16px 18px; box-shadow: var(--artha-shadow-sm);
-      margin-bottom: 18px; flex: 1; min-width: 0;
+    /* Last-6-months bars */
+    .mbars { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; align-items: end; height: 130px; }
+    .mbar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; }
+    .mbar-fill {
+      width: 100%; min-height: 4px; border-radius: 8px; max-height: calc(100% - 22px);
+      background: var(--artha-accent-tint); transition: height 0.3s ease;
     }
-    .card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
-    .card-head h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--artha-text); }
-    .card-sub { font-size: 11.5px; color: var(--artha-text-subtle); }
-    .card-sub.link { background: transparent; border: 0; cursor: pointer; color: var(--artha-accent, #2f6df6); font-weight: 600; padding: 0; }
-    .charts-row { display: flex; gap: 18px; align-items: stretch; }
-    .trend-card { flex: 1.7; }
-    .donut-card { flex: 1; }
+    .mbar-fill.current { background: var(--artha-accent); }
+    .mbar-label { font-size: 11.5px; font-weight: 600; color: var(--artha-text-subtle); }
+    .mbar-label.current { color: var(--artha-text); font-weight: 800; }
 
-    .donut-body { display: flex; align-items: center; gap: 16px; }
-    .donut { width: 130px; flex-shrink: 0; }
-    .legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; }
-    .legend li { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12.5px; }
-    .legend .dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
-    .legend-name { color: var(--artha-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .legend-pct { color: var(--artha-text-muted); font-weight: 600; }
-
-    /* Bars */
-    .bars { list-style: none; margin: 0; padding: 0; }
-    .bar-row { padding: 9px 6px; border-radius: 8px; }
-    .bar-row:not(.static) { cursor: pointer; }
-    .bar-row:not(.static):hover { background: var(--artha-surface-2); }
-    .bar-top { display: flex; justify-content: space-between; margin-bottom: 6px; }
-    .bar-name { font-size: 13px; font-weight: 600; color: var(--artha-text); display: inline-flex; align-items: center; gap: 4px; }
-    .bar-amt { font-size: 13px; font-weight: 700; color: var(--artha-text); }
-    .bar-track { height: 8px; border-radius: 4px; background: var(--artha-surface-2, #eef2f7); overflow: hidden; }
-    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    /* Category / account rows */
+    .cats { list-style: none; margin: 0; padding: 0; }
+    .cat { display: flex; align-items: center; gap: 12px; padding: 10px 6px; margin: 0 -6px; border-radius: 12px; cursor: pointer; }
+    .cat:hover:not(.static) { background: var(--artha-surface-2); }
+    .cat.static { cursor: default; }
+    .cat.child { padding-left: 28px; }
+    .cat.child .cat-name { font-weight: 600; color: var(--artha-text-muted); }
+    .cat-body { flex: 1; min-width: 0; }
+    .cat-top { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+    .cat-name { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-weight: 700; color: var(--artha-text); }
+    .cat-amt { font-weight: 700; color: var(--artha-text); flex-shrink: 0; }
+    .track { margin-top: 6px; height: 6px; border-radius: 999px; background: var(--artha-surface-2); overflow: hidden; }
+    .fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
     .expand-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      background: transparent; border: 0; padding: 0; margin: 0;
-      color: var(--artha-text-subtle); cursor: pointer; font-size: 14px;
+      width: 28px; height: 28px; margin: -6px 0; border: 0; border-radius: 8px; background: transparent;
+      color: var(--artha-text-subtle); cursor: pointer; font-size: 15px;
     }
-    .bar-row--child { margin-left: 18px; }
-    .bar-row--child .bar-name { font-weight: 500; color: var(--artha-text-muted); }
 
-
-    /* Merchants */
+    .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .merchants { list-style: none; margin: 0; padding: 0; }
-    .merchants li {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 4px; border-bottom: 1px solid var(--artha-border);
-    }
-    .merchants li:last-child { border-bottom: 0; }
-    .m-name { font-size: 13px; color: var(--artha-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .m-amt { font-size: 13px; font-weight: 700; color: var(--artha-text); }
+    .merchants li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--artha-border); }
+    .merchants li:first-child { border-top: 0; }
+    .m-name { font-size: 14px; color: var(--artha-text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .m-amt { font-size: 14px; font-weight: 700; color: var(--artha-text); flex-shrink: 0; }
 
     .state, .empty {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 10px; padding: 56px 16px; color: var(--artha-text-muted);
+      gap: 12px; padding: 64px 16px; color: var(--artha-text-muted); text-align: center;
     }
-    .empty ion-icon { font-size: 40px; color: var(--artha-text-subtle); }
+    .empty-badge {
+      width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center;
+      background: var(--artha-accent-tint); color: var(--artha-accent); font-size: 30px;
+    }
+    .empty p { margin: 0; }
 
-    @media (max-width: 820px) {
-      .kpis { grid-template-columns: repeat(2, 1fr); }
-      .charts-row { flex-direction: column; }
-    }
-    /* Clear the fixed bottom tab bar (mobile-only, <768px) plus the
-       home-indicator safe area so the last card isn't hidden. */
-    @media (max-width: 767.98px) {
-      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+    @media (max-width: 720px) {
+      .two-col { grid-template-columns: minmax(0, 1fr); }
     }
   `],
 })
@@ -387,6 +357,8 @@ export class ReportsPage implements OnInit {
   protected readonly currency = signal<string>('USD');
   private readonly periodExpenses = signal<Expense[]>([]);
   private readonly prevTotal = signal<number>(0);
+  /** Monthly view: the six months ending at the selected month (for the bars). */
+  private readonly recentExpenses = signal<Expense[]>([]);
 
   protected readonly rangeLabel = computed(() =>
     this.view() === 'monthly' ? `${MONTH_LABELS[this.month() - 1]} ${this.year()}` : String(this.year()),
@@ -425,8 +397,27 @@ export class ReportsPage implements OnInit {
     if (this.view() !== 'monthly') return null;
     const prev = this.prevTotal();
     if (prev <= 0) return null;
-    const d = (this.total() - prev) / prev;
-    return { up: d >= 0, text: `${d >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(d * 100))}% vs prev` };
+    const diff = this.total() - prev;
+    return { up: diff >= 0, amount: Math.abs(diff) };
+  });
+
+  /** Spend per month for the six months ending at the selected one. */
+  protected readonly lastSixMonths = computed(() => {
+    const months: { key: string; label: string; total: number; current: boolean; pct: number }[] = [];
+    let y = this.year();
+    let m = this.month();
+    for (let i = 0; i < 6; i++) {
+      months.unshift({ key: monthPrefix(y, m), label: MONTH_LABELS[m - 1].slice(0, 3), total: 0, current: i === 0, pct: 0 });
+      if (m === 1) { y -= 1; m = 12; } else { m -= 1; }
+    }
+    for (const e of this.recentExpenses()) {
+      if (e.excluded) continue;
+      const bucket = months.find((b) => e.date.startsWith(b.key));
+      if (bucket) bucket.total += e.amount;
+    }
+    const max = Math.max(...months.map((b) => b.total), 0);
+    for (const b of months) b.pct = max > 0 ? Math.max(3, (b.total / max) * 100) : 3;
+    return months;
   });
 
   protected readonly byCategory = computed<CatRow[]>(() => {
@@ -627,6 +618,12 @@ export class ReportsPage implements OnInit {
     return Math.round((value / total) * 100);
   }
 
+  /** Width of a row's bar relative to the biggest category. */
+  protected share(value: number): number {
+    const top = this.byCategory()[0]?.total ?? 0;
+    return top > 0 ? Math.round((value / top) * 100) : 0;
+  }
+
   protected openCategory(categoryId: string): void {
     const queryParams: Record<string, string | number> = { category: categoryId };
     if (this.view() === 'monthly') {
@@ -644,16 +641,18 @@ export class ReportsPage implements OnInit {
       if (this.view() === 'monthly') {
         const cur = monthPrefix(this.year(), this.month());
         const prev = prevMonthPrefix(this.year(), this.month());
-        const res = await this.api.list(prev, cur);
+        const res = await this.api.list(monthsBackPrefix(this.year(), this.month(), 5), cur);
         this.currency.set(res.currency || 'USD');
+        this.recentExpenses.set(res.items);
         this.periodExpenses.set(res.items.filter((e) => e.date.startsWith(cur)));
         this.prevTotal.set(
-          res.items.filter((e) => e.date.startsWith(prev)).reduce((s, e) => s + e.amount, 0),
+          res.items.filter((e) => e.date.startsWith(prev) && !e.excluded).reduce((s, e) => s + e.amount, 0),
         );
       } else {
         const res = await this.api.list(`${this.year()}-01`, `${this.year()}-12`);
         this.currency.set(res.currency || 'USD');
         this.periodExpenses.set(res.items);
+        this.recentExpenses.set([]);
         this.prevTotal.set(0);
       }
     } catch {
@@ -670,6 +669,11 @@ function monthPrefix(year: number, month: number): string {
 
 function prevMonthPrefix(year: number, month: number): string {
   return month === 1 ? monthPrefix(year - 1, 12) : monthPrefix(year, month - 1);
+}
+
+function monthsBackPrefix(year: number, month: number, back: number): string {
+  const d = new Date(year, month - 1 - back, 1);
+  return monthPrefix(d.getFullYear(), d.getMonth() + 1);
 }
 
 function daysInMonth(year: number, month: number): number {
