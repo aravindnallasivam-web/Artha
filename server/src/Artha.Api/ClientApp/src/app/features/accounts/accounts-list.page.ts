@@ -1,20 +1,7 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import {
-  AlertController,
-  IonContent,
-  IonFab,
-  IonFabButton,
-  IonHeader,
-  IonIcon,
-  IonLabel,
-  IonSegment,
-  IonSegmentButton,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import {
   Account,
@@ -26,54 +13,54 @@ import { bankPresetById } from '../../core/models/bank-preset';
 import { AccountsStore } from './accounts.store';
 import { BalanceSyncService } from './balance-sync.service';
 
+// Deep tones so white text stays readable on every card.
+const TILE_PALETTE = ['#1e3a8a', '#0e7490', '#7c2d12', '#4c1d95', '#065f46', '#9f1239', '#334155'];
+
 @Component({
   selector: 'artha-accounts-list',
   standalone: true,
   imports: [
     CurrencyPipe,
     IonContent,
-    IonFab,
-    IonFabButton,
-    IonHeader,
     IonIcon,
-    IonLabel,
-    IonSegment,
-    IonSegmentButton,
     IonSpinner,
-    IonTitle,
-    IonToolbar,
   ],
   template: `
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Accounts</ion-title>
-      </ion-toolbar>
-    </ion-header>
-
     <ion-content>
-      @if (store.loading()) {
-        <div class="state"><ion-spinner></ion-spinner></div>
-      } @else {
-        <div class="wrap">
+      <div class="wrap">
+        <header class="head">
+          <h1>Accounts</h1>
+          <button type="button" class="add-btn" aria-label="Add account" (click)="addAccount()">
+            <ion-icon name="add"></ion-icon>
+          </button>
+        </header>
+
+        @if (store.loading()) {
+          <div class="state"><ion-spinner></ion-spinner></div>
+        } @else {
           @if (summary().count > 0) {
-            <div class="hero">
+            <section class="hero">
               <div class="hero-label">Total balance</div>
               @if (summary().total !== null) {
-                <div class="hero-value">
+                <div class="hero-value num">
                   {{ summary().total | currency: summary().currency : 'symbol' : '1.0-0' }}
                 </div>
-                <div class="hero-sub">{{ accountsLabel() }}</div>
               } @else {
                 <div class="hero-value">{{ accountsLabel() }}</div>
-                <div class="hero-sub">Across multiple currencies</div>
               }
-            </div>
+              <div class="hero-sub">
+                <span>{{ summary().total !== null ? accountsLabel() : 'Across multiple currencies' }}</span>
+                @if (summary().cards !== null && summary().cardCount > 0) {
+                  <span>Credit cards <b class="num">{{ summary().cards | currency: summary().currency : 'symbol' : '1.0-0' }}</b></span>
+                }
+              </div>
+            </section>
           }
 
-          <ion-segment [value]="view()" (ionChange)="onView($event)">
-            <ion-segment-button value="active"><ion-label>Active</ion-label></ion-segment-button>
-            <ion-segment-button value="archived"><ion-label>Archived</ion-label></ion-segment-button>
-          </ion-segment>
+          <div class="seg" role="group" aria-label="Show">
+            <button type="button" [class.on]="view() === 'active'" [attr.aria-pressed]="view() === 'active'" (click)="setView('active')">Active</button>
+            <button type="button" [class.on]="view() === 'archived'" [attr.aria-pressed]="view() === 'archived'" (click)="setView('archived')">Archived</button>
+          </div>
 
           @if (visible().length === 0) {
             @if (view() === 'archived') {
@@ -85,147 +72,138 @@ import { BalanceSyncService } from './balance-sync.service';
               <div class="empty">
                 <ion-icon name="wallet-outline"></ion-icon>
                 <div>No accounts yet.</div>
-                <div class="cta" (click)="addAccount()">Add your first account</div>
+                <button type="button" class="cta" (click)="addAccount()">Add your first account</button>
               </div>
             }
           } @else {
-            @for (acc of visible(); track acc.id) {
-              <div class="acc-card" (click)="openAccount(acc)">
-                <div
-                  class="acc-badge"
-                  [style.background]="badgeBg(acc)"
-                  [style.color]="badgeColor(acc)"
+            <div class="grid">
+              @for (acc of visible(); track acc.id; let i = $index) {
+                <article
+                  class="tile"
+                  [class.archived]="acc.archived"
+                  [style.background]="tileColor(acc, i)"
+                  (click)="openAccount(acc)"
                 >
-                  <ion-icon [name]="iconFor(acc)"></ion-icon>
-                </div>
-                <div class="acc-main">
-                  <div class="acc-name">{{ acc.name }}</div>
-                  <div class="acc-meta">
-                    <span>{{ typeLabel(acc) }} · {{ acc.currency }}</span>
-                    @if (bankName(acc); as bn) {
-                      <span class="chip">{{ bn }}</span>
-                    }
-                    @if (simChip(acc); as sim) {
-                      <span class="chip chip--sim">{{ sim }}</span>
-                    }
+                  <div class="tile-top">
+                    <span class="tile-icon"><ion-icon [name]="iconFor(acc)"></ion-icon></span>
+                    <span class="tile-name">{{ acc.name }}</span>
                   </div>
-                </div>
-                <div class="acc-right">
-                  <div class="acc-balance" [class.neg]="acc.openingBalance < 0">
-                    {{ acc.openingBalance | currency: acc.currency : 'symbol' : '1.0-0' }}
+                  <div class="tile-bottom">
+                    <div class="tile-balance num">
+                      {{ acc.openingBalance | currency: acc.currency : 'symbol' : '1.0-0' }}
+                    </div>
+                    <div class="tile-meta">
+                      <span>{{ bankName(acc) || typeLabel(acc) }}</span>
+                      @if (simChip(acc); as sim) { <span class="sim">{{ sim }}</span> }
+                    </div>
                   </div>
                   @if (canSync(acc) || canArchive(acc)) {
-                    <div class="acc-actions">
+                    <div class="tile-actions">
                       @if (canSync(acc)) {
-                        <button
-                          class="iconbtn"
-                          aria-label="Sync balance"
-                          (click)="syncBalance($event, acc)"
-                        >
+                        <button type="button" class="tbtn" aria-label="Sync balance" (click)="syncBalance($event, acc)">
                           <ion-icon name="sync-outline"></ion-icon>
                         </button>
                       }
                       @if (canArchive(acc)) {
-                        <button
-                          class="iconbtn danger"
-                          aria-label="Archive account"
-                          (click)="archive($event, acc)"
-                        >
-                          <ion-icon name="trash"></ion-icon>
+                        <button type="button" class="tbtn" aria-label="Archive account" (click)="archive($event, acc)">
+                          <ion-icon name="archive-outline"></ion-icon>
                         </button>
                       }
                     </div>
                   }
-                </div>
-              </div>
-            }
+                </article>
+              }
+              @if (view() === 'active') {
+                <button type="button" class="tile-add" (click)="addAccount()">
+                  <ion-icon name="add"></ion-icon>
+                  Add account
+                </button>
+              }
+            </div>
           }
-        </div>
-      }
-
-      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-        <ion-fab-button (click)="addAccount()">
-          <ion-icon name="add"></ion-icon>
-        </ion-fab-button>
-      </ion-fab>
+        }
+      </div>
     </ion-content>
   `,
   styles: [`
     ion-content { --background: var(--artha-bg); }
-    .wrap { padding: 14px 14px 96px; max-width: 640px; margin: 0 auto; }
+    .wrap {
+      padding: calc(16px + var(--ion-safe-area-top, 0px)) 20px 24px;
+      max-width: 720px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .head { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; }
+    .head h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); }
+    .add-btn {
+      width: 44px; height: 44px; border-radius: 14px; cursor: pointer;
+      border: 1px solid var(--artha-border); background: var(--artha-surface);
+      color: var(--artha-text); display: grid; place-items: center; font-size: 22px;
+    }
 
     .hero {
-      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
-      border-radius: var(--artha-radius-lg);
-      padding: 18px 20px 20px;
-      color: #fff;
-      box-shadow: 0 10px 24px -10px rgba(79, 70, 229, 0.55);
-      margin-bottom: 14px;
+      padding: 18px 20px; border-radius: var(--artha-radius-2xl, 24px);
+      background: #0f172a; color: #fff;
     }
-    .hero-label {
-      font-size: 12px; font-weight: 600; letter-spacing: 0.5px;
-      text-transform: uppercase; opacity: 0.85;
+    :host-context(.ion-palette-dark) .hero { background: var(--artha-surface-2); }
+    .hero-label { font-size: 13px; font-weight: 600; color: #cbd5e1; }
+    .hero-value { margin-top: 4px; font-size: 34px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+    .hero-sub {
+      display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px;
+      font-size: 12.5px; font-weight: 600; color: #cbd5e1;
     }
-    .hero-value {
-      font-size: 34px; font-weight: 800; margin-top: 4px;
-      font-variant-numeric: tabular-nums; line-height: 1.1;
-    }
-    .hero-sub { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .hero-sub b { color: #fff; }
 
-    ion-segment { margin-bottom: 14px; }
+    .seg {
+      display: inline-flex; align-self: flex-start; padding: 4px; gap: 2px;
+      border-radius: 999px; background: var(--artha-surface-2);
+    }
+    .seg button {
+      height: 34px; padding: 0 16px; border: 0; border-radius: 999px; cursor: pointer;
+      background: transparent; color: var(--artha-text-muted); font-size: 13px; font-weight: 600;
+    }
+    .seg button.on { background: var(--artha-surface); color: var(--artha-text); font-weight: 700; box-shadow: var(--artha-shadow); }
 
-    .acc-card {
-      display: flex; align-items: center; gap: 12px;
-      background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      padding: 12px 14px; margin-bottom: 10px;
-      box-shadow: var(--artha-shadow-sm);
-      cursor: pointer;
-      transition: transform 120ms ease, box-shadow 120ms ease;
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    @media (min-width: 640px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .tile {
+      position: relative; min-height: 124px; box-sizing: border-box;
+      display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
+      padding: 14px; border-radius: 20px; color: #fff; cursor: pointer; overflow: hidden;
+      transition: transform 120ms ease;
     }
-    .acc-card:active { transform: scale(0.992); }
-    .acc-badge {
-      width: 40px; height: 40px; border-radius: 12px; flex: none;
-      display: flex; align-items: center; justify-content: center; font-size: 20px;
+    .tile:active { transform: scale(0.98); }
+    .tile.archived { opacity: 0.6; }
+    .tile-top { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 56px; }
+    .tile-icon {
+      flex: none; width: 28px; height: 28px; border-radius: 9px;
+      background: rgba(255, 255, 255, 0.2); display: grid; place-items: center; font-size: 15px;
     }
-    .acc-main { flex: 1; min-width: 0; }
-    .acc-name {
-      font-weight: 600; font-size: 15px; color: var(--artha-text);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    .tile-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile-balance { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+    .tile-meta {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px;
+      font-size: 11.5px; opacity: 0.85;
     }
-    .acc-meta {
-      display: flex; align-items: center; gap: 8px; margin-top: 2px;
-      font-size: 12.5px; color: var(--artha-text-muted);
+    .sim { padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+    .tile-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; }
+    .tbtn {
+      width: 30px; height: 30px; border: 0; border-radius: 9px; cursor: pointer;
+      background: rgba(255, 255, 255, 0.16); color: #fff; display: grid; place-items: center; font-size: 15px;
     }
-    .chip {
-      font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
-      background: var(--artha-surface-2); color: var(--artha-text-muted);
-      white-space: nowrap;
+    .tile-add {
+      min-height: 124px; border-radius: 20px; cursor: pointer;
+      border: 2px dashed var(--artha-border-strong); background: transparent;
+      color: var(--artha-text-muted); font-size: 13px; font-weight: 700;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
     }
-    .chip--sim {
-      background: var(--artha-accent-tint, #eaf1ff); color: var(--artha-accent, #2f6df6);
-    }
-    .acc-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-    .acc-balance {
-      font-weight: 700; font-size: 15px; color: var(--artha-text);
-      font-variant-numeric: tabular-nums;
-    }
-    .acc-balance.neg { color: var(--artha-negative); }
-    .acc-actions { display: flex; gap: 2px; }
-    .iconbtn {
-      background: transparent; border: 0; padding: 4px; border-radius: 8px;
-      color: var(--artha-text-subtle); font-size: 18px; display: flex; cursor: pointer;
-    }
-    .iconbtn:hover { background: var(--artha-surface-2); color: var(--artha-text-muted); }
-    .iconbtn.danger:hover { color: var(--artha-negative); }
+    .tile-add ion-icon { font-size: 22px; }
 
     .state, .empty {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 8px; padding: 48px 24px; color: var(--artha-text-subtle); text-align: center;
     }
     .empty ion-icon { font-size: 40px; }
-    .empty .cta { color: var(--artha-accent); font-weight: 600; cursor: pointer; }
+    .empty .cta { border: 0; background: none; color: var(--artha-accent); font-weight: 700; font-size: 14px; cursor: pointer; }
   `],
 })
 export class AccountsListPage implements OnInit {
@@ -249,11 +227,13 @@ export class AccountsListPage implements OnInit {
   protected readonly summary = computed(() => {
     const active = this.store.active();
     const currencies = [...new Set(active.map((a) => a.currency))];
-    const total =
-      currencies.length === 1
-        ? active.reduce((sum, a) => sum + a.openingBalance, 0)
-        : null;
-    return { count: active.length, currency: currencies[0] ?? '', total };
+    const single = currencies.length === 1;
+    const cardAccounts = active.filter((a) => a.type === 'credit_card');
+    const total = single
+      ? active.filter((a) => a.type !== 'credit_card').reduce((sum, a) => sum + a.openingBalance, 0)
+      : null;
+    const cards = single ? cardAccounts.reduce((sum, a) => sum + a.openingBalance, 0) : null;
+    return { count: active.length, currency: currencies[0] ?? '', total, cards, cardCount: cardAccounts.length };
   });
 
   ngOnInit(): void {
@@ -280,9 +260,8 @@ export class AccountsListPage implements OnInit {
     return `${c} ${c === 1 ? 'account' : 'accounts'}`;
   }
 
-  protected async onView(event: Event): Promise<void> {
-    const value = (event as CustomEvent<{ value: 'active' | 'archived' }>).detail?.value;
-    if (!value || value === this.view()) {
+  protected async setView(value: 'active' | 'archived'): Promise<void> {
+    if (value === this.view()) {
       return;
     }
     this.view.set(value);
@@ -351,11 +330,8 @@ export class AccountsListPage implements OnInit {
     return bankPresetById(acc.bank)?.name ?? null;
   }
 
-  protected badgeColor(acc: Account): string {
-    return acc.color || 'var(--artha-accent)';
-  }
-
-  protected badgeBg(acc: Account): string {
-    return acc.color ? `${acc.color}22` : 'var(--artha-accent-tint)';
+  /** Card colour: the account's own colour, else a stable pick from a dark palette. */
+  protected tileColor(acc: Account, index: number): string {
+    return acc.color || TILE_PALETTE[index % TILE_PALETTE.length];
   }
 }
