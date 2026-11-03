@@ -39,6 +39,8 @@ export interface SmsCandidateRow {
   duplicate: Expense | null;
   /** Persistent-queue key (queue mode only); lets the caller drop resolved items. */
   key?: string;
+  /** The category or account shown was filled in by the AI provider. */
+  aiPicked?: boolean;
 }
 
 interface NamedRef {
@@ -128,11 +130,13 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
         </div>
       } @else {
         <section class="hero">
-          <div class="hero-label">
-            {{ selectedCount() }} of {{ rows().length }} selected
-          </div>
-          <div class="hero-amount num">
-            {{ selectedTotal() | currency: currencyCode() : 'symbol' : '1.0-0' }}
+          <div class="hero-text">
+            <div class="hero-label">
+              {{ selectedCount() }} of {{ rows().length }} selected
+            </div>
+            <div class="hero-amount num">
+              {{ selectedTotal() | currency: currencyCode() : 'symbol' : '1.0-0' }}
+            </div>
           </div>
           @if (queueMode) {
             <button type="button" class="hero-dismiss" (click)="dismissAll()">Dismiss all</button>
@@ -142,14 +146,14 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
         @if (showSwipeHint()) {
           <div class="hint-pill">
             <ion-icon name="chevron-back"></ion-icon>
-            Swipe a card left to dismiss it
+            Swipe left to dismiss · tap a card to edit
           </div>
         }
 
         <div class="list">
           @for (row of rows(); track row.parsed.raw; let i = $index) {
             <ion-item-sliding class="slide" (ionDrag)="onDrag()">
-              <ion-item lines="none" class="card-item" [class.off]="!row.selected" [class.dup]="row.duplicate">
+              <ion-item lines="none" class="card-item" [class.off]="!row.selected" [class.dup]="row.duplicate" [class.ai]="row.aiPicked && !row.duplicate">
                 <div class="card">
                   <button
                     type="button"
@@ -178,8 +182,11 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
                       <span class="dot"></span>
                       <span class="sender">{{ row.parsed.sender }}</span>
                       @if (row.duplicate) { <span class="badge">Possible duplicate</span> }
+                      @if (row.aiPicked) {
+                        <span class="ai-tag"><ion-icon name="sparkles-outline" aria-hidden="true"></ion-icon>AI picked</span>
+                      }
                     </div>
-                    <div class="chips">
+                    <div class="chips" [class.chips-ai]="row.aiPicked">
                       <button type="button" class="chip" [class.empty]="!row.categoryId" (click)="pickCategory($event, i)">
                         <ion-icon name="pricetag-outline"></ion-icon>
                         <span>{{ categoryName(row.categoryId) || 'Category' }}</span>
@@ -229,28 +236,29 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
     :host { --background: var(--artha-bg); }
     .bg { --background: var(--artha-bg); }
     .top { --background: var(--artha-bg); }
+    .top ion-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
     .link { --color: var(--artha-accent); font-weight: 600; text-transform: none; }
     .num { font-variant-numeric: tabular-nums; }
 
     /* Summary hero */
     .hero {
-      position: relative;
-      margin: 4px 16px 12px;
-      padding: 18px 20px;
-      border-radius: 20px;
+      display: flex; align-items: center; gap: 14px;
+      margin: 4px 16px 10px;
+      padding: 16px 18px;
+      border-radius: var(--artha-radius-xl, 22px);
       color: #fff;
-      background: var(--artha-accent-hover);
-      box-shadow: 0 10px 24px -12px rgba(79, 70, 229, 0.65);
+      background: var(--artha-accent);
     }
-    .hero-label { font-size: 13px; font-weight: 600; opacity: 0.85; }
-    .hero-amount { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; margin-top: 4px; }
+    .hero-text { flex: 1; min-width: 0; }
+    .hero-label { font-size: 13px; font-weight: 600; opacity: 0.88; }
+    .hero-amount { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; margin-top: 2px; }
     .hero-dismiss {
-      position: absolute; top: 16px; right: 16px;
-      background: rgba(255, 255, 255, 0.18); color: #fff;
-      border: 0; border-radius: 999px; padding: 6px 12px;
-      font-size: 12px; font-weight: 700; cursor: pointer;
+      flex: 0 0 auto; height: 36px; padding: 0 14px;
+      background: rgba(255, 255, 255, 0.2); color: #fff;
+      border: 0; border-radius: 999px;
+      font-size: 12.5px; font-weight: 700; cursor: pointer;
     }
-    .skel-hero { background: var(--artha-surface); box-shadow: none; }
+    .skel-hero { display: block; background: var(--artha-surface); }
     .loading-text { margin: 4px 20px 10px; font-size: 13px; font-weight: 600; color: var(--artha-text-muted); }
 
     .hint-pill {
@@ -264,23 +272,20 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
 
     /* Cards */
     .list { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 16px; }
-    .slide {
-      border-radius: 18px; overflow: hidden;
-      box-shadow: var(--artha-shadow-sm);
-    }
+    .slide { border-radius: 20px; overflow: hidden; }
     .card-item {
       --background: var(--artha-surface);
       --padding-start: 0; --inner-padding-end: 0;
       --min-height: 0;
-      border: 1px solid var(--artha-border);
-      border-radius: 18px;
+      border-radius: 20px;
       transition: opacity 0.15s ease;
     }
-    .card-item.dup { border-color: var(--artha-warning, #f59e0b); }
+    .card-item.dup { box-shadow: inset 0 0 0 1.5px var(--artha-warning, #f59e0b); }
+    .card-item.ai { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--artha-accent) 35%, transparent); }
     .card-item.off .main { opacity: 0.6; }
     .card {
       display: flex; gap: 12px; width: 100%;
-      padding: 14px 14px 12px;
+      padding: 14px;
     }
     .avatar {
       --c: var(--artha-accent);
@@ -314,16 +319,28 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
       background: var(--artha-warning-tint, #fef3c7); color: #92400e;
     }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .chips { gap: 6px; }
     .chip {
       display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
-      padding: 6px 12px; border-radius: 999px; cursor: pointer;
-      border: 1px solid var(--artha-border);
+      height: 30px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+      border: 1px solid transparent;
       background: var(--artha-surface-2); color: var(--artha-text);
       font-size: 12.5px; font-weight: 600;
     }
+    .chips-ai .chip:not(.empty) {
+      border-color: color-mix(in srgb, var(--artha-accent) 35%, transparent);
+      background: var(--artha-accent-tint);
+    }
+    .ai-tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 7px; border-radius: 999px;
+      background: var(--artha-accent-tint); color: var(--artha-accent);
+      font-size: 10.5px; font-weight: 800;
+    }
+    .ai-tag ion-icon { font-size: 11px; }
     .chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
     .chip ion-icon { font-size: 14px; color: var(--artha-text-muted); flex-shrink: 0; }
-    .chip.empty { border-style: dashed; color: var(--artha-text-muted); background: transparent; }
+    .chip.empty { border: 1px dashed var(--artha-border-strong); color: var(--artha-text-muted); background: transparent; }
 
     /* Swipe actions */
     .opt { font-size: 12px; font-weight: 700; text-transform: none; min-width: 84px; }
@@ -345,11 +362,11 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
 
     /* Sticky save bar */
     ion-footer { background: var(--artha-bg); }
-    .save-bar { padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+    .save-bar { padding: 12px 20px calc(16px + env(safe-area-inset-bottom, 0px)); }
     .save {
-      width: 100%; height: 52px; border: 0; border-radius: 16px; cursor: pointer;
+      width: 100%; height: 56px; border: 0; border-radius: 18px; cursor: pointer;
       background: var(--artha-accent); color: #fff;
-      font-size: 15.5px; font-weight: 700;
+      font-size: 16px; font-weight: 800;
       box-shadow: 0 8px 20px -10px rgba(79, 70, 229, 0.8);
       transition: transform 0.1s ease, opacity 0.15s ease;
     }
@@ -359,7 +376,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
 
     /* Skeleton */
     .card.skel {
-      background: var(--artha-surface); border: 1px solid var(--artha-border); border-radius: 18px;
+      background: var(--artha-surface); border-radius: 20px;
     }
     .sk-avatar { width: 44px; height: 44px; border-radius: 14px; margin: 0; flex: 0 0 auto; }
     .card.skel ion-skeleton-text { --border-radius: 6px; }
@@ -503,7 +520,7 @@ export class SmsBulkReviewModal implements OnInit {
     await modal.present();
     const { role, data } = await modal.onWillDismiss<string | null>();
     if (role === 'select' && data) {
-      this.patch(i, { categoryId: data, selected: true });
+      this.patch(i, { categoryId: data, selected: true, aiPicked: false });
     }
   }
 
@@ -515,7 +532,7 @@ export class SmsBulkReviewModal implements OnInit {
       buttons: [
         ...this.accountOptions().map((a) => ({
           text: a.id === current ? `✓  ${a.name}` : a.name,
-          handler: () => this.patch(i, { accountId: a.id, selected: true }),
+          handler: () => this.patch(i, { accountId: a.id, selected: true, aiPicked: false }),
         })),
         { text: 'Cancel', role: 'cancel' },
       ],
@@ -554,7 +571,10 @@ export class SmsBulkReviewModal implements OnInit {
     await modal.present();
     const { role, data } = await modal.onWillDismiss<Partial<SmsCandidateRow>>();
     if (role === 'edited' && data) {
-      this.patch(i, { ...data, selected: true });
+      const changed =
+        (data.categoryId !== undefined && data.categoryId !== row.categoryId) ||
+        (data.accountId !== undefined && data.accountId !== row.accountId);
+      this.patch(i, { ...data, selected: true, ...(changed ? { aiPicked: false } : {}) });
     } else if (role === 'dismiss') {
       this.dropRow(i);
     } else if (role === 'ignore') {

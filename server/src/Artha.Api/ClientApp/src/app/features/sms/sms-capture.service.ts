@@ -1004,16 +1004,19 @@ export class SmsCaptureService {
     const candidates: SmsCandidateRow[] = parsed.map((p, idx) => {
       const ai = suggestions[idx];
       const duplicate = this.findDuplicate(p, existing);
+      const categoryId = this.resolveCategoryId(p, ai);
+      const accountId = this.resolveAccountId(p, ai);
       return {
         parsed: p,
         duplicate,
         selected: !duplicate,
         amount: p.amount,
         date: p.date,
-        categoryId: this.resolveCategoryId(p, ai),
-        accountId: this.resolveAccountId(p, ai),
+        categoryId,
+        accountId,
         note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
         excluded: false,
+        aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
       };
     });
     return {
@@ -1079,6 +1082,8 @@ export class SmsCaptureService {
       const p = i.parsed;
       const ai = suggestions[idx];
       const duplicate = this.findDuplicate(p, existing);
+      const categoryId = this.resolveCategoryId(p, ai);
+      const accountId = this.resolveAccountId(p, ai);
       return {
         key: i.key,
         parsed: p,
@@ -1086,10 +1091,11 @@ export class SmsCaptureService {
         selected: !duplicate,
         amount: p.amount,
         date: p.date,
-        categoryId: this.resolveCategoryId(p, ai),
-        accountId: this.resolveAccountId(p, ai),
+        categoryId,
+        accountId,
         note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
         excluded: false,
+        aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
       };
     });
     return {
@@ -1361,6 +1367,16 @@ export class SmsCaptureService {
     // A late answer still lands in the cache for the next time this SMS is shown.
     void request.then((s) => s && this.rememberAiSuggestion(key, s));
     return Promise.race([request, timeout]);
+  }
+
+  /** True when the shown category or account came from the AI, not a learned rule. */
+  private isAiPicked(parsed: ParsedExpense, ai: AiSuggestion | null, categoryId: string, accountId: string): boolean {
+    if (!ai) {
+      return false;
+    }
+    const category = !!ai.categoryId && categoryId === ai.categoryId && !this.learnedCategoryId(parsed);
+    const account = !!ai.accountId && accountId === ai.accountId && !this.learnedAccountId(parsed);
+    return category || account;
   }
 
   private rememberAiSuggestion(key: string, suggestion: AiSuggestion): void {
