@@ -1,0 +1,12 @@
+# Run the Artha web app locally: `docker compose up -d --build`, then open
+# http://localhost:8080. Sign-in needs http://localhost:8080/auth/callback in
+# the Google OAuth client's Authorized redirect URIs (see README).
+services:
+  artha-web:
+    build:
+      context: ./server/src/Artha.Api/ClientApp
+    image: artha-web:local
+    container_name: artha-web
+    ports:
+      - "8080:80"
+    restart: unless-stopped

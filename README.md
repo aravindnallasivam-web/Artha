@@ -185,6 +185,38 @@ npm run electron:dist       # build installers (.dmg / .exe / .AppImage) for the
 
 See [`electron/README.md`](server/src/Artha.Api/ClientApp/electron/README.md) for the desktop OAuth setup.
 
+### Web app in Docker (e.g. on a Mac)
+
+The web build is just static files (your data lives in Google Drive), so one
+nginx container is the whole deployment. Needs [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+```bash
+# from the repository root
+docker compose up -d --build     # build the image and start it in the background
+open http://localhost:8080
+```
+
+One-time Google Cloud setup — in the **Web application** OAuth client Artha
+already uses, add:
+
+- **Authorised JavaScript origins:** `http://localhost:8080`
+- **Authorised redirect URIs:** `http://localhost:8080/auth/callback`
+
+Day to day:
+
+```bash
+git pull && docker compose up -d --build   # update to the latest code
+docker compose logs -f                     # watch nginx logs
+docker compose down                        # stop and remove the container
+```
+
+To use another port, change `8080` in `docker-compose.yml` and in both Google
+entries above. Google only accepts plain `http://` redirects for `localhost`,
+so opening the container from another device by IP address needs HTTPS (for
+example a reverse proxy with a certificate) and that HTTPS address added to
+the client. SMS capture, the lock-screen alert and the AI provider are
+Android-only and hidden on the web.
+
 ### Tests
 
 ```bash
