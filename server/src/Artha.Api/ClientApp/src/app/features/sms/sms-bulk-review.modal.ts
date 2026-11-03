@@ -187,11 +187,11 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
                       }
                     </div>
                     <div class="chips" [class.chips-ai]="row.aiPicked">
-                      <button type="button" class="chip" [class.empty]="!row.categoryId" (click)="pickCategory($event, i)">
+                      <button type="button" class="chip" [class.chip--empty]="!row.categoryId" (click)="pickCategory($event, i)">
                         <ion-icon name="pricetag-outline"></ion-icon>
                         <span>{{ categoryName(row.categoryId) || 'Category' }}</span>
                       </button>
-                      <button type="button" class="chip" [class.empty]="!row.accountId" (click)="pickAccount($event, i)">
+                      <button type="button" class="chip" [class.chip--empty]="!row.accountId" (click)="pickAccount($event, i)">
                         <ion-icon name="wallet-outline"></ion-icon>
                         <span>{{ accountName(row.accountId) || 'Account' }}</span>
                       </button>
@@ -327,7 +327,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
       background: var(--artha-surface-2); color: var(--artha-text);
       font-size: 12.5px; font-weight: 600;
     }
-    .chips-ai .chip:not(.empty) {
+    .chips-ai .chip:not(.chip--empty) {
       border-color: color-mix(in srgb, var(--artha-accent) 35%, transparent);
       background: var(--artha-accent-tint);
     }
@@ -340,7 +340,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
     .ai-tag ion-icon { font-size: 11px; }
     .chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
     .chip ion-icon { font-size: 14px; color: var(--artha-text-muted); flex-shrink: 0; }
-    .chip.empty { border: 1px dashed var(--artha-border-strong); color: var(--artha-text-muted); background: transparent; }
+    .chip.chip--empty { border: 1px dashed var(--artha-border-strong); color: var(--artha-text-muted); background: transparent; }
 
     /* Swipe actions */
     .opt { font-size: 12px; font-weight: 700; text-transform: none; min-width: 84px; }
