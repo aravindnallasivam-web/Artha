@@ -1,7 +1,7 @@
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
+import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -533,6 +533,8 @@ const TODAY_ISO = toIsoDate(new Date());
     }
     .row-delete ion-icon { font-size: 15px; }
     .row:hover .row-delete { opacity: 1; }
+    /* Touch screens have no hover, so keep the button visible there. */
+    @media (hover: none) { .row-delete { opacity: 1; } }
     .row-delete:hover { background: var(--artha-negative-tint); color: var(--artha-negative); }
 
     /* ====== List view ====== */
@@ -661,6 +663,7 @@ export class ExpensesListPage implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly notifier = inject(ConflictNotifierService);
+  private readonly alertCtrl = inject(AlertController);
 
   protected readonly weekdays = WEEKDAYS;
 
@@ -981,6 +984,19 @@ export class ExpensesListPage implements OnInit {
 
   protected async onDelete(event: Event, id: string): Promise<void> {
     event.stopPropagation();
+    const alert = await this.alertCtrl.create({
+      header: 'Delete this expense?',
+      message: "It will be removed from your records. This can't be undone.",
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Delete', role: 'destructive' },
+      ],
+    });
+    await alert.present();
+    const { role } = await alert.onDidDismiss();
+    if (role !== 'destructive') {
+      return;
+    }
     try {
       await this.expensesStore.remove(id);
     } catch {
