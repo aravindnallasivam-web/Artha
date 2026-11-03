@@ -1,16 +1,7 @@
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -45,38 +36,18 @@ const TODAY_ISO = toIsoDate(new Date());
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
-    IonButton,
-    IonButtons,
     IonContent,
-    IonHeader,
     IonIcon,
     IonSpinner,
-    IonTitle,
-    IonToolbar,
   ],
   template: `
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Expenses</ion-title>
-        <ion-buttons slot="end">
-          <ion-button (click)="add()" aria-label="Add expense">
-            <ion-icon slot="icon-only" name="add"></ion-icon>
-          </ion-button>
-        </ion-buttons>
-      </ion-toolbar>
-    </ion-header>
-
     <ion-content class="page-content">
       <div class="page">
-        <!-- Header: month picker + view switcher + add CTA -->
+        <!-- Title + month pill + desktop add -->
         <header class="page-header">
+          <h1 class="page-title">Expenses</h1>
           <div class="month-picker">
-            <button
-              type="button"
-              class="month-nav"
-              (click)="shiftMonth(-1)"
-              aria-label="Previous month"
-            >
+            <button type="button" class="month-nav" (click)="shiftMonth(-1)" aria-label="Previous month">
               <ion-icon name="chevron-back"></ion-icon>
             </button>
             <button type="button" class="month-label" (click)="resetToCurrentMonth()">
@@ -85,21 +56,77 @@ const TODAY_ISO = toIsoDate(new Date());
                 <span class="month-jump">Today</span>
               }
             </button>
-            <button
-              type="button"
-              class="month-nav"
-              (click)="shiftMonth(1)"
-              aria-label="Next month"
-            >
+            <button type="button" class="month-nav" (click)="shiftMonth(1)" aria-label="Next month">
               <ion-icon name="chevron-forward"></ion-icon>
             </button>
           </div>
+          <button type="button" class="add-cta desktop-only" (click)="add()">
+            <ion-icon name="add" aria-hidden="true"></ion-icon>
+            <span>Add expense</span>
+          </button>
+        </header>
 
-          <div class="view-switcher" role="tablist">
+        <!-- Search -->
+        <label class="search-bar">
+          <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+          <span class="sr-only">Search expenses</span>
+          <input
+            class="search-input"
+            type="search"
+            placeholder="Search note, category or account"
+            [value]="search()"
+            (input)="onSearch($event)"
+          />
+        </label>
+
+        <!-- Category chips -->
+        <div class="chips" role="tablist" aria-label="Filter by category">
+          <button
+            type="button"
+            class="chip"
+            [class.active]="filterCategoryId() === null"
+            (click)="filterCategoryId.set(null)"
+          >
+            All
+          </button>
+          @for (c of filterableCategories(); track c.id) {
+            <button
+              type="button"
+              class="chip"
+              [class.active]="filterCategoryId() === c.id"
+              (click)="filterCategoryId.set(c.id)"
+            >
+              <span class="chip-dot" [style.background]="categoryColor(c.id)"></span>
+              {{ c.name }}
+            </button>
+          }
+        </div>
+
+        <div class="filters-aux">
+          <select
+            class="filter-select"
+            aria-label="Filter by account"
+            [value]="filterAccountId() ?? ''"
+            (change)="onAccountFilter($event)"
+          >
+            <option value="">All accounts</option>
+            @for (a of filterableAccounts(); track a.id) {
+              <option [value]="a.id">{{ a.name }}</option>
+            }
+          </select>
+          @if (hasActiveFilters()) {
+            <button type="button" class="filter-clear" (click)="clearFilters()">
+              <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+              <span>Clear</span>
+            </button>
+          }
+          <div class="view-switcher" role="tablist" aria-label="View">
             @for (v of viewOptions; track v.value) {
               <button
                 type="button"
                 role="tab"
+                [attr.aria-selected]="view() === v.value"
+                [attr.aria-label]="v.label"
                 [class.active]="view() === v.value"
                 (click)="setView(v.value)"
               >
@@ -108,133 +135,55 @@ const TODAY_ISO = toIsoDate(new Date());
               </button>
             }
           </div>
-        </header>
+        </div>
 
-        <!-- Summary strip -->
+        <!-- Summary tiles -->
         <section class="summary">
-          <div class="summary-stat">
-            <p class="summary-label">Spent</p>
-            <p class="summary-value num">
-              {{ monthTotal() | currency: currency() : 'symbol' : '1.2-2' }}
-            </p>
+          <div class="tile">
+            <p class="tile-label">Spent</p>
+            <p class="tile-value num">{{ monthTotal() | currency: currency() : 'symbol' : '1.0-0' }}</p>
           </div>
-          <div class="summary-stat">
-            <p class="summary-label">Entries</p>
-            <p class="summary-value num">{{ monthCount() }}</p>
-          </div>
-          <div class="summary-stat">
-            <p class="summary-label">Daily avg</p>
-            <p class="summary-value num">
-              {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}
-            </p>
-          </div>
-          <div class="summary-stat">
-            <p class="summary-label">Biggest day</p>
-            <p class="summary-value num">
-              @if (biggestDay(); as bd) {
-                {{ bd.total | currency: currency() : 'symbol' : '1.0-0' }}
-              } @else {
-                —
-              }
-            </p>
+          <div class="tile">
+            <p class="tile-label">Received</p>
+            <p class="tile-value tile-value--income num">+{{ monthIncome() | currency: currency() : 'symbol' : '1.0-0' }}</p>
           </div>
         </section>
-
-        <!-- Filters -->
-        <section class="filters">
-          <div class="search-bar">
-            <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
-            <input
-              class="search-input"
-              type="search"
-              placeholder="Search expenses…"
-              [value]="search()"
-              (input)="onSearch($event)"
-            />
-          </div>
-
-          <div class="chips" role="tablist" aria-label="Filter by category">
-            <button
-              type="button"
-              class="chip"
-              [class.active]="filterCategoryId() === null"
-              (click)="filterCategoryId.set(null)"
-            >
-              All
-            </button>
-            @for (c of filterableCategories(); track c.id) {
-              <button
-                type="button"
-                class="chip"
-                [class.active]="filterCategoryId() === c.id"
-                (click)="filterCategoryId.set(c.id)"
-              >
-                <span class="chip-dot" [style.background]="categoryColor(c.id)"></span>
-                {{ c.name }}
-              </button>
-            }
-          </div>
-
-          <div class="filters-aux">
-            <select
-              class="filter-select"
-              aria-label="Filter by account"
-              [value]="filterAccountId() ?? ''"
-              (change)="onAccountFilter($event)"
-            >
-              <option value="">All accounts</option>
-              @for (a of filterableAccounts(); track a.id) {
-                <option [value]="a.id">{{ a.name }}</option>
-              }
-            </select>
-
-            @if (hasActiveFilters()) {
-              <button type="button" class="filter-clear" (click)="clearFilters()">
-                <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
-                <span>Clear</span>
-              </button>
-            }
-          </div>
-        </section>
+        <div class="stat-row">
+          <span><b class="num">{{ monthCount() }}</b> entries</span>
+          <span><b class="num">{{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}</b> / day</span>
+          <span>
+            Biggest day
+            <b class="num">
+              @if (biggestDay(); as bd) { {{ bd.total | currency: currency() : 'symbol' : '1.0-0' }} } @else { — }
+            </b>
+          </span>
+        </div>
 
         @if (expensesStore.loading()) {
           <div class="state"><ion-spinner></ion-spinner></div>
-        } @else if (monthCount() === 0) {
+        } @else if (monthCount() === 0 && monthIncome() === 0) {
           @if (hasActiveFilters()) {
             <div class="empty">
-              <ion-icon name="receipt-outline"></ion-icon>
+              <span class="empty-badge"><ion-icon name="receipt-outline"></ion-icon></span>
               <p>No expenses match your filters in {{ monthLabel() }}.</p>
-              <button type="button" class="empty-cta" (click)="clearFilters()">
-                Clear filters
-              </button>
+              <button type="button" class="empty-cta" (click)="clearFilters()">Clear filters</button>
             </div>
           } @else {
             <div class="empty">
-              <ion-icon name="receipt-outline"></ion-icon>
+              <span class="empty-badge"><ion-icon name="receipt-outline"></ion-icon></span>
               <p>No expenses in {{ monthLabel() }}.</p>
-              <button type="button" class="empty-cta" (click)="add()">
-                Add your first one
-              </button>
+              <button type="button" class="empty-cta" (click)="add()">Add your first one</button>
             </div>
           }
         } @else {
-          <!-- View body -->
           @switch (view()) {
             @case ('list') {
               <section class="list-view">
                 @for (group of dayGroups(); track group.date) {
                   <div class="day-group">
                     <div class="day-group-head">
-                      <div>
-                        <p class="day-group-date">{{ group.date | date:'EEEE, MMMM d' }}</p>
-                        <p class="day-group-meta">
-                          {{ group.items.length }}
-                          {{ group.items.length === 1 ? 'expense' : 'expenses' }}
-                        </p>
-                      </div>
-                      <p class="day-group-total num">
-                        {{ group.total | currency: currency() : 'symbol' : '1.2-2' }}
-                      </p>
+                      <span>{{ dayHeader(group.date) }}</span>
+                      <span class="num">{{ group.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                     </div>
                     <ul class="row-list">
                       @for (expense of group.items; track expense.id) {
@@ -252,23 +201,17 @@ const TODAY_ISO = toIsoDate(new Date());
                           </span>
                           <div class="row-text">
                             <p class="row-title">
-                            {{ categoryName(expense.categoryId) }}
-                            @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
-                          </p>
+                              {{ expense.note || categoryName(expense.categoryId) }}
+                              @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
+                            </p>
                             <p class="row-meta">
-                              {{ accountName(expense.accountId) }}
-                              @if (expense.note) { · {{ expense.note }} }
+                              @if (expense.note) { {{ categoryName(expense.categoryId) }} · }{{ accountName(expense.accountId) }}
                             </p>
                           </div>
                           <span class="row-amount num" [class.income]="expense.type === 'income'">
-                            {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
+                            {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-2' }}
                           </span>
-                          <button
-                            type="button"
-                            class="row-delete"
-                            aria-label="Delete"
-                            (click)="onDelete($event, expense.id)"
-                          >
+                          <button type="button" class="row-delete" aria-label="Delete" (click)="onDelete($event, expense.id)">
                             <ion-icon name="trash"></ion-icon>
                           </button>
                         </li>
@@ -282,35 +225,23 @@ const TODAY_ISO = toIsoDate(new Date());
             @case ('day') {
               <section class="day-view">
                 <div class="day-nav">
-                  <button
-                    type="button"
-                    class="day-nav-btn"
-                    (click)="shiftSelectedDay(-1)"
-                    aria-label="Previous day"
-                  >
+                  <button type="button" class="day-nav-btn" (click)="shiftSelectedDay(-1)" aria-label="Previous day">
                     <ion-icon name="chevron-back"></ion-icon>
                   </button>
                   <div class="day-nav-label">
                     <p class="day-nav-eyebrow">{{ selectedDay() | date:'EEEE' }}</p>
                     <p class="day-nav-date">{{ selectedDay() | date:'MMMM d, y' }}</p>
                   </div>
-                  <button
-                    type="button"
-                    class="day-nav-btn"
-                    (click)="shiftSelectedDay(1)"
-                    aria-label="Next day"
-                  >
+                  <button type="button" class="day-nav-btn" (click)="shiftSelectedDay(1)" aria-label="Next day">
                     <ion-icon name="chevron-forward"></ion-icon>
                   </button>
                 </div>
 
                 <div class="day-summary">
-                  <p class="day-summary-total num">
-                    {{ selectedDayTotal() | currency: currency() : 'symbol' : '1.2-2' }}
-                  </p>
+                  <p class="day-summary-total num">{{ selectedDayTotal() | currency: currency() : 'symbol' : '1.0-2' }}</p>
                   <p class="day-summary-meta">
                     {{ selectedDayExpenses().length }}
-                    {{ selectedDayExpenses().length === 1 ? 'expense' : 'expenses' }} today
+                    {{ selectedDayExpenses().length === 1 ? 'expense' : 'expenses' }} on this day
                   </p>
                 </div>
 
@@ -324,28 +255,29 @@ const TODAY_ISO = toIsoDate(new Date());
                     @for (expense of selectedDayExpenses(); track expense.id) {
                       <li class="row" (click)="edit(expense.id)">
                         <span
-                          class="row-dot"
-                          [style.background]="categoryColor(expense.categoryId)"
-                        ></span>
+                          class="row-icon"
+                          [style.background]="categoryTint(expense.categoryId)"
+                          [style.color]="categoryColor(expense.categoryId)"
+                        >
+                          @if (categoryIcon(expense.categoryId); as ic) {
+                            <ion-icon [name]="ic" aria-hidden="true"></ion-icon>
+                          } @else {
+                            {{ categoryName(expense.categoryId).charAt(0) }}
+                          }
+                        </span>
                         <div class="row-text">
                           <p class="row-title">
-                            {{ categoryName(expense.categoryId) }}
+                            {{ expense.note || categoryName(expense.categoryId) }}
                             @if (expense.excluded) { <span class="excluded-badge">Excluded</span> }
                           </p>
                           <p class="row-meta">
-                            {{ accountName(expense.accountId) }}
-                            @if (expense.note) { · {{ expense.note }} }
+                            @if (expense.note) { {{ categoryName(expense.categoryId) }} · }{{ accountName(expense.accountId) }}
                           </p>
                         </div>
                         <span class="row-amount num" [class.income]="expense.type === 'income'">
-                          {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.2-2' }}
+                          {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-2' }}
                         </span>
-                        <button
-                          type="button"
-                          class="row-delete"
-                          aria-label="Delete"
-                          (click)="onDelete($event, expense.id)"
-                        >
+                        <button type="button" class="row-delete" aria-label="Delete" (click)="onDelete($event, expense.id)">
                           <ion-icon name="trash"></ion-icon>
                         </button>
                       </li>
@@ -376,17 +308,12 @@ const TODAY_ISO = toIsoDate(new Date());
                     >
                       <span class="cell-day">{{ cell.day }}</span>
                       @if (cell.total > 0) {
-                        <span class="cell-total num">
-                          {{ cell.total | number: '1.0-0' }}
-                        </span>
+                        <span class="cell-total num">{{ cell.total | number: '1.0-0' }}</span>
                       }
                     </button>
                   }
                 </div>
-                <p class="month-legend">
-                  Cell tint scales with daily spend.
-                  Tap a day to drill in.
-                </p>
+                <p class="month-legend">Cell tint scales with daily spend. Tap a day to drill in.</p>
               </section>
             }
           }
@@ -397,559 +324,333 @@ const TODAY_ISO = toIsoDate(new Date());
   styles: [`
     :host { display: contents; }
     .page-content { --background: var(--artha-bg); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
     .page {
-      padding: 28px 24px 64px;
+      padding: calc(20px + env(safe-area-inset-top)) 20px 64px;
       max-width: 1080px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 14px;
     }
 
     /* ====== Header ====== */
-    .page-header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+    .page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .page-title {
+      flex: 1; margin: 0;
+      font-size: 26px; font-weight: 800; letter-spacing: -0.03em;
+      color: var(--artha-text);
     }
-
     .month-picker {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px;
+      display: inline-flex; align-items: center;
+      height: 40px; padding: 0 4px;
       background: var(--artha-surface);
       border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      box-shadow: var(--artha-shadow-sm);
+      border-radius: 999px;
     }
     .month-nav {
       width: 32px; height: 32px;
-      border: 0; background: transparent;
-      border-radius: 8px;
-      cursor: pointer;
-      color: var(--artha-text-muted);
+      border: 0; background: transparent; border-radius: 50%;
+      cursor: pointer; color: var(--artha-text-muted);
       display: inline-flex; align-items: center; justify-content: center;
-      transition: background 120ms ease, color 120ms ease;
     }
-    .month-nav:hover {
-      background: var(--artha-surface-2);
-      color: var(--artha-text);
-    }
-    .month-nav ion-icon { font-size: 18px; }
+    .month-nav:hover { background: var(--artha-surface-2); color: var(--artha-text); }
+    .month-nav ion-icon { font-size: 16px; }
     .month-label {
       border: 0; background: transparent;
-      padding: 6px 14px;
-      cursor: pointer;
-      display: inline-flex; align-items: center; gap: 8px;
-      font-size: 14px; font-weight: 600;
-      color: var(--artha-text);
-      border-radius: 8px;
+      padding: 0 6px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13.5px; font-weight: 700; color: var(--artha-text);
     }
-    .month-label:hover { background: var(--artha-surface-2); }
     .month-jump {
-      font-size: 11px; font-weight: 600;
-      color: var(--artha-accent);
-      background: var(--artha-accent-tint);
-      padding: 2px 8px;
-      border-radius: 999px;
+      font-size: 11px; font-weight: 700;
+      color: var(--artha-accent); background: var(--artha-accent-tint);
+      padding: 2px 8px; border-radius: 999px;
     }
-
-    .view-switcher {
-      display: inline-flex;
-      padding: 4px;
-      background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      box-shadow: var(--artha-shadow-sm);
-    }
-    .view-switcher button {
-      border: 0; background: transparent;
-      padding: 6px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      color: var(--artha-text-muted);
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 13px; font-weight: 500;
-      transition: background 120ms ease, color 120ms ease;
-    }
-    .view-switcher button ion-icon { font-size: 16px; }
-    .view-switcher button:hover { color: var(--artha-text); }
-    .view-switcher button.active {
-      background: var(--artha-accent-tint);
-      color: var(--artha-accent);
-      font-weight: 600;
-    }
-
-    .import-cta {
-      margin-left: auto;
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 9px 14px;
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius-sm);
-      background: var(--artha-surface);
-      color: var(--artha-text);
-      font-size: 13px; font-weight: 600;
-      cursor: pointer;
-      box-shadow: var(--artha-shadow-sm);
-      transition: background 120ms ease, transform 80ms ease;
-    }
-    .import-cta:hover { background: var(--artha-surface-2); }
-    .import-cta:active { transform: translateY(1px); }
-    .import-cta ion-icon { font-size: 16px; }
-
     .add-cta {
       display: inline-flex; align-items: center; gap: 6px;
-      padding: 9px 16px;
-      border: 0;
-      border-radius: var(--artha-radius-sm);
-      background: var(--artha-accent);
-      color: white;
-      font-size: 13px; font-weight: 600;
-      cursor: pointer;
-      box-shadow: var(--artha-shadow-sm);
-      transition: background 120ms ease, transform 80ms ease;
+      height: 40px; padding: 0 16px;
+      border: 0; border-radius: 999px;
+      background: var(--artha-accent); color: #ffffff;
+      font-size: 13.5px; font-weight: 700; cursor: pointer;
     }
     .add-cta:hover { background: var(--artha-accent-hover); }
-    .add-cta:active { transform: translateY(1px); }
-    .add-cta ion-icon { font-size: 16px; }
+    .add-cta ion-icon { font-size: 18px; }
+    @media (max-width: 767.98px) { .desktop-only { display: none; } }
 
-    /* ====== Filters ====== */
-    .filters {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin: 4px 0;
-    }
-
+    /* ====== Search + filters ====== */
     .search-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0 14px;
-      height: 42px;
+      display: flex; align-items: center; gap: 10px;
+      height: 48px; padding: 0 16px;
       border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
+      border-radius: 16px;
       background: var(--artha-surface);
-      box-shadow: var(--artha-shadow-sm);
     }
-    .search-bar ion-icon {
-      font-size: 18px;
-      color: var(--artha-text-subtle);
-      flex-shrink: 0;
-    }
+    .search-bar ion-icon { font-size: 18px; color: var(--artha-text-subtle); flex-shrink: 0; }
     .search-input {
-      flex: 1;
-      min-width: 0;
-      border: 0;
-      background: transparent;
-      font-size: 14px;
-      color: var(--artha-text);
+      flex: 1; min-width: 0;
+      border: 0; background: transparent;
+      font-size: 14.5px; color: var(--artha-text);
     }
     .search-input:focus { outline: none; }
     .search-input::placeholder { color: var(--artha-text-subtle); }
 
     .chips {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-      padding-bottom: 2px;
-      margin: 0 -2px;
+      display: flex; gap: 8px;
+      overflow-x: auto; scrollbar-width: none;
+      margin: 0 -20px; padding: 0 20px 2px;
     }
     .chips::-webkit-scrollbar { display: none; }
     .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      flex-shrink: 0;
-      padding: 7px 14px;
-      border: 1px solid var(--artha-border-strong);
+      display: inline-flex; align-items: center; gap: 6px;
+      flex-shrink: 0; height: 36px; padding: 0 14px;
+      border: 1px solid var(--artha-border);
       border-radius: 999px;
       background: var(--artha-surface);
-      color: var(--artha-text-muted);
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      color: var(--artha-text);
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
     }
     .chip:hover { background: var(--artha-surface-2); }
     .chip.active {
-      background: var(--artha-accent);
-      border-color: var(--artha-accent);
-      color: white;
+      background: var(--artha-text);
+      border-color: var(--artha-text);
+      color: var(--artha-bg);
+      font-weight: 700;
     }
-    .chip-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .chip.active .chip-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55); }
+    .chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
-    .filters-aux {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+    .filters-aux { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .filter-select {
-      padding: 8px 11px;
+      height: 36px; padding: 0 12px;
       border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius-sm);
+      border-radius: 999px;
       background: var(--artha-surface);
       color: var(--artha-text);
-      font-size: 13px;
-      box-shadow: var(--artha-shadow-sm);
-      cursor: pointer;
-      min-width: 150px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; min-width: 140px;
     }
-    .filter-select:focus {
-      outline: 2px solid var(--artha-accent); outline-offset: -1px;
-    }
+    .filter-select:focus { outline: 2px solid var(--artha-accent); outline-offset: -1px; }
     .filter-clear {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 8px 12px;
+      display: inline-flex; align-items: center; gap: 4px;
+      height: 36px; padding: 0 12px;
       border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius-sm);
+      border-radius: 999px;
       background: var(--artha-surface);
       color: var(--artha-text-muted);
       font-size: 13px; font-weight: 600; cursor: pointer;
     }
-    .filter-clear:hover { background: var(--artha-surface-2); color: var(--artha-text); }
     .filter-clear ion-icon { font-size: 15px; }
-
-    /* ====== Summary strip ====== */
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1px;
-      background: var(--artha-border);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      overflow: hidden;
-      box-shadow: var(--artha-shadow-sm);
+    .view-switcher {
+      margin-left: auto;
+      display: inline-flex; padding: 3px;
+      background: var(--artha-surface-2);
+      border-radius: 999px;
     }
-    .summary-stat {
-      padding: 14px 18px;
+    .view-switcher button {
+      border: 0; background: transparent;
+      height: 30px; padding: 0 12px; border-radius: 999px;
+      cursor: pointer; color: var(--artha-text-muted);
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; font-weight: 600;
+    }
+    .view-switcher button ion-icon { font-size: 15px; }
+    .view-switcher button.active {
       background: var(--artha-surface);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .summary-label {
-      margin: 0;
-      font-size: 11px; font-weight: 600;
-      letter-spacing: 0.04em; text-transform: uppercase;
-      color: var(--artha-text-subtle);
-    }
-    .summary-value {
-      margin: 0;
-      font-size: 19px; font-weight: 700;
       color: var(--artha-text);
-      letter-spacing: -0.015em;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
     }
 
-    /* ====== Shared row list (list & day views) ====== */
-    .row-list {
-      list-style: none; padding: 0; margin: 0;
+    /* ====== Summary ====== */
+    .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tile { padding: 12px 14px; border-radius: 18px; background: var(--artha-surface); }
+    .tile-label { margin: 0; font-size: 12px; font-weight: 600; color: var(--artha-text-subtle); }
+    .tile-value {
+      margin: 2px 0 0;
+      font-size: 19px; font-weight: 800; letter-spacing: -0.01em;
+      color: var(--artha-text);
     }
-    .row-list--card {
+    .tile-value--income { color: var(--artha-positive); }
+    .stat-row {
+      display: flex; flex-wrap: wrap; gap: 6px 16px;
+      padding: 0 4px;
+      font-size: 12.5px; color: var(--artha-text-subtle);
+    }
+    .stat-row b { color: var(--artha-text); font-weight: 700; }
+
+    /* ====== Rows ====== */
+    .row-list { list-style: none; padding: 2px 14px; margin: 0; }
+    .row-list--card, .day-group .row-list {
       background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      box-shadow: var(--artha-shadow-sm);
-      overflow: hidden;
+      border-radius: var(--artha-radius-xl, 22px);
     }
     .row {
       display: grid;
-      grid-template-columns: 38px 1fr auto 28px;
+      grid-template-columns: 40px 1fr auto 28px;
       align-items: center;
       gap: 12px;
-      padding: 10px 16px;
+      padding: 12px 0;
       cursor: pointer;
-      border-top: 1px solid var(--artha-border);
-      transition: background 120ms ease;
+      border-top: 1px solid var(--artha-surface-2);
     }
     .row:first-child { border-top: 0; }
-    .row:hover { background: var(--artha-surface-2); }
     .row-icon {
-      width: 38px; height: 38px;
-      border-radius: 11px;
+      width: 40px; height: 40px;
+      border-radius: 14px;
       display: inline-flex; align-items: center; justify-content: center;
       font-size: 14px; font-weight: 700;
     }
-    .row-icon ion-icon { font-size: 19px; }
+    .row-icon ion-icon { font-size: 18px; }
     .row-text { min-width: 0; }
     .row-title {
       margin: 0;
-      font-size: 14px; font-weight: 600;
+      font-size: 14.5px; font-weight: 700;
       color: var(--artha-text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .excluded-badge {
-      display: inline-block;
-      margin-left: 6px;
-      padding: 1px 7px;
-      border-radius: 10px;
-      font-size: 10px; font-weight: 600;
+      display: inline-block; margin-left: 6px;
+      padding: 1px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
       background: var(--artha-surface-2); color: var(--artha-text-muted);
       vertical-align: middle;
     }
     .row-meta {
       margin: 2px 0 0;
-      font-size: 12px;
-      color: var(--artha-text-muted);
+      font-size: 12px; color: var(--artha-text-subtle);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .row-amount {
-      font-size: 14px; font-weight: 600;
-      color: var(--artha-text);
-    }
+    .row-amount { font-size: 15px; font-weight: 800; color: var(--artha-text); }
     .row-amount.income { color: var(--artha-positive); }
     .row-delete {
       width: 28px; height: 28px;
-      border: 0; background: transparent;
-      border-radius: 8px;
-      color: var(--artha-text-subtle);
-      cursor: pointer;
+      border: 0; background: transparent; border-radius: 8px;
+      color: var(--artha-text-subtle); cursor: pointer;
       opacity: 0;
       transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
       display: inline-flex; align-items: center; justify-content: center;
     }
     .row-delete ion-icon { font-size: 15px; }
     .row:hover .row-delete { opacity: 1; }
-    .row-delete:hover {
-      background: var(--artha-negative-tint);
-      color: var(--artha-negative);
-    }
+    .row-delete:hover { background: var(--artha-negative-tint); color: var(--artha-negative); }
 
     /* ====== List view ====== */
-    .list-view {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .day-group {
-      background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      box-shadow: var(--artha-shadow-sm);
-      overflow: hidden;
-    }
+    .list-view { display: flex; flex-direction: column; gap: 14px; }
     .day-group-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 18px;
-      border-bottom: 1px solid var(--artha-border);
-      background: linear-gradient(to bottom, var(--artha-surface) 0%, var(--artha-bg) 100%);
-    }
-    .day-group-date {
-      margin: 0;
-      font-size: 13px; font-weight: 600;
-      color: var(--artha-text);
-    }
-    .day-group-meta {
-      margin: 2px 0 0;
-      font-size: 11px;
+      display: flex; justify-content: space-between;
+      padding: 2px 4px 8px;
+      font-size: 12.5px; font-weight: 700;
+      letter-spacing: 0.02em;
       color: var(--artha-text-subtle);
-    }
-    .day-group-total {
-      margin: 0;
-      font-size: 16px; font-weight: 700;
-      color: var(--artha-text);
-      letter-spacing: -0.01em;
     }
 
     /* ====== Day view ====== */
-    .day-view {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
+    .day-view { display: flex; flex-direction: column; gap: 14px; }
     .day-nav {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 16px;
+      padding: 8px 10px;
       background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      box-shadow: var(--artha-shadow-sm);
+      border-radius: 18px;
     }
     .day-nav-btn {
-      width: 36px; height: 36px;
-      border: 0; background: transparent;
-      border-radius: 8px;
-      cursor: pointer;
-      color: var(--artha-text-muted);
+      width: 40px; height: 40px;
+      border: 0; background: transparent; border-radius: 12px;
+      cursor: pointer; color: var(--artha-text-muted);
       display: inline-flex; align-items: center; justify-content: center;
-      transition: background 120ms ease, color 120ms ease;
     }
-    .day-nav-btn:hover {
-      background: var(--artha-surface-2);
-      color: var(--artha-text);
-    }
+    .day-nav-btn:hover { background: var(--artha-surface-2); color: var(--artha-text); }
     .day-nav-btn ion-icon { font-size: 20px; }
     .day-nav-label { text-align: center; }
     .day-nav-eyebrow {
       margin: 0 0 2px;
-      font-size: 11px; font-weight: 600;
+      font-size: 11px; font-weight: 700;
       letter-spacing: 0.08em; text-transform: uppercase;
       color: var(--artha-accent);
     }
-    .day-nav-date {
-      margin: 0;
-      font-size: 16px; font-weight: 700;
-      color: var(--artha-text);
-      letter-spacing: -0.01em;
-    }
+    .day-nav-date { margin: 0; font-size: 16px; font-weight: 800; color: var(--artha-text); }
     .day-summary {
       text-align: center;
-      padding: 32px 16px;
-      background: linear-gradient(135deg, var(--artha-accent) 0%, var(--artha-accent-hover) 100%);
-      border-radius: var(--artha-radius);
-      color: white;
-      box-shadow: var(--artha-shadow);
+      padding: 24px 16px;
+      background: var(--artha-accent);
+      border-radius: var(--artha-radius-2xl, 24px);
+      color: #ffffff;
     }
-    .day-summary-total {
-      margin: 0;
-      font-size: 38px; font-weight: 700;
-      letter-spacing: -0.025em;
-    }
-    .day-summary-meta {
-      margin: 4px 0 0;
-      font-size: 13px;
-      color: rgba(255, 255, 255, 0.82);
-    }
+    .day-summary-total { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.03em; }
+    .day-summary-meta { margin: 4px 0 0; font-size: 13px; color: rgba(255, 255, 255, 0.85); }
 
     /* ====== Month view ====== */
     .month-view {
       background: var(--artha-surface);
-      border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius);
-      box-shadow: var(--artha-shadow-sm);
+      border-radius: var(--artha-radius-xl, 22px);
       padding: 16px;
     }
-    .weekdays {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 6px;
-      padding: 0 4px 8px;
-    }
+    .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 0 4px 8px; }
     .weekday {
       text-align: center;
-      font-size: 11px; font-weight: 600;
+      font-size: 11px; font-weight: 700;
       color: var(--artha-text-subtle);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+      letter-spacing: 0.06em; text-transform: uppercase;
     }
-    .calendar {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 6px;
-    }
+    .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .cell {
       aspect-ratio: 1;
       border: 1px solid var(--artha-border);
-      border-radius: 10px;
-      padding: 8px 10px;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      justify-content: space-between;
+      border-radius: 12px;
+      padding: 8px 10px; cursor: pointer;
+      display: flex; flex-direction: column;
+      align-items: flex-start; justify-content: space-between;
       background: var(--artha-surface);
-      transition: transform 80ms ease, border-color 120ms ease;
-      position: relative;
-      min-height: 76px;
+      position: relative; min-height: 76px;
     }
-    .cell:hover {
-      border-color: var(--artha-accent);
-      transform: translateY(-1px);
-    }
+    .cell:hover { border-color: var(--artha-accent); }
     .cell--off { opacity: 0.35; }
     .cell--today { border-color: var(--artha-accent); }
-    .cell--today .cell-day {
-      color: var(--artha-accent);
-      font-weight: 700;
-    }
-    .cell--selected {
-      outline: 2px solid var(--artha-accent);
-      outline-offset: -2px;
-    }
-    .cell-day {
-      font-size: 13px; font-weight: 600;
-      color: var(--artha-text-muted);
-    }
+    .cell--today .cell-day { color: var(--artha-accent); font-weight: 800; }
+    .cell--selected { outline: 2px solid var(--artha-accent); outline-offset: -2px; }
+    .cell-day { font-size: 13px; font-weight: 600; color: var(--artha-text-muted); }
     .cell--has .cell-day { color: var(--artha-text); }
-    .cell-total {
-      font-size: 12px; font-weight: 600;
-      color: var(--artha-text);
-      letter-spacing: -0.01em;
-    }
+    .cell-total { font-size: 12px; font-weight: 700; color: var(--artha-text); }
     .cell--has[style*='background'] .cell-day,
-    .cell--has[style*='background'] .cell-total {
-      color: var(--artha-accent-hover);
-    }
-    .month-legend {
-      margin: 14px 4px 0;
-      font-size: 11px;
+    .cell--has[style*='background'] .cell-total { color: var(--artha-accent-hover); }
+    .month-legend { margin: 14px 4px 0; font-size: 11px; color: var(--artha-text-subtle); text-align: center; }
+
+    /* ====== States ====== */
+    .state { display: flex; justify-content: center; padding: 64px; }
+    .empty {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; padding: 48px 24px;
+      background: var(--artha-surface);
+      border-radius: var(--artha-radius-xl, 22px);
       color: var(--artha-text-subtle);
       text-align: center;
     }
-
-    /* ====== State helpers ====== */
-    .state {
-      display: flex; justify-content: center; padding: 64px;
+    .empty-badge {
+      width: 56px; height: 56px; border-radius: 18px;
+      display: grid; place-items: center;
+      background: var(--artha-accent-tint); color: var(--artha-accent);
     }
-    .empty {
-      display: flex; flex-direction: column; align-items: center;
-      gap: 10px;
-      padding: 64px 24px;
-      background: var(--artha-surface);
-      border: 1px dashed var(--artha-border-strong);
-      border-radius: var(--artha-radius);
-      color: var(--artha-text-subtle);
-    }
-    .empty ion-icon { font-size: 40px; color: var(--artha-text-subtle); }
-    .empty p { margin: 0; font-size: 14px; }
+    .empty-badge ion-icon { font-size: 26px; }
+    .empty p { margin: 0; font-size: 14px; color: var(--artha-text-muted); }
     .empty-cta {
-      margin-top: 4px;
-      border: 0;
-      background: transparent;
-      font-size: 13px; font-weight: 600;
-      color: var(--artha-accent);
-      cursor: pointer;
+      margin-top: 4px; height: 40px; padding: 0 18px;
+      border: 0; border-radius: 999px;
+      background: var(--artha-accent); color: #ffffff;
+      font-size: 13.5px; font-weight: 700; cursor: pointer;
     }
-    .empty-cta:hover { text-decoration: underline; }
-    .empty--inline {
-      padding: 32px 16px;
-      border-style: solid;
-      border-color: var(--artha-border);
-    }
+    .empty--inline { padding: 28px 16px; }
 
     /* ====== Responsive ====== */
-    @media (max-width: 900px) {
-      .summary { grid-template-columns: repeat(2, 1fr); }
-    }
     @media (max-width: 640px) {
-      .page { padding: 20px 14px 56px; }
-      .page-header { gap: 10px; }
-      .import-cta { margin-left: auto; }
-      .add-cta { margin-left: 0; }
       .view-switcher button span { display: none; }
+      .view-switcher button { padding: 0 10px; }
       .calendar { gap: 4px; }
       .cell { min-height: 60px; padding: 5px 6px; }
       .cell-day { font-size: 12px; }
       .cell-total { font-size: 10px; }
-      .day-summary-total { font-size: 30px; }
     }
-    /* Clear the fixed bottom tab bar (mobile-only, <768px) plus the
-       home-indicator safe area so the last expense isn't hidden. */
     @media (max-width: 767.98px) {
-      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+      .page { padding-bottom: 24px; }
     }
   `],
 })
@@ -1021,6 +722,14 @@ export class ExpensesListPage implements OnInit {
 
   protected readonly monthTotal = computed(() =>
     this.monthExpenses().reduce((sum, e) => (countsAsSpend(e) ? sum + e.amount : sum), 0),
+  );
+
+  /** Money received this month (income entries, excluding excluded ones). */
+  protected readonly monthIncome = computed(() =>
+    this.monthExpenses().reduce(
+      (sum, e) => (!e.excluded && e.type === 'income' ? sum + e.amount : sum),
+      0,
+    ),
   );
 
   protected readonly monthCount = computed(() =>
@@ -1180,6 +889,22 @@ export class ExpensesListPage implements OnInit {
       this.viewMonth.set(m);
       void this.loadMonth();
     }
+  }
+
+  /** "TODAY · MON 2 NOV", "YESTERDAY · SUN 1 NOV" or "SAT 31 OCT" for a YYYY-MM-DD day. */
+  protected dayHeader(iso: string): string {
+    const d = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    const label = d
+      .toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+      .replace(/,/g, '')
+      .toUpperCase();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = Math.round((today.getTime() - d.getTime()) / 86_400_000);
+    if (diff === 0) return `TODAY · ${label}`;
+    if (diff === 1) return `YESTERDAY · ${label}`;
+    return label;
   }
 
   protected categoryName(id: string): string {
