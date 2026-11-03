@@ -1,16 +1,7 @@
-import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
+import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import {
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSkeletonText,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
@@ -34,44 +25,42 @@ interface CategorySlice {
   imports: [
     CurrencyPipe,
     DatePipe,
-    DecimalPipe,
     RouterLink,
-    IonButton,
-    IonButtons,
     IonContent,
-    IonHeader,
     IonIcon,
     IonSkeletonText,
-    IonTitle,
-    IonToolbar,
   ],
   template: `
-    <ion-header class="ion-no-border">
-      <ion-toolbar>
-        <ion-title>Dashboard</ion-title>
-        <ion-buttons slot="end">
-          <ion-button routerLink="/expenses/new" aria-label="Add expense">
-            <ion-icon slot="icon-only" name="add"></ion-icon>
-          </ion-button>
-          <ion-button routerLink="/more" aria-label="Profile and more">
-            @if (currentUser(); as u) {
-              @if (u.pictureUrl) {
-                <img class="topbar-avatar" [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
-              } @else {
-                <span class="topbar-avatar topbar-avatar--initial">{{ firstName(u.name).charAt(0) }}</span>
-              }
-            }
-          </ion-button>
-        </ion-buttons>
-      </ion-toolbar>
-    </ion-header>
-
     <ion-content>
       <div class="page">
+        <!-- Top bar -->
+        <header class="topbar">
+          <a routerLink="/more" class="avatar" aria-label="Profile and more">
+            @if (currentUser(); as u) {
+              @if (u.pictureUrl) {
+                <img [src]="u.pictureUrl" [alt]="u.name" referrerpolicy="no-referrer" />
+              } @else {
+                <span>{{ firstName(u.name).charAt(0) }}</span>
+              }
+            } @else {
+              <span>A</span>
+            }
+          </a>
+          <div class="hello">
+            <span class="hello-sub">{{ greeting() }}</span>
+            <span class="hello-name">{{ currentUser() ? firstName(currentUser()!.name) : 'Welcome back' }}</span>
+          </div>
+          <span class="month-pill">{{ monthShort() }}</span>
+          <a routerLink="/expenses/new" class="desk-add" aria-label="Add expense">
+            <ion-icon name="add" aria-hidden="true"></ion-icon><span>Add expense</span>
+          </a>
+        </header>
+
         @if (loading()) {
           <div class="skeleton" aria-busy="true" aria-label="Loading">
             <ion-skeleton-text [animated]="true" class="sk-hero"></ion-skeleton-text>
-            <div class="sk-stats">
+            <div class="sk-actions">
+              <ion-skeleton-text [animated]="true" class="sk-tile"></ion-skeleton-text>
               <ion-skeleton-text [animated]="true" class="sk-tile"></ion-skeleton-text>
               <ion-skeleton-text [animated]="true" class="sk-tile"></ion-skeleton-text>
               <ion-skeleton-text [animated]="true" class="sk-tile"></ion-skeleton-text>
@@ -80,40 +69,29 @@ interface CategorySlice {
             <ion-skeleton-text [animated]="true" class="sk-card"></ion-skeleton-text>
           </div>
         } @else {
-          <p class="greeting">
-            @if (currentUser(); as user) { Hello, {{ firstName(user.name) }} 👋 }
-            @else { Welcome back 👋 }
-          </p>
-
-          <!-- Pending SMS expenses -->
-          @if (sms.isSupported() && sms.pendingCount() > 0) {
-            <button type="button" class="pending-card" (click)="reviewPending()">
-              <span class="pending-badge">{{ sms.pendingCount() }}</span>
-              <span class="pending-text">
-                <span class="pending-title">
-                  {{ sms.pendingCount() }} {{ sms.pendingCount() === 1 ? 'expense' : 'expenses' }} from SMS waiting
-                </span>
-                <span class="pending-sub">Tap to review — save or dismiss each</span>
-              </span>
-              <ion-icon class="pending-chevron" name="chevron-forward" aria-hidden="true"></ion-icon>
-            </button>
-          }
-
-          <!-- 1 · Hero: spend -->
+          <!-- Spend hero -->
           <section class="hero">
             <div class="hero-top">
-              <p class="hero-label">Spent in {{ monthShort() }}</p>
+              <span class="hero-label">Spent this month</span>
               @if (momTrend(); as t) {
-                <span class="trend" [class.trend--up]="t.up">
-                  {{ t.up ? '↑' : '↓' }} {{ t.pct }}% MoM
-                </span>
+                <span class="trend">{{ t.up ? '↑' : '↓' }} {{ t.pct }}% vs last month</span>
               }
             </div>
             <p class="hero-value num">{{ totalSpent() | currency: currency() : 'symbol' : '1.0-0' }}</p>
-            <p class="hero-meta">
-              {{ expenseCount() }} {{ expenseCount() === 1 ? 'expense' : 'expenses' }}
-              @if (dailyAverage() > 0) { · {{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}/day }
-            </p>
+            <div class="hero-stats">
+              <div>
+                <span class="hs-label">Today</span>
+                <span class="hs-value num">{{ todaySpent() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+              </div>
+              <div>
+                <span class="hs-label">Avg / day</span>
+                <span class="hs-value num">{{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+              </div>
+              <div>
+                <span class="hs-label">{{ expenseCount() === 1 ? 'Expense' : 'Expenses' }}</span>
+                <span class="hs-value num">{{ expenseCount() }}</span>
+              </div>
+            </div>
             @if (expensesStore.incomeTotal() > 0) {
               <p class="hero-income">
                 + {{ expensesStore.incomeTotal() | currency: currency() : 'symbol' : '1.0-0' }} received this month
@@ -121,136 +99,147 @@ interface CategorySlice {
             }
           </section>
 
-          <!-- 2 · Quick stats -->
-          <section class="stats">
-            <article class="stat">
-              <p class="stat-label">Today</p>
-              <p class="stat-value num">{{ todaySpent() | currency: currency() : 'symbol' : '1.0-0' }}</p>
-            </article>
-            <article class="stat">
-              <p class="stat-label">Avg / day</p>
-              <p class="stat-value num">{{ dailyAverage() | currency: currency() : 'symbol' : '1.0-0' }}</p>
-            </article>
-            <article class="stat">
-              <p class="stat-label">Txns</p>
-              <p class="stat-value num">{{ expenseCount() }}</p>
-            </article>
-          </section>
-
-          <!-- 3 · Loans -->
-          @if (activeLoans().length > 0) {
-            <a class="card loans" routerLink="/loans">
-              <div class="card-header">
-                <h2 class="card-title">Loans</h2>
-                <span class="card-link">Manage <ion-icon name="chevron-forward"></ion-icon></span>
-              </div>
-              <div class="loans-figs">
-                <div class="loan-fig">
-                  <span class="loan-fig-label">Outstanding</span>
-                  <span class="loan-fig-value num">{{ totalOutstanding() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                </div>
-                <div class="loan-fig">
-                  <span class="loan-fig-label">Monthly EMI</span>
-                  <span class="loan-fig-value num">{{ totalEmi() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                </div>
-              </div>
-              <div class="loans-count">
-                {{ activeLoans().length }} active {{ activeLoans().length === 1 ? 'loan' : 'loans' }}
-              </div>
+          <!-- Quick actions -->
+          <nav class="actions" aria-label="Quick actions">
+            <a routerLink="/expenses/new" class="action">
+              <span class="action-ic ic-accent"><ion-icon name="add" aria-hidden="true"></ion-icon></span>Add
             </a>
+            @if (sms.isSupported()) {
+              <button type="button" class="action" [disabled]="scanning()" (click)="scanSms()">
+                <span class="action-ic ic-green"><ion-icon name="mail" aria-hidden="true"></ion-icon></span>
+                {{ scanning() ? 'Scanning…' : 'Scan SMS' }}
+              </button>
+            } @else {
+              <a routerLink="/categories" class="action">
+                <span class="action-ic ic-green"><ion-icon name="pricetag-outline" aria-hidden="true"></ion-icon></span>Categories
+              </a>
+            }
+            <a routerLink="/planned-expenses" class="action">
+              <span class="action-ic ic-orange"><ion-icon name="calendar-outline" aria-hidden="true"></ion-icon></span>Planned
+            </a>
+            <a routerLink="/loans" class="action">
+              <span class="action-ic ic-blue"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon></span>Loans
+            </a>
+          </nav>
+
+          <!-- Pending SMS expenses -->
+          @if (sms.isSupported() && sms.pendingCount() > 0) {
+            <button type="button" class="pending" (click)="reviewPending()">
+              <span class="pending-badge">{{ sms.pendingCount() }}</span>
+              <span class="pending-text">
+                {{ sms.pendingCount() === 1 ? 'expense' : 'expenses' }} from SMS waiting for review
+              </span>
+              <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
+            </button>
           }
 
-          <!-- 3b · Planned expenses -->
-          @if (plannedItems().length > 0) {
-            <a class="card planned" routerLink="/planned-expenses">
-              <div class="card-header">
-                <h2 class="card-title">Planned this month</h2>
-                <span class="card-link">Manage <ion-icon name="chevron-forward"></ion-icon></span>
-              </div>
-              <div class="planned-total num">{{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }}</div>
-              <ul class="planned-list">
-                @for (p of plannedPreview(); track p.id) {
-                  <li class="planned-row">
-                    <span class="planned-name">{{ p.name }}</span>
-                    <span class="planned-amt num">{{ p.monthly | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                  </li>
-                }
-              </ul>
-              @if (plannedItems().length > plannedPreview().length) {
-                <div class="planned-more">+{{ plannedItems().length - plannedPreview().length }} more</div>
-              }
-            </a>
-          }
-
-          <!-- 4 + 5 · Top categories & recent (two columns on desktop) -->
-          <section class="main">
-            <div class="card breakdown">
-              <div class="card-header">
-                <h2 class="card-title">Top categories</h2>
-                <a routerLink="/categories" class="card-link">Manage <ion-icon name="chevron-forward"></ion-icon></a>
+          <div class="grid">
+            <!-- Where it went -->
+            <section class="card">
+              <div class="card-head">
+                <h2>Where it went</h2>
+                <a routerLink="/reports">Reports</a>
               </div>
               @if (breakdown().length === 0) {
-                <div class="empty empty--compact"><p>No spending yet this month.</p></div>
+                <p class="empty-line">No spending yet this month.</p>
               } @else {
-                <ul class="breakdown-list">
+                <div class="stack" role="img" [attr.aria-label]="breakdownLabel()">
                   @for (slice of breakdown(); track slice.id) {
-                    <li class="breakdown-row">
-                      <div class="breakdown-head">
-                        <span class="breakdown-name">
-                          <span class="breakdown-dot" [style.background]="categoryColor(slice.id)"></span>
-                          {{ slice.name }}
-                        </span>
-                        <span class="breakdown-amount num">
-                          {{ slice.amount | currency: currency() : 'symbol' : '1.0-0' }}
-                        </span>
-                      </div>
-                      <div class="bar">
-                        <div class="bar-fill" [style.width.%]="slice.share * 100"
-                          [style.background]="categoryColor(slice.id)"></div>
-                      </div>
+                    <span [style.flex]="slice.share" [style.background]="categoryColor(slice.id)"></span>
+                  }
+                  @if (otherShare() > 0.005) {
+                    <span class="stack-other" [style.flex]="otherShare()"></span>
+                  }
+                </div>
+                <ul class="legend">
+                  @for (slice of breakdown(); track slice.id) {
+                    <li>
+                      <span class="dot" [style.background]="categoryColor(slice.id)"></span>
+                      <span class="legend-name">{{ slice.name }}</span>
+                      <b class="num">{{ slice.amount | currency: currency() : 'symbol' : '1.0-0' }}</b>
                     </li>
                   }
                 </ul>
               }
-            </div>
+            </section>
 
-            <div class="card recent">
-              <div class="card-header">
-                <h2 class="card-title">Recent</h2>
-                <a routerLink="/expenses" class="card-link">See all <ion-icon name="chevron-forward"></ion-icon></a>
+            <!-- Recent -->
+            <section class="card">
+              <div class="card-head">
+                <h2>Recent</h2>
+                <a routerLink="/expenses">See all</a>
               </div>
               @if (recent().length === 0) {
                 <div class="empty">
                   <ion-icon name="receipt-outline" aria-hidden="true"></ion-icon>
                   <p>No expenses yet this month.</p>
-                  <a routerLink="/expenses/new" class="empty-cta">Add your first expense</a>
+                  <a routerLink="/expenses/new">Add your first expense</a>
                 </div>
               } @else {
-                <ul class="activity">
+                <ul class="rows">
                   @for (expense of recent(); track expense.id) {
-                    <li class="activity-row">
-                      <span class="activity-icon"
+                    <li class="row">
+                      <span class="row-ic"
                         [style.background]="categoryTint(expense.categoryId)"
                         [style.color]="categoryColor(expense.categoryId)">
                         @if (categoryIcon(expense.categoryId); as ic) {
                           <ion-icon [name]="ic" aria-hidden="true"></ion-icon>
                         } @else { {{ categoryName(expense.categoryId).charAt(0) }} }
                       </span>
-                      <div class="activity-text">
-                        <p class="activity-name">{{ categoryName(expense.categoryId) }}</p>
-                        <p class="activity-meta">
-                          {{ expense.date | date: 'EEE, MMM d' }}@if (expense.note) { · {{ expense.note }} }
-                        </p>
+                      <div class="row-text">
+                        <p class="row-name">{{ expense.note || categoryName(expense.categoryId) }}</p>
+                        <p class="row-meta">{{ categoryName(expense.categoryId) }} · {{ expense.date | date: 'EEE, MMM d' }}</p>
                       </div>
-                      <span class="activity-amount num" [class.income]="expense.type === 'income'">
-                        {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-0' }}
+                      <span class="row-amt num" [class.income]="expense.type === 'income'">
+                        {{ expense.type === 'income' ? '+' : '−' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-0' }}
                       </span>
                     </li>
                   }
                 </ul>
               }
-            </div>
-          </section>
+            </section>
+
+            <!-- Loans -->
+            @if (activeLoans().length > 0) {
+              <a class="card card-link" routerLink="/loans">
+                <div class="card-head">
+                  <h2>Loans</h2>
+                  <span class="more">{{ activeLoans().length }} active <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon></span>
+                </div>
+                <div class="figs">
+                  <div>
+                    <span class="hs-label muted">Outstanding</span>
+                    <span class="fig num">{{ totalOutstanding() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                  </div>
+                  <div>
+                    <span class="hs-label muted">Monthly EMI</span>
+                    <span class="fig num">{{ totalEmi() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                  </div>
+                </div>
+              </a>
+            }
+
+            <!-- Planned -->
+            @if (plannedItems().length > 0) {
+              <a class="card card-link" routerLink="/planned-expenses">
+                <div class="card-head">
+                  <h2>Planned this month</h2>
+                  <span class="fig-sm num">{{ plannedTotal() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                </div>
+                <ul class="planned">
+                  @for (p of plannedPreview(); track p.id) {
+                    <li>
+                      <span class="planned-name">{{ p.name }}</span>
+                      <span class="num">{{ p.monthly | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                    </li>
+                  }
+                </ul>
+                @if (plannedItems().length > plannedPreview().length) {
+                  <p class="planned-more">+{{ plannedItems().length - plannedPreview().length }} more</p>
+                }
+              </a>
+            }
+          </div>
         }
       </div>
     </ion-content>
@@ -258,165 +247,164 @@ interface CategorySlice {
   styles: [`
     :host { display: contents; }
     ion-content { --background: var(--artha-bg); }
-
-    .topbar-avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
-    .topbar-avatar--initial {
-      display: inline-flex; align-items: center; justify-content: center;
-      background: linear-gradient(135deg, var(--artha-accent), var(--artha-accent-hover));
-      color: #fff; font-size: 13px; font-weight: 700;
-    }
+    .num { font-variant-numeric: tabular-nums; }
 
     .page {
-      padding: 20px 16px 64px; max-width: 1080px; margin: 0 auto;
+      max-width: 1080px; margin: 0 auto;
+      padding: calc(16px + var(--ion-safe-area-top, 0px)) 20px 32px;
       display: flex; flex-direction: column; gap: 16px;
     }
 
+    /* Top bar */
+    .topbar { display: flex; align-items: center; gap: 12px; }
+    .avatar {
+      width: 44px; height: 44px; flex: none; border-radius: 50%; overflow: hidden;
+      display: grid; place-items: center; text-decoration: none;
+      background: var(--artha-accent-tint); color: var(--artha-accent);
+      font-size: 16px; font-weight: 800;
+    }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .hello { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .hello-sub { font-size: 13px; font-weight: 500; color: var(--artha-text-subtle); }
+    .hello-name {
+      font-size: 18px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .month-pill {
+      flex: none; height: 40px; padding: 0 14px; display: inline-flex; align-items: center;
+      border: 1px solid var(--artha-border); border-radius: 999px;
+      background: var(--artha-surface); color: var(--artha-text); font-size: 13.5px; font-weight: 700;
+    }
+    .desk-add {
+      display: none; align-items: center; gap: 6px; height: 40px; padding: 0 16px;
+      border-radius: 999px; background: var(--artha-accent); color: #fff;
+      font-size: 13.5px; font-weight: 700; text-decoration: none;
+    }
+    .desk-add ion-icon { font-size: 18px; }
+    @media (min-width: 768px) { .desk-add { display: inline-flex; } }
+
     /* Skeleton */
     .skeleton { display: flex; flex-direction: column; gap: 16px; }
-    .skeleton ion-skeleton-text { --border-radius: 14px; margin: 0; }
-    .sk-hero { height: 134px; }
-    .sk-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .sk-tile { height: 64px; }
+    .skeleton ion-skeleton-text { --border-radius: 22px; margin: 0; }
+    .sk-hero { height: 168px; }
+    .sk-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .sk-tile { height: 84px; }
     .sk-card { height: 180px; }
 
-    .greeting { margin: 0; font-size: 14px; font-weight: 500; color: var(--artha-text-muted); }
-
-    /* Pending SMS card */
-    .pending-card {
-      display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
-      padding: 14px 16px; border: 1px solid var(--artha-accent); border-radius: var(--artha-radius);
-      background: var(--artha-accent-tint, #eaf1ff); cursor: pointer; box-shadow: var(--artha-shadow-sm);
-    }
-    .pending-card:active { transform: translateY(1px); }
-    .pending-badge {
-      flex: none; min-width: 30px; height: 30px; padding: 0 8px;
-      display: inline-flex; align-items: center; justify-content: center; border-radius: 999px;
-      background: var(--artha-accent); color: #fff; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums;
-    }
-    .pending-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-    .pending-title { font-size: 14px; font-weight: 700; color: var(--artha-text); }
-    .pending-sub { font-size: 12px; color: var(--artha-text-muted); }
-    .pending-chevron { flex: none; font-size: 18px; color: var(--artha-accent); }
-
-    /* Cards (shared) */
-    .hero, .card {
-      background: var(--artha-surface); border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius-lg); box-shadow: var(--artha-shadow-sm);
-    }
-
-    /* 1 · Hero */
-    .hero { padding: 18px 20px 20px; }
-    .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .hero-label {
-      margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--artha-text-subtle);
-    }
+    /* Hero */
+    .hero { padding: 20px; border-radius: var(--artha-radius-2xl, 24px); background: var(--artha-accent); color: #fff; }
+    .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .hero-label { font-size: 13px; font-weight: 600; opacity: 0.88; }
     .trend {
-      font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
-      background: var(--artha-positive-tint); color: var(--artha-positive);
+      padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.18);
+      font-size: 12px; font-weight: 700; white-space: nowrap;
     }
-    .trend--up { background: var(--artha-negative-tint); color: var(--artha-negative); }
-    .hero-value { margin: 8px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -0.025em; color: var(--artha-text); }
-    .hero-meta { margin: 12px 0 0; font-size: 12.5px; color: var(--artha-text-muted); }
-    .hero-meta .over { color: var(--artha-negative); font-weight: 700; }
-    .hero-income { margin: 6px 0 0; font-size: 12.5px; font-weight: 600; color: var(--artha-positive); }
+    .hero-value { margin: 6px 0 0; font-size: 38px; font-weight: 800; letter-spacing: -0.03em; }
+    .hero-stats {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+      margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .hero-stats div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .hs-label { font-size: 11.5px; font-weight: 600; opacity: 0.85; }
+    .hs-label.muted { opacity: 1; color: var(--artha-text-subtle); }
+    .hs-value { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+    .hero-income { margin: 10px 0 0; font-size: 12.5px; font-weight: 700; opacity: 0.95; }
 
-    /* progress bar */
-    .bar { width: 100%; height: 6px; border-radius: 999px; background: var(--artha-surface-2); overflow: hidden; }
-    .bar--lg { height: 10px; margin-top: 14px; background: var(--artha-accent-tint); }
-    .bar-fill { height: 100%; border-radius: 999px; background: var(--artha-accent); transition: width 280ms ease; }
-    .bar-fill--over { background: var(--artha-negative); }
+    /* Quick actions */
+    .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .action {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      padding: 12px 4px; border: 0; border-radius: 18px; cursor: pointer;
+      background: var(--artha-surface); color: var(--artha-text);
+      font: inherit; font-size: 12px; font-weight: 600; text-decoration: none;
+      transition: transform 120ms ease;
+    }
+    .action:active { transform: scale(0.97); }
+    .action[disabled] { opacity: 0.6; }
+    .action-ic { width: 40px; height: 40px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; }
+    .ic-accent { background: var(--artha-accent-tint); color: var(--artha-accent); }
+    .ic-green { background: rgba(16, 185, 129, 0.14); color: #059669; }
+    .ic-orange { background: rgba(249, 115, 22, 0.14); color: #ea580c; }
+    .ic-blue { background: rgba(14, 165, 233, 0.14); color: #0284c7; }
+    :host-context(.ion-palette-dark) .ic-green { color: #6ee7b7; }
+    :host-context(.ion-palette-dark) .ic-orange { color: #fdba74; }
+    :host-context(.ion-palette-dark) .ic-blue { color: #7dd3fc; }
 
-    /* 2 · Stats */
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .stat {
-      background: var(--artha-surface); border: 1px solid var(--artha-border);
-      border-radius: var(--artha-radius); padding: 12px 14px; box-shadow: var(--artha-shadow-sm);
+    /* Pending SMS */
+    .pending {
+      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+      padding: 12px 14px; border-radius: 18px; cursor: pointer; font: inherit;
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.45);
+      color: var(--artha-text);
     }
-    .stat-label {
-      margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--artha-text-subtle);
+    .pending-badge {
+      flex: none; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px;
+      display: grid; place-items: center; background: #f59e0b; color: #fff;
+      font-size: 13px; font-weight: 800;
     }
-    .stat-value { margin: 6px 0 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
+    .pending-text { flex: 1; font-size: 13.5px; font-weight: 600; }
+    .pending ion-icon { flex: none; font-size: 18px; color: var(--artha-text-muted); }
 
-    /* 3 · Loans */
-    .loans { padding: 4px 4px 14px; text-decoration: none; }
-    .loans-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 2px 16px 0; }
-    .loan-fig { display: flex; flex-direction: column; gap: 3px; }
-    .loan-fig-label {
-      font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--artha-text-subtle);
+    /* Cards */
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+    .card {
+      display: block; padding: 16px; border-radius: var(--artha-radius-xl, 22px);
+      background: var(--artha-surface); color: var(--artha-text); text-decoration: none;
     }
-    .loan-fig-value { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
-    .loans-count { padding: 10px 16px 0; font-size: 11.5px; color: var(--artha-text-muted); }
+    .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .card-head h2 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+    .card-head a { font-size: 13px; font-weight: 700; color: var(--artha-accent); text-decoration: none; }
+    .more { display: inline-flex; align-items: center; gap: 2px; font-size: 12.5px; font-weight: 600; color: var(--artha-text-muted); }
+    .more ion-icon { font-size: 14px; }
+    .empty-line { margin: 12px 0 0; font-size: 13.5px; color: var(--artha-text-subtle); }
 
-    /* 3b · Planned expenses */
-    .planned { padding: 4px 4px 12px; text-decoration: none; }
-    .planned-total {
-      padding: 0 16px; font-size: 20px; font-weight: 800;
-      letter-spacing: -0.02em; color: var(--artha-text);
+    /* Where it went */
+    .stack { display: flex; gap: 3px; height: 10px; margin-top: 12px; border-radius: 999px; overflow: hidden; }
+    .stack span { min-width: 4px; }
+    .stack-other { background: var(--artha-border-strong); }
+    .legend {
+      list-style: none; margin: 12px 0 0; padding: 0;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; font-size: 12.5px;
     }
-    .planned-list { list-style: none; margin: 10px 0 0; padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
-    .planned-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
-    .planned-name { color: var(--artha-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px; }
-    .planned-amt { font-weight: 700; color: var(--artha-text); }
-    .planned-more { padding: 10px 16px 0; font-size: 11.5px; color: var(--artha-text-muted); }
+    .legend li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .dot { width: 8px; height: 8px; flex: none; border-radius: 50%; }
+    .legend-name { flex: 1; min-width: 0; color: var(--artha-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .legend b { font-weight: 700; }
 
-    /* 4 + 5 · main grid */
-    .main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .card { padding: 4px 4px 12px; display: flex; flex-direction: column; }
-    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
-    .card-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--artha-text); }
-    .card-link {
-      display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600;
-      color: var(--artha-accent); text-decoration: none; padding: 4px 6px; border-radius: 6px;
+    /* Recent */
+    .rows { list-style: none; margin: 4px 0 0; padding: 0; }
+    .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--artha-border); }
+    .row:first-child { border-top: 0; }
+    .row-ic {
+      width: 40px; height: 40px; flex: none; border-radius: 14px;
+      display: grid; place-items: center; font-size: 14px; font-weight: 800;
     }
-    .card-link:hover { background: var(--artha-accent-tint); }
-    .card-link ion-icon { font-size: 14px; }
+    .row-ic ion-icon { font-size: 18px; }
+    .row-text { flex: 1; min-width: 0; }
+    .row-name, .row-meta { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-name { font-size: 14.5px; font-weight: 700; }
+    .row-meta { margin-top: 1px; font-size: 12px; color: var(--artha-text-subtle); }
+    .row-amt { flex: none; font-size: 15px; font-weight: 800; }
+    .row-amt.income { color: var(--artha-positive); }
 
-    /* breakdown */
-    .breakdown-list { list-style: none; margin: 0; padding: 4px 16px 0; display: flex; flex-direction: column; gap: 14px; }
-    .breakdown-row { display: flex; flex-direction: column; gap: 7px; }
-    .breakdown-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
-    .breakdown-name { display: inline-flex; align-items: center; gap: 8px; color: var(--artha-text); font-weight: 500; }
-    .breakdown-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--artha-accent); }
-    .breakdown-amount { font-size: 13px; font-weight: 700; color: var(--artha-text); }
-
-    /* activity */
-    .activity { list-style: none; margin: 0; padding: 0; }
-    .activity-row {
-      display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 12px;
-      padding: 9px 16px; border-top: 1px solid var(--artha-border);
-    }
-    .activity-row:first-child { border-top: none; }
-    .activity-icon {
-      width: 36px; height: 36px; border-radius: 10px; display: inline-flex;
-      align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
-    }
-    .activity-icon ion-icon { font-size: 18px; }
-    .activity-text { min-width: 0; }
-    .activity-name { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--artha-text);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .activity-meta { margin: 2px 0 0; font-size: 11.5px; color: var(--artha-text-muted);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .activity-amount { font-size: 13.5px; font-weight: 700; color: var(--artha-text); }
-    .activity-amount.income { color: var(--artha-positive); }
-
-    /* empty states */
-    .empty {
-      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 8px; padding: 32px 24px; color: var(--artha-text-subtle); text-align: center;
-    }
-    .empty ion-icon { font-size: 34px; }
+    .empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 12px; text-align: center; color: var(--artha-text-subtle); }
+    .empty ion-icon { font-size: 32px; }
     .empty p { margin: 0; font-size: 13.5px; }
-    .empty-cta { margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--artha-accent); text-decoration: none; }
-    .empty--compact { padding: 22px; }
+    .empty a { font-size: 13px; font-weight: 700; color: var(--artha-accent); text-decoration: none; }
+
+    /* Loans + planned */
+    .figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+    .figs div { display: flex; flex-direction: column; gap: 2px; }
+    .fig { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+    .fig-sm { font-size: 15px; font-weight: 800; }
+    .planned { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+    .planned li { display: flex; justify-content: space-between; gap: 12px; }
+    .planned-name { min-width: 0; color: var(--artha-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .planned li .num { font-weight: 700; }
+    .planned-more { margin: 10px 0 0; font-size: 12px; color: var(--artha-text-subtle); }
 
     @media (max-width: 720px) {
-      .main { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 767.98px) {
-      .page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+      .grid { grid-template-columns: minmax(0, 1fr); }
     }
   `],
 })
@@ -511,6 +499,13 @@ export class DashboardComponent implements OnInit {
       .slice(0, 5);
   });
 
+  /** Share of spend outside the top categories shown in the stacked bar. */
+  protected readonly otherShare = computed(() =>
+    Math.max(0, 1 - this.breakdown().reduce((sum, s) => sum + s.share, 0)),
+  );
+
+  protected readonly scanning = signal(false);
+
   protected readonly loading = computed(() =>
     this.expensesStore.loading() || this.settingsStore.loading(),
   );
@@ -538,6 +533,27 @@ export class DashboardComponent implements OnInit {
 
   protected async reviewPending(): Promise<void> {
     await this.sms.reviewPending();
+  }
+
+  protected async scanSms(): Promise<void> {
+    if (this.scanning()) return;
+    this.scanning.set(true);
+    try {
+      await this.sms.scanInbox();
+    } finally {
+      this.scanning.set(false);
+    }
+  }
+
+  protected breakdownLabel(): string {
+    return this.breakdown()
+      .map((s) => `${s.name} ${Math.round(s.share * 100)}%`)
+      .join(', ');
+  }
+
+  protected greeting(): string {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   }
 
   protected categoryName(id: string): string {
