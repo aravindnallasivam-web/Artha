@@ -190,6 +190,21 @@ See [`electron/README.md`](server/src/Artha.Api/ClientApp/electron/README.md) fo
 The web build is just static files (your data lives in Google Drive), so one
 nginx container is the whole deployment. Needs [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
+**Quickest — prebuilt image, no clone needed.** Every push publishes a
+multi-arch image (Intel + Apple Silicon) to GitHub Container Registry:
+
+```bash
+docker run -d --name artha-web -p 8080:80 --restart unless-stopped \
+  ghcr.io/aravindnallasivam-web/artha-web:latest
+open http://localhost:8080
+
+# update to the newest build later
+docker pull ghcr.io/aravindnallasivam-web/artha-web:latest
+docker rm -f artha-web   # then run the `docker run` command above again
+```
+
+**Or build it yourself from a clone:**
+
 ```bash
 # from the repository root
 docker compose up -d --build     # build the image and start it in the background

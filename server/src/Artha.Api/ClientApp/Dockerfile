@@ -2,7 +2,9 @@
 # The app is serverless (data lives in the user's Google Drive), so this image
 # is the whole deployment.
 
-FROM node:22-alpine AS build
+# The build output is plain HTML/JS/CSS, identical on every CPU, so build it
+# once on the builder's native platform and only vary the nginx stage.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
