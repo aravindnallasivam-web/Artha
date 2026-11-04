@@ -1,4 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type AnthropicClient from '@anthropic-ai/sdk';
 
 export type AiProviderKind = 'off' | 'anthropic' | 'openai-compatible';
@@ -97,16 +98,11 @@ export class AiProviderService {
     }
     if (config.kind === 'openai-compatible') {
       const baseUrl = config.baseUrl.trim().replace(/\/+$/, '');
-      const headers: Record<string, string> = {};
-      if (config.apiKey.trim()) headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
-      let res: Response;
-      try {
-        res = await fetch(`${baseUrl}/models`, { headers });
-      } catch {
-        throw new Error(`Couldn't reach ${baseUrl}. Check the URL and that the server allows requests from the app (CORS).`);
+      const res = await compatibleRequest('GET', `${baseUrl}/models`, config.apiKey);
+      if (res.status < 200 || res.status >= 300) {
+        throw new Error(`The provider returned ${res.status} when listing models${errorDetail(res.data)}`);
       }
-      if (!res.ok) throw new Error(`The provider returned ${res.status} when listing models.`);
-      const data = (await res.json()) as { data?: { id?: string; name?: string }[] };
+      const data = asJson(res.data) as { data?: { id?: string; name?: string }[] };
       return (data.data ?? [])
         .filter((m): m is { id: string; name?: string } => typeof m.id === 'string')
         .map((m) => ({ id: m.id, name: m.name || m.id }))
@@ -199,30 +195,18 @@ export class AiProviderService {
   }
 
   private async callOpenAiCompatible(config: AiProviderConfig, prompt: string, schema: Record<string, unknown>): Promise<unknown> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
-    let res: Response;
-    try {
-      res = await fetch(`${config.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: config.model,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: `${SYSTEM_PROMPT} Reply with only a JSON object matching this JSON Schema: ${JSON.stringify(schema)}` },
-            { role: 'user', content: prompt },
-          ],
-        }),
-      });
-    } catch {
-      throw new Error(`Couldn't reach ${config.baseUrl}. Check the URL and that the server allows requests from the app (CORS).`);
+    const res = await compatibleRequest('POST', `${config.baseUrl}/chat/completions`, config.apiKey, {
+      model: config.model,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: `${SYSTEM_PROMPT} Reply with only a JSON object matching this JSON Schema: ${JSON.stringify(schema)}` },
+        { role: 'user', content: prompt },
+      ],
+    });
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`The provider returned ${res.status}${errorDetail(res.data)}`);
     }
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(`The provider returned ${res.status}${detail ? `: ${detail.slice(0, 160)}` : ''}`);
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const data = asJson(res.data) as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content;
     if (!content) return null;
     try {
@@ -231,6 +215,56 @@ export class AiProviderService {
       return null;
     }
   }
+}
+
+/**
+ * Call an OpenAI-compatible server through Capacitor's HTTP layer: native on
+ * Android (no CORS, so self-hosted servers work without allowing the app's
+ * origin), plain fetch in a browser.
+ */
+async function compatibleRequest(
+  method: 'GET' | 'POST',
+  url: string,
+  apiKey: string,
+  body?: unknown,
+): Promise<{ status: number; data: unknown }> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (apiKey.trim()) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  try {
+    const res = await CapacitorHttp.request({
+      method,
+      url,
+      headers,
+      data: body,
+      connectTimeout: 15_000,
+      readTimeout: 60_000,
+    });
+    return { status: res.status, data: res.data };
+  } catch (err) {
+    const reason = err instanceof Error && err.message ? ` (${err.message})` : '';
+    throw new Error(
+      Capacitor.isNativePlatform()
+        ? `Couldn't reach ${url}${reason}. Check the URL and that the server is online.`
+        : `Couldn't reach ${url}. Check the URL and that the server allows requests from this site (CORS).`,
+    );
+  }
+}
+
+/** Native HTTP returns parsed JSON, the web path may hand back a string. */
+function asJson(data: unknown): unknown {
+  if (typeof data !== 'string') return data;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+function errorDetail(data: unknown): string {
+  if (data == null || data === '') return '';
+  const text = typeof data === 'string' ? data : JSON.stringify(data);
+  return `: ${text.slice(0, 160)}`;
 }
 
 function loadConfig(): AiProviderConfig {
