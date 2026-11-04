@@ -25,6 +25,7 @@ import {
   DEFAULT_CLAUDE_MODEL,
   NamedRef,
 } from '../../core/ai/ai-provider.service';
+import { SmsCaptureService } from '../sms/sms-capture.service';
 
 /** Add / change the AI provider used to categorise SMS Artha can't match on its own. */
 @Component({
@@ -153,6 +154,14 @@ import {
           <p class="result" [class.ok]="r.ok">{{ r.message }}</p>
         }
 
+        <ion-button expand="block" fill="clear" [disabled]="testing()" (click)="trySamples()">
+          Try on sample bank SMS
+        </ion-button>
+        <p class="samples-note">
+          Saves this setup and adds 6 sample bank SMS to Pending expenses so you can see what the AI picks.
+          Dismiss them afterwards — saving them would log them as real expenses.
+        </p>
+
         <ion-note class="privacy">
           The full SMS text, plus your category and account names, is sent to this provider only for messages
           Artha can't match itself. Your key is stored on this device only and never synced to Google Drive.
@@ -170,12 +179,14 @@ import {
     .models-note { font-size: 12.5px; color: var(--artha-text-subtle); }
     .result { margin: 12px 4px 0; font-size: 13.5px; color: var(--artha-negative); }
     .result.ok { color: var(--artha-positive); }
+    .samples-note { margin: 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--artha-text-subtle); }
     .privacy { display: block; margin: 16px 4px; font-size: 12.5px; line-height: 1.5; color: var(--artha-text-subtle); }
   `],
 })
 export class AiProviderModal {
   private readonly modalCtrl = inject(ModalController);
   private readonly ai = inject(AiProviderService);
+  private readonly sms = inject(SmsCaptureService);
 
   protected readonly defaultClaudeModel = DEFAULT_CLAUDE_MODEL;
   protected readonly kind = signal<AiProviderKind>(this.ai.config().kind);
@@ -277,6 +288,13 @@ export class AiProviderModal {
   protected save(): void {
     this.ai.save(this.draft());
     void this.modalCtrl.dismiss(null, 'saved');
+  }
+
+  /** Save the current setup, close, and open Pending with the sample SMS queued. */
+  protected async trySamples(): Promise<void> {
+    this.ai.save(this.draft());
+    await this.modalCtrl.dismiss(null, 'saved');
+    await this.sms.addSampleMessages();
   }
 
   protected close(): void {

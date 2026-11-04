@@ -14,6 +14,7 @@ import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { SmsScanRangeModal } from './sms-scan-range.modal';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
+import { SAMPLE_BANK_SMS } from './sms-samples';
 import { AiProviderService, AiSuggestion } from '../../core/ai/ai-provider.service';
 
 const ENABLED_KEY = 'artha.sms.captureEnabled';
@@ -913,6 +914,37 @@ export class SmsCaptureService {
   /** Open the persistent queue as one reviewable list. Public entry for the UI. */
   async reviewPending(): Promise<void> {
     await this.presentQueue();
+  }
+
+  /**
+   * Queue the sample bank SMS (dated now) and open Pending, so the AI flow can
+   * be checked without a real transaction. Each sample's "recently resolved"
+   * guard and cached AI answer are cleared so it can be tried again, e.g.
+   * after switching model. Returns how many samples were queued.
+   */
+  async addSampleMessages(): Promise<number> {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const smsDate = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${String(now.getFullYear()).slice(2)}`;
+    let added = 0;
+    for (const sample of SAMPLE_BANK_SMS) {
+      const parsed = parseExpenseSms({
+        address: sample.address,
+        body: sample.body.replace('{date}', smsDate),
+        date: now.getTime(),
+      });
+      if (!parsed) {
+        continue;
+      }
+      const key = this.pendingKey(parsed);
+      delete this.resolved[key];
+      delete this.aiSuggestions[key];
+      this.enqueue(parsed);
+      added++;
+    }
+    this.persistResolved();
+    await this.presentQueue();
+    return added;
   }
 
   /**
