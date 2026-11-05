@@ -1,10 +1,11 @@
-import { CurrencyPipe, DatePipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
 import { cardOwed, daysUntil, dueLabel, nextDueDate } from '../../core/models/card-cycle';
 import { AccountsStore } from '../accounts/accounts.store';
+import { InvestmentsStore } from '../investments/investments.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { LoansStore } from '../loans/loans.store';
@@ -27,6 +28,7 @@ interface CategorySlice {
   imports: [
     CurrencyPipe,
     DatePipe,
+    DecimalPipe,
     RouterLink,
     IonContent,
     IonIcon,
@@ -125,6 +127,39 @@ interface CategorySlice {
           </nav>
 
           <!-- Pending SMS expenses -->
+          @if (investments.rows().length > 0) {
+            @let inv = investments.totals();
+            <a class="card inv" routerLink="/investments">
+              <div class="card-head">
+                <h2>Investments</h2>
+                <span class="more">{{ inv.count }} {{ inv.count === 1 ? 'holding' : 'holdings' }} <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon></span>
+              </div>
+              <p class="inv-value num">{{ inv.value | currency: 'INR' : 'symbol' : '1.0-0' }}</p>
+              <div class="inv-stats">
+                <div>
+                  <span class="inv-k">Total P&amp;L</span>
+                  <span class="inv-v num" [class.inv-up]="inv.pnl >= 0" [class.inv-down]="inv.pnl < 0">
+                    {{ signOf(inv.pnl) }}{{ abs(inv.pnl) | currency: 'INR' : 'symbol' : '1.0-0' }}
+                    @if (inv.pnlPct != null) { <small>({{ signOf(inv.pnl) }}{{ abs(inv.pnlPct) | number: '1.1-1' }}%)</small> }
+                  </span>
+                </div>
+                @if (inv.dayChange != null) {
+                  <div>
+                    <span class="inv-k">Today</span>
+                    <span class="inv-v num" [class.inv-up]="inv.dayChange >= 0" [class.inv-down]="inv.dayChange < 0">
+                      {{ signOf(inv.dayChange) }}{{ abs(inv.dayChange) | currency: 'INR' : 'symbol' : '1.0-0' }}
+                      @if (inv.dayChangePct != null) { <small>({{ signOf(inv.dayChange) }}{{ abs(inv.dayChangePct) | number: '1.1-1' }}%)</small> }
+                    </span>
+                  </div>
+                }
+                <div>
+                  <span class="inv-k">Invested</span>
+                  <span class="inv-v num">{{ inv.invested | currency: 'INR' : 'symbol' : '1.0-0' }}</span>
+                </div>
+              </div>
+            </a>
+          }
+
           @if (sms.isSupported() && sms.pendingCount() > 0) {
             <button type="button" class="pending" (click)="reviewPending()">
               <span class="pending-badge">{{ sms.pendingCount() }}</span>
@@ -361,6 +396,17 @@ interface CategorySlice {
     .card-due-badge { background: var(--artha-negative); }
     .card-due-badge ion-icon { font-size: 15px; color: #fff; }
 
+    /* Investments summary */
+    .inv { display: flex; flex-direction: column; gap: 8px; }
+    .inv-value { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
+    .inv-stats { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+    .inv-stats > div { display: flex; flex-direction: column; gap: 2px; }
+    .inv-k { font-size: 11.5px; font-weight: 600; color: var(--artha-text-subtle); }
+    .inv-v { font-size: 14px; font-weight: 800; color: var(--artha-text); }
+    .inv-v small { font-size: 11.5px; font-weight: 700; opacity: 0.85; }
+    .inv-up { color: var(--artha-positive); }
+    .inv-down { color: var(--artha-negative); }
+
     /* Cards */
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
     .card {
@@ -434,6 +480,15 @@ export class DashboardComponent implements OnInit {
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
   private readonly accountsStore = inject(AccountsStore);
+  protected readonly investments = inject(InvestmentsStore);
+
+  protected signOf(n: number): string {
+    return n > 0 ? '+' : n < 0 ? '−' : '';
+  }
+
+  protected abs(n: number): number {
+    return Math.abs(n);
+  }
 
   /** Credit cards whose bill is due within the next 5 days, soonest first. */
   protected readonly cardBillsDue = computed(() =>
@@ -554,6 +609,16 @@ export class DashboardComponent implements OnInit {
     void this.plannedStore.load();
     void this.loansStore.load();
     void this.accountsStore.load();
+    // Investments summary card; refresh prices if they're over an hour old.
+    void this.investments
+      .load()
+      .then(() => {
+        const at = this.investments.pricesAt();
+        if (this.investments.rows().length && (!at || Date.now() - Date.parse(at) > 3_600_000)) {
+          void this.investments.refreshPrices();
+        }
+      })
+      .catch(() => undefined);
     if (!this.settingsStore.settings()) {
       void this.settingsStore.load();
     }
