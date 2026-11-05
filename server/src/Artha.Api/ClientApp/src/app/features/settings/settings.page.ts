@@ -213,16 +213,6 @@ import { SettingsStore } from './settings.store';
                 </ion-note>
               </ion-item>
             }
-            <ion-item button detail="true" (click)="openAiProvider()">
-              <span class="icon-chip chip-accent" slot="start">
-                <ion-icon name="sparkles-outline"></ion-icon>
-              </span>
-              <ion-label class="ion-text-wrap">
-                <h2>AI provider</h2>
-                <p>Suggest the category and account for SMS Artha can't match on its own.</p>
-              </ion-label>
-              <ion-note slot="end" class="pill" [class.pill-muted]="!ai.isEnabled()">{{ ai.label() }}</ion-note>
-            </ion-item>
           </ion-list>
 
           <ion-list inset="true" class="card">
@@ -275,6 +265,26 @@ import { SettingsStore } from './settings.store';
             Reads bank SMS on this device only — messages are never uploaded.
           </p>
         }
+
+        <p class="section-title">AI assistant</p>
+        <ion-list inset="true" class="card">
+          <ion-item button detail="true" (click)="openAiProvider()" lines="none">
+            <span class="icon-chip chip-accent" slot="start">
+              <ion-icon name="sparkles-outline"></ion-icon>
+            </span>
+            <ion-label class="ion-text-wrap">
+              <h2>AI provider</h2>
+              <p>
+                @if (sms.isSupported()) {
+                  Suggest categories for new expenses and for SMS Artha can't match on its own.
+                } @else {
+                  Suggest a category when you add an expense.
+                }
+              </p>
+            </ion-label>
+            <ion-note slot="end" class="pill" [class.pill-muted]="!ai.isEnabled()">{{ ai.label() }}</ion-note>
+          </ion-item>
+        </ion-list>
 
         <p class="section-title">Account</p>
         <ion-list inset="true" class="card">

@@ -64,8 +64,14 @@ import { SmsCaptureService } from '../sms/sms-capture.service';
 
     <ion-content class="ion-padding">
       <p class="intro">
-        When Artha can't tell which category or account a bank SMS belongs to, it can ask an AI model and
-        pre-fill its answer for you to confirm. What you confirm is learned, so the AI is asked less over time.
+        @if (smsSupported) {
+          When Artha can't tell which category or account a bank SMS belongs to, it can ask an AI model and
+          pre-fill its answer for you to confirm. What you confirm is learned, so the AI is asked less over time.
+          When adding an expense by hand, tap Suggest next to Category to ask it too.
+        } @else {
+          When you add an expense, tap Suggest next to Category and Artha asks an AI model which of your
+          categories fits the note. You can always pick a different one.
+        }
       </p>
 
       <ion-segment [value]="kind()" (ionChange)="setKind($any($event).detail.value)">
@@ -154,17 +160,20 @@ import { SmsCaptureService } from '../sms/sms-capture.service';
           <p class="result" [class.ok]="r.ok">{{ r.message }}</p>
         }
 
-        <ion-button expand="block" fill="clear" [disabled]="testing()" (click)="trySamples()">
-          Try on sample bank SMS
-        </ion-button>
-        <p class="samples-note">
-          Saves this setup and adds 6 sample bank SMS to Pending expenses so you can see what the AI picks.
-          Dismiss them afterwards — saving them would log them as real expenses.
-        </p>
+        @if (smsSupported) {
+          <ion-button expand="block" fill="clear" [disabled]="testing()" (click)="trySamples()">
+            Try on sample bank SMS
+          </ion-button>
+          <p class="samples-note">
+            Saves this setup and adds 6 sample bank SMS to Pending expenses so you can see what the AI picks.
+            Dismiss them afterwards — saving them would log them as real expenses.
+          </p>
+        }
 
         <ion-note class="privacy">
-          The full SMS text, plus your category and account names, is sent to this provider only for messages
-          Artha can't match itself. Your key is stored on this device only and never synced to Google Drive.
+          Sent to this provider: the note of an expense when you tap Suggest, and the full text of bank SMS
+          Artha can't match itself, together with your category and account names. Your key is stored on this
+          device only and never synced to Google Drive.
           @if (kind() === 'anthropic') {
             Claude Opus 5.5 is the default; for lower cost you can enter claude-haiku-5-5 instead.
           }
@@ -187,6 +196,7 @@ export class AiProviderModal {
   private readonly modalCtrl = inject(ModalController);
   private readonly ai = inject(AiProviderService);
   private readonly sms = inject(SmsCaptureService);
+  protected readonly smsSupported = this.sms.isSupported();
 
   protected readonly defaultClaudeModel = DEFAULT_CLAUDE_MODEL;
   protected readonly kind = signal<AiProviderKind>(this.ai.config().kind);

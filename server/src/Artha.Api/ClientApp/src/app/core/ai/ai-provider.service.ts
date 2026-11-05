@@ -148,6 +148,29 @@ export class AiProviderService {
     }
   }
 
+  /**
+   * Suggest a category (and the cleaned-up merchant) for an expense typed in by
+   * hand, from its note. Unlike classifySms this throws, so the screen that
+   * asked can show why it failed.
+   */
+  async suggestForExpense(
+    expense: { note: string; amount: number; date: string },
+    categories: NamedRef[],
+  ): Promise<AiSuggestion | null> {
+    if (!this.isEnabled() || !expense.note.trim() || categories.length === 0) return null;
+    return this.classifyWith(
+      this._config(),
+      {
+        sender: 'manual entry',
+        body: `Expense typed in by the user (not a bank SMS). Note: "${expense.note.trim()}"`,
+        amount: expense.amount,
+        date: expense.date,
+      },
+      categories,
+      [],
+    );
+  }
+
   private async classifyWith(
     config: AiProviderConfig,
     sms: SmsForAi,

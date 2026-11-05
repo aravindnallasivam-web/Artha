@@ -17,6 +17,7 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular/standalone';
+import { AiProviderService } from '../../core/ai/ai-provider.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
 import { Category } from '../../core/models/category.model';
@@ -106,7 +107,21 @@ const QUICK_CATEGORY_COUNT = 7;
             </div>
 
             <!-- Category -->
-            <div class="section-label">Category</div>
+            <div class="section-row">
+              <div class="section-label">Category</div>
+              @if (ai.isEnabled()) {
+                <button type="button" class="ai-suggest" [disabled]="aiBusy()" (click)="suggestCategory()">
+                  @if (aiBusy()) {
+                    <ion-spinner name="dots" aria-label="Asking AI"></ion-spinner>
+                  } @else {
+                    <ion-icon name="sparkles-outline" aria-hidden="true"></ion-icon>Suggest
+                  }
+                </button>
+              }
+            </div>
+            @if (aiMessage(); as m) {
+              <p class="ai-msg" [class.ai-msg--ok]="m.ok">{{ m.text }}</p>
+            }
             <div class="cat-grid">
               @for (c of quickCategories(); track c.id) {
                 <button type="button" class="cat-tile" [class.sel]="isSelected(c)"
@@ -217,6 +232,20 @@ const QUICK_CATEGORY_COUNT = 7;
       color: var(--artha-text-subtle); margin: 18px 2px 10px;
     }
 
+    .section-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 2px 10px; }
+    .section-row .section-label { margin: 0; }
+    .ai-suggest {
+      display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px;
+      border: 0; border-radius: 999px; cursor: pointer;
+      background: var(--artha-accent-tint); color: var(--artha-accent);
+      font-family: inherit; font-size: 13px; font-weight: 700;
+    }
+    .ai-suggest[disabled] { opacity: 0.6; cursor: default; }
+    .ai-suggest ion-icon { font-size: 15px; }
+    .ai-suggest ion-spinner { width: 22px; height: 22px; color: var(--artha-accent); }
+    .ai-msg { margin: -2px 2px 10px; font-size: 12.5px; color: var(--artha-text-muted); }
+    .ai-msg--ok { color: var(--artha-accent); font-weight: 600; }
+
     /* Category grid */
     .cat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
     .cat-tile {
@@ -305,6 +334,10 @@ export class ExpenseEditPage implements OnInit {
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
   private readonly actionSheetCtrl = inject(ActionSheetController);
+  protected readonly ai = inject(AiProviderService);
+
+  protected readonly aiBusy = signal(false);
+  protected readonly aiMessage = signal<{ text: string; ok: boolean } | null>(null);
 
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
@@ -366,6 +399,38 @@ export class ExpenseEditPage implements OnInit {
   protected selectCategory(id: string): void {
     this.form.patchValue({ categoryId: id });
     this.form.controls.categoryId.markAsDirty();
+  }
+
+  /** Ask the AI provider which category fits this expense's note. */
+  protected async suggestCategory(): Promise<void> {
+    const note = this.form.controls.note.value.trim();
+    if (!note) {
+      this.aiMessage.set({ text: 'Add a note first, e.g. "Lunch at Truffles".', ok: false });
+      return;
+    }
+    this.aiBusy.set(true);
+    this.aiMessage.set(null);
+    try {
+      const categories = this.categories().map((c) => ({
+        id: c.id,
+        name: this.categoriesStore.pathLabel(c.id) || c.name,
+      }));
+      const suggestion = await this.ai.suggestForExpense(
+        { note, amount: this.form.controls.amount.value, date: this.form.controls.date.value },
+        categories,
+      );
+      if (suggestion?.categoryId) {
+        this.selectCategory(suggestion.categoryId);
+        const name = this.categoriesStore.pathLabel(suggestion.categoryId);
+        this.aiMessage.set({ text: `AI picked ${name}. Tap another category to change it.`, ok: true });
+      } else {
+        this.aiMessage.set({ text: "The AI couldn't match a category. Pick one below.", ok: false });
+      }
+    } catch (err) {
+      this.aiMessage.set({ text: err instanceof Error ? err.message : 'The AI request failed.', ok: false });
+    } finally {
+      this.aiBusy.set(false);
+    }
   }
 
   /** "Food · Cafés" for a subcategory selection; null for a top-level one. */
