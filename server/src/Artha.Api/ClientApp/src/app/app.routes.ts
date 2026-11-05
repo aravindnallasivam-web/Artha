@@ -99,6 +99,11 @@ export const routes: Routes = [
           import('./features/loans/loans-list.page').then((m) => m.LoansListPage),
       },
       {
+        path: 'investments',
+        loadComponent: () =>
+          import('./features/investments/investments.page').then((m) => m.InvestmentsPage),
+      },
+      {
         path: 'loans/new',
         loadComponent: () =>
           import('./features/loans/loan-edit.page').then((m) => m.LoanEditPage),

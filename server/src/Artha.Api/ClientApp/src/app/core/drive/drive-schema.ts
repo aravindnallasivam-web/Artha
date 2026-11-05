@@ -23,6 +23,7 @@ export const DRIVE_FILES = {
   settings: 'settings.json',
   plannedExpenses: 'planned-expenses.json',
   loans: 'loans.json',
+  investments: 'investments.json',
 } as const;
 
 /** Default Cash account seeded for every user (mirror DefaultAccountId). */

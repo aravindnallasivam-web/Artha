@@ -113,6 +113,7 @@ import {
   trash,
   trendingDown,
   trendingUp,
+  trendingUpOutline,
   tv,
   umbrella,
   wallet,
@@ -169,6 +170,7 @@ export function registerIcons(): void {
     trash,
     'trending-down': trendingDown,
     'trending-up': trendingUp,
+    'trending-up-outline': trendingUpOutline,
     wallet,
     'wallet-outline': walletOutline,
     // Category picker icons.

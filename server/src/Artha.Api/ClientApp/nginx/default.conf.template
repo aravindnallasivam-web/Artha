@@ -23,6 +23,19 @@ server {
         js_content oauth.token;
     }
 
+    # Stock prices: only Yahoo Finance's symbol search and price chart endpoints,
+    # GET only, so the browser build can fetch them without CORS.
+    location ~ ^/market/(v1/finance/search|v8/finance/chart/[A-Za-z0-9.^=&%-]+)$ {
+        limit_except GET { deny all; }
+        proxy_pass https://query1.finance.yahoo.com/$1$is_args$args;
+        proxy_ssl_server_name on;
+        proxy_set_header Host query1.finance.yahoo.com;
+        proxy_set_header User-Agent "Mozilla/5.0";
+        proxy_set_header Cookie "";
+        proxy_hide_header Set-Cookie;
+        add_header Cache-Control "no-store";
+    }
+
     # Hashed build output never changes for a given name: cache it for a year.
     location ~* \.(?:js|css|woff2?|ttf|png|jpg|jpeg|svg|ico|webp)$ {
         try_files $uri =404;

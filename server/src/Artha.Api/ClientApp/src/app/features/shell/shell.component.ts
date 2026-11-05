@@ -40,6 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
       { path: '/planned-expenses', label: 'Planned', icon: 'calendar-outline', iconActive: 'calendar' },
       { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
       { path: '/loans', label: 'Loans', icon: 'cash-outline', iconActive: 'cash' },
+      { path: '/investments', label: 'Investments', icon: 'trending-up-outline', iconActive: 'trending-up' },
     ],
   },
   {

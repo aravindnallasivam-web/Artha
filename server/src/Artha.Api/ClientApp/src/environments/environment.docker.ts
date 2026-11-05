@@ -5,6 +5,8 @@ export const environment = {
   // Same-origin in dev too: Angular's dev server proxies /api/* to the .NET API
   // running on http://localhost:5239 (see proxy.conf.json + angular.json).
   apiBaseUrl: '',
+  // Stock prices via the container's nginx proxy to Yahoo Finance (nginx template).
+  marketDataBase: '/market',
   google: {
     // Web application OAuth client ("Web client 2"). Used by every non-Android
     // build: the website, the Docker image and the desktop app.
