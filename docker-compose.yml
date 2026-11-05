@@ -9,4 +9,8 @@ services:
     container_name: artha-web
     ports:
       - "8080:80"
+    environment:
+      # Secret of the Google "Web application" OAuth client, used server-side
+      # by /oauth/token. Put it in a .env file next to this one (never commit it).
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}
     restart: unless-stopped

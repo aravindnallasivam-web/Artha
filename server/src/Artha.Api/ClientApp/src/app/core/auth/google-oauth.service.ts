@@ -12,7 +12,6 @@ import { environment } from '../../../environments/environment';
 import { GoogleTokenStore } from '../drive/google-token.store';
 import { User } from './auth.models';
 
-const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 export interface ExchangeResult {
   user: User;
@@ -27,7 +26,7 @@ export class GoogleOAuthService {
   async exchangeCode(code: string, codeVerifier: string, redirectUri: string): Promise<ExchangeResult> {
     const res = await CapacitorHttp.request({
       method: 'POST',
-      url: GOOGLE_TOKEN_ENDPOINT,
+      url: environment.google.tokenEndpoint,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       data: {
         client_id: environment.google.clientId,

@@ -1,3 +1,5 @@
+# Rendered by the nginx image at startup (envsubst on ${...} for variables that
+# are set; nginx's own $variables are left alone).
 server {
     listen 80;
     server_name _;
@@ -7,6 +9,19 @@ server {
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml;
     gzip_min_length 1024;
+
+    # OAuth token exchange with the client secret added server-side (oauth.js).
+    js_import oauth from /etc/nginx/njs/oauth.js;
+    js_fetch_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=300s ipv6=off;
+
+    location = /oauth/token {
+        limit_except POST { deny all; }
+        client_max_body_size 32k;
+        client_body_buffer_size 32k;
+        client_body_in_single_buffer on;
+        js_content oauth.token;
+    }
 
     # Hashed build output never changes for a given name: cache it for a year.
     location ~* \.(?:js|css|woff2?|ttf|png|jpg|jpeg|svg|ico|webp)$ {

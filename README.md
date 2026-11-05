@@ -195,6 +195,7 @@ multi-arch image (Intel + Apple Silicon) to GitHub Container Registry:
 
 ```bash
 docker run -d --name artha-web -p 8080:80 --restart unless-stopped \
+  -e GOOGLE_CLIENT_SECRET='<web client secret>' \
   ghcr.io/aravindnallasivam-web/artha-web:latest
 open http://localhost:8080
 
@@ -211,8 +212,14 @@ docker compose up -d --build     # build the image and start it in the backgroun
 open http://localhost:8080
 ```
 
-One-time Google Cloud setup — in the **Web application** OAuth client Artha
-already uses, add:
+`GOOGLE_CLIENT_SECRET` is the secret of the **Web application** OAuth client
+whose ID is in `src/environments/environment.ts`. Google requires it for web
+sign-in, so the container's nginx adds it to token requests (`/oauth/token`,
+see `nginx/oauth.js`); it never reaches the browser or the image. With
+`docker compose`, put `GOOGLE_CLIENT_SECRET=...` in a `.env` file at the repo
+root instead (`.env` is already git-ignored).
+
+One-time Google Cloud setup — in that **Web application** OAuth client, add:
 
 - **Authorised JavaScript origins:** `http://localhost:8080`
 - **Authorised redirect URIs:** `http://localhost:8080/auth/callback`

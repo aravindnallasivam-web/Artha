@@ -16,7 +16,6 @@ import { Preferences } from '@capacitor/preferences';
 import { environment } from '../../../environments/environment';
 
 const STORAGE_KEY = 'artha.drive.tokens';
-const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 /** Refresh this many ms before the token actually expires. */
 const EXPIRY_SKEW_MS = 60_000;
 
@@ -77,7 +76,7 @@ export class GoogleTokenStore {
     }
     const res = await CapacitorHttp.request({
       method: 'POST',
-      url: GOOGLE_TOKEN_ENDPOINT,
+      url: environment.google.tokenEndpoint,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       data: {
         client_id: environment.google.clientId,

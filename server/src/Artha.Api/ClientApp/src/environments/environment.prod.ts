@@ -7,6 +7,7 @@ export const environment = {
   google: {
     clientId: '952436597649-6bpd2mli17eg30falj66bqpt8p5svvso.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenEndpoint: 'https://oauth2.googleapis.com/token',
     redirectPath: '/auth/callback',
     nativeRedirectUri:
       'com.googleusercontent.apps.952436597649-6bpd2mli17eg30falj66bqpt8p5svvso:/oauth2redirect',
