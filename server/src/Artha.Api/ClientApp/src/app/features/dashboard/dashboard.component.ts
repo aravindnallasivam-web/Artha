@@ -3,6 +3,8 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
+import { cardOwed, daysUntil, dueLabel, nextDueDate } from '../../core/models/card-cycle';
+import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { LoansStore } from '../loans/loans.store';
@@ -131,6 +133,17 @@ interface CategorySlice {
               </span>
               <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
             </button>
+          }
+
+          @for (bill of cardBillsDue(); track bill.id) {
+            <a class="pending card-due" routerLink="/accounts">
+              <span class="pending-badge card-due-badge"><ion-icon name="card" aria-hidden="true"></ion-icon></span>
+              <span class="pending-text">
+                {{ bill.name }} bill due {{ bill.when }}
+                @if (bill.owed > 0) { · <span class="num">{{ bill.owed | currency: bill.currency : 'symbol' : '1.0-0' }}</span> owed }
+              </span>
+              <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
+            </a>
           }
 
           <div class="grid">
@@ -344,6 +357,9 @@ interface CategorySlice {
     }
     .pending-text { flex: 1; font-size: 13.5px; font-weight: 600; }
     .pending ion-icon { flex: none; font-size: 18px; color: var(--artha-text-muted); }
+    .card-due { text-decoration: none; background: var(--artha-negative-tint); border-color: color-mix(in srgb, var(--artha-negative) 40%, transparent); }
+    .card-due-badge { background: var(--artha-negative); }
+    .card-due-badge ion-icon { font-size: 15px; color: #fff; }
 
     /* Cards */
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
@@ -417,6 +433,24 @@ export class DashboardComponent implements OnInit {
   protected readonly sms = inject(SmsCaptureService);
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
+  private readonly accountsStore = inject(AccountsStore);
+
+  /** Credit cards whose bill is due within the next 5 days, soonest first. */
+  protected readonly cardBillsDue = computed(() =>
+    this.accountsStore
+      .active()
+      .filter((a) => a.type === 'credit_card' && a.dueDay)
+      .map((a) => ({ acc: a, days: daysUntil(nextDueDate(a.dueDay!)) }))
+      .filter((x) => x.days <= 5)
+      .sort((a, b) => a.days - b.days)
+      .map(({ acc, days }) => ({
+        id: acc.id,
+        name: acc.name,
+        when: dueLabel(days),
+        owed: cardOwed(acc),
+        currency: acc.currency,
+      })),
+  );
 
   protected readonly currentUser = this.session.currentUser;
 
@@ -519,6 +553,7 @@ export class DashboardComponent implements OnInit {
     }
     void this.plannedStore.load();
     void this.loansStore.load();
+    void this.accountsStore.load();
     if (!this.settingsStore.settings()) {
       void this.settingsStore.load();
     }

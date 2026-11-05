@@ -10,6 +10,8 @@ import {
   DEFAULT_ACCOUNT_ID,
 } from '../../core/models/account.model';
 import { bankPresetById } from '../../core/models/bank-preset';
+import { cardOwed, daysUntil, dueLabel, isoDate, lastStatementDate, nextDueDate } from '../../core/models/card-cycle';
+import { ExpensesApi } from '../expenses/expenses.api';
 import { AccountsStore } from './accounts.store';
 import { BalanceSyncService } from './balance-sync.service';
 
@@ -80,6 +82,7 @@ const TILE_PALETTE = ['#1e3a8a', '#0e7490', '#7c2d12', '#4c1d95', '#065f46', '#9
               @for (acc of visible(); track acc.id; let i = $index) {
                 <article
                   class="tile"
+                  [class.tile--card]="acc.type === 'credit_card'"
                   [class.archived]="acc.archived"
                   [style.background]="tileColor(acc, i)"
                   (click)="openAccount(acc)"
@@ -88,15 +91,45 @@ const TILE_PALETTE = ['#1e3a8a', '#0e7490', '#7c2d12', '#4c1d95', '#065f46', '#9
                     <span class="tile-icon"><ion-icon [name]="iconFor(acc)"></ion-icon></span>
                     <span class="tile-name">{{ acc.name }}</span>
                   </div>
-                  <div class="tile-bottom">
-                    <div class="tile-balance num">
-                      {{ acc.openingBalance | currency: acc.currency : 'symbol' : '1.0-0' }}
+                  @if (acc.type === 'credit_card') {
+                    <div class="tile-bottom">
+                      <div class="tile-balance num">
+                        {{ owed(acc) | currency: acc.currency : 'symbol' : '1.0-0' }}
+                        <span class="owed">owed</span>
+                      </div>
+                      @if (acc.creditLimit) {
+                        <div class="usage" [class.usage--high]="usagePct(acc) >= 80">
+                          <span [style.width.%]="usagePct(acc)"></span>
+                        </div>
+                        <div class="tile-meta">
+                          <span class="num">
+                            {{ available(acc) | currency: acc.currency : 'symbol' : '1.0-0' }} available of
+                            {{ acc.creditLimit | currency: acc.currency : 'symbol' : '1.0-0' }}
+                          </span>
+                        </div>
+                      }
+                      <div class="tile-meta">
+                        @if (cycleSpend()[acc.id] != null) {
+                          <span class="num">This cycle {{ cycleSpend()[acc.id] | currency: acc.currency : 'symbol' : '1.0-0' }}</span>
+                        }
+                        @if (dueInfo(acc); as due) {
+                          <span class="due" [class.due--soon]="due.soon">{{ due.text }}</span>
+                        }
+                        <span>{{ bankName(acc) || typeLabel(acc) }}@if (acc.cardLast4) { ·· {{ acc.cardLast4 }} }</span>
+                        @if (simChip(acc); as sim) { <span class="sim">{{ sim }}</span> }
+                      </div>
                     </div>
-                    <div class="tile-meta">
-                      <span>{{ bankName(acc) || typeLabel(acc) }}</span>
-                      @if (simChip(acc); as sim) { <span class="sim">{{ sim }}</span> }
+                  } @else {
+                    <div class="tile-bottom">
+                      <div class="tile-balance num">
+                        {{ acc.openingBalance | currency: acc.currency : 'symbol' : '1.0-0' }}
+                      </div>
+                      <div class="tile-meta">
+                        <span>{{ bankName(acc) || typeLabel(acc) }}</span>
+                        @if (simChip(acc); as sim) { <span class="sim">{{ sim }}</span> }
+                      </div>
                     </div>
-                  </div>
+                  }
                   @if (canSync(acc) || canArchive(acc)) {
                     <div class="tile-actions">
                       @if (canSync(acc)) {
@@ -180,6 +213,13 @@ const TILE_PALETTE = ['#1e3a8a', '#0e7490', '#7c2d12', '#4c1d95', '#065f46', '#9
     }
     .tile-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tile-balance { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+    .tile--card { grid-column: 1 / -1; }
+    .owed { font-size: 12px; font-weight: 700; opacity: 0.8; letter-spacing: 0; }
+    .usage { height: 6px; margin-top: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
+    .usage span { display: block; height: 100%; border-radius: 999px; background: #fff; }
+    .usage--high span { background: #fde68a; }
+    .due { padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+    .due--soon { background: #fde68a; color: #78350f; }
     .tile-meta {
       display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px;
       font-size: 11.5px; opacity: 0.85;
@@ -212,6 +252,10 @@ export class AccountsListPage implements OnInit {
   private readonly alertCtrl = inject(AlertController);
   private readonly notifier = inject(ConflictNotifierService);
   private readonly balanceSync = inject(BalanceSyncService);
+  private readonly expensesApi = inject(ExpensesApi);
+
+  /** Card account id -> spend since its last statement date (cards with a statement day only). */
+  protected readonly cycleSpend = signal<Record<string, number>>({});
 
   protected readonly defaultAccountId = DEFAULT_ACCOUNT_ID;
   protected readonly view = signal<'active' | 'archived'>('active');
@@ -237,7 +281,7 @@ export class AccountsListPage implements OnInit {
   });
 
   ngOnInit(): void {
-    void this.store.load();
+    void this.store.load().then(() => this.loadCycleSpend());
     if (this.balanceSync.isSupported()) {
       void this.balanceSync.simLabels().then((m) => this.simLabels.set(m));
     }
@@ -267,6 +311,55 @@ export class AccountsListPage implements OnInit {
     this.view.set(value);
     if (value === 'archived') {
       await this.store.load(true);
+    }
+  }
+
+  protected owed(acc: Account): number {
+    return cardOwed(acc);
+  }
+
+  protected available(acc: Account): number {
+    return Math.max(0, (acc.creditLimit ?? 0) - cardOwed(acc));
+  }
+
+  protected usagePct(acc: Account): number {
+    const limit = acc.creditLimit ?? 0;
+    return limit > 0 ? Math.min(100, Math.round((cardOwed(acc) / limit) * 100)) : 0;
+  }
+
+  /** "Due 23 Nov · in 4 days" for a card with a due day; soon = within 5 days. */
+  protected dueInfo(acc: Account): { text: string; soon: boolean } | null {
+    if (!acc.dueDay) {
+      return null;
+    }
+    const due = nextDueDate(acc.dueDay);
+    const days = daysUntil(due);
+    const date = due.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return { text: `Due ${date} · ${dueLabel(days)}`, soon: days <= 5 };
+  }
+
+  /** Sum each card's spending since its last statement date, in one read. */
+  private async loadCycleSpend(): Promise<void> {
+    const cards = this.store.active().filter((a) => a.type === 'credit_card' && a.statementDay);
+    if (cards.length === 0) {
+      this.cycleSpend.set({});
+      return;
+    }
+    const starts = new Map(cards.map((c) => [c.id, isoDate(lastStatementDate(c.statementDay!))]));
+    const earliest = [...starts.values()].sort()[0];
+    const today = isoDate(new Date());
+    try {
+      const { items } = await this.expensesApi.list(earliest.slice(0, 7), today.slice(0, 7));
+      const totals: Record<string, number> = Object.fromEntries(cards.map((c) => [c.id, 0]));
+      for (const e of items) {
+        const start = starts.get(e.accountId);
+        if (start && !e.excluded && e.type !== 'income' && e.date >= start && e.date <= today) {
+          totals[e.accountId] += e.amount;
+        }
+      }
+      this.cycleSpend.set(totals);
+    } catch {
+      // Leave the cycle line off; the rest of the card still shows.
     }
   }
 

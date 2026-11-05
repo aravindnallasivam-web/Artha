@@ -116,7 +116,7 @@ const COLOR_SWATCHES = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '
               </ion-item>
               <ion-item lines="none">
                 <ion-input
-                  label="Opening balance"
+                  [label]="isCard() ? 'Amount owed now' : 'Opening balance'"
                   labelPlacement="stacked"
                   type="number"
                   inputmode="decimal"
@@ -125,6 +125,69 @@ const COLOR_SWATCHES = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '
                 ></ion-input>
               </ion-item>
             </div>
+
+            @if (isCard()) {
+              <div class="section-label">Card details</div>
+              <div class="card">
+                <ion-item lines="full">
+                  <ion-input
+                    label="Credit limit"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="decimal"
+                    formControlName="creditLimit"
+                    placeholder="e.g. 150000"
+                  ></ion-input>
+                </ion-item>
+                <ion-item lines="full">
+                  <ion-input
+                    label="Last 4 digits"
+                    labelPlacement="stacked"
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="4"
+                    formControlName="cardLast4"
+                    placeholder="e.g. 7712"
+                  ></ion-input>
+                </ion-item>
+                <ion-item lines="full">
+                  <ion-select
+                    label="Statement day"
+                    labelPlacement="stacked"
+                    formControlName="statementDay"
+                    interface="action-sheet"
+                    placeholder="Not set"
+                  >
+                    <ion-select-option [value]="null">Not set</ion-select-option>
+                    @for (d of monthDays; track d) {
+                      <ion-select-option [value]="d">{{ ordinal(d) }} of the month</ion-select-option>
+                    }
+                  </ion-select>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-select
+                    label="Payment due day"
+                    labelPlacement="stacked"
+                    formControlName="dueDay"
+                    interface="action-sheet"
+                    placeholder="Not set"
+                  >
+                    <ion-select-option [value]="null">Not set</ion-select-option>
+                    @for (d of monthDays; track d) {
+                      <ion-select-option [value]="d">{{ ordinal(d) }} of the month</ion-select-option>
+                    }
+                  </ion-select>
+                </ion-item>
+              </div>
+              @if (form.controls.cardLast4.invalid) {
+                <div class="field-note field-note--error">Enter exactly 4 digits, or leave it empty.</div>
+              } @else {
+                <div class="field-note">
+                  The limit shows how much credit is left; the dates show what you spent this billing cycle
+                  and when the bill is due. Days past a month's end use its last day.
+                </div>
+              }
+            }
 
             <div class="section-label">Appearance</div>
             <div class="card swatch-card">
@@ -240,6 +303,7 @@ const COLOR_SWATCHES = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '
       font-size: 12.5px; color: var(--artha-text-muted);
       margin: 8px 6px 0; line-height: 1.45;
     }
+    .field-note--error { color: var(--artha-negative); }
     .hint { display: block; padding: 12px 6px; font-size: 13px; }
     .save-btn { margin-top: 26px; }
   `],
@@ -265,7 +329,22 @@ export class AccountEditPage implements OnInit {
     openingBalance: [0, Validators.required],
     color: [''],
     bank: [''],
+    creditLimit: [null as number | null, Validators.min(0)],
+    cardLast4: ['', Validators.pattern(/^\d{4}$/)],
+    statementDay: [null as number | null],
+    dueDay: [null as number | null],
   });
+
+  protected readonly monthDays = Array.from({ length: 31 }, (_, i) => i + 1);
+
+  protected isCard(): boolean {
+    return this.form.controls.type.value === 'credit_card';
+  }
+
+  protected ordinal(n: number): string {
+    const suffix = n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th';
+    return `${n}${suffix}`;
+  }
 
   private editingId: string | null = null;
 
@@ -288,6 +367,10 @@ export class AccountEditPage implements OnInit {
             openingBalance: account.openingBalance,
             color: account.color ?? '',
             bank: account.bank ?? '',
+            creditLimit: account.creditLimit ?? null,
+            cardLast4: account.cardLast4 ?? '',
+            statementDay: account.statementDay ?? null,
+            dueDay: account.dueDay ?? null,
           });
         }
       }
@@ -308,6 +391,14 @@ export class AccountEditPage implements OnInit {
       color: raw.color?.trim() || null,
       icon: null,
       bank: raw.bank || null,
+      ...(raw.type === 'credit_card'
+        ? {
+            creditLimit: raw.creditLimit != null && `${raw.creditLimit}` !== '' ? Number(raw.creditLimit) : null,
+            cardLast4: raw.cardLast4?.trim() || null,
+            statementDay: raw.statementDay ?? null,
+            dueDay: raw.dueDay ?? null,
+          }
+        : {}),
     };
     try {
       if (this.editingId) {

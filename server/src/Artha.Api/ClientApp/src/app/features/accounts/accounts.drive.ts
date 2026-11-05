@@ -51,6 +51,7 @@ export class AccountsDriveService {
       icon: request.icon,
       archived: false,
       bank: request.bank,
+      ...cardFields(request),
     };
     await this.repo.write<AccountList>(
       DRIVE_FILES.accounts,
@@ -84,6 +85,7 @@ export class AccountsDriveService {
       color: request.color,
       icon: request.icon,
       bank: request.bank,
+      ...cardFields(request, list[idx]),
     };
     await this.repo.write<AccountList>(
       DRIVE_FILES.accounts,
@@ -145,4 +147,24 @@ export class AccountsDriveService {
     }
     return false;
   }
+}
+
+type CardFields = Pick<Account, 'creditLimit' | 'cardLast4' | 'statementDay' | 'dueDay'>;
+
+/**
+ * Credit-card fields to store. Other account types carry none. A request that
+ * omits a field (e.g. a balance-only update from SMS sync) keeps the stored one.
+ */
+function cardFields(request: AccountUpsertRequest, current?: Account): CardFields {
+  if (request.type.trim().toLowerCase() !== 'credit_card') {
+    return { creditLimit: null, cardLast4: null, statementDay: null, dueDay: null };
+  }
+  const pick = <K extends keyof CardFields>(key: K): CardFields[K] =>
+    key in request ? (request[key] ?? null) : (current?.[key] ?? null);
+  return {
+    creditLimit: pick('creditLimit'),
+    cardLast4: pick('cardLast4'),
+    statementDay: pick('statementDay'),
+    dueDay: pick('dueDay'),
+  };
 }

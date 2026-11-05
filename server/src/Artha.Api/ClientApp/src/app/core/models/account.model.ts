@@ -11,6 +11,14 @@ export interface Account {
   archived: boolean;
   /** Bank preset id (e.g. 'hdfc') used for SMS balance sync, or null. */
   bank: string | null;
+  /** Credit cards only: credit limit in the account's currency. */
+  creditLimit?: number | null;
+  /** Credit cards only: last 4 digits printed on the card. */
+  cardLast4?: string | null;
+  /** Credit cards only: day of the month the statement is generated (1–31). */
+  statementDay?: number | null;
+  /** Credit cards only: day of the month the bill is due (1–31). */
+  dueDay?: number | null;
 }
 
 export interface AccountUpsertRequest {
@@ -21,6 +29,15 @@ export interface AccountUpsertRequest {
   color: string | null;
   icon: string | null;
   bank: string | null;
+  /** Credit-card fields; leave them out to keep what the account already has. */
+  /** Credit cards only: credit limit in the account's currency. */
+  creditLimit?: number | null;
+  /** Credit cards only: last 4 digits printed on the card. */
+  cardLast4?: string | null;
+  /** Credit cards only: day of the month the statement is generated (1–31). */
+  statementDay?: number | null;
+  /** Credit cards only: day of the month the bill is due (1–31). */
+  dueDay?: number | null;
 }
 
 export const DEFAULT_ACCOUNT_ID = 'acc-cash';
