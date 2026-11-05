@@ -2,8 +2,8 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { AppDataRepository } from '../../core/drive/app-data.repository';
 import { DriveBootstrap } from '../../core/drive/drive-bootstrap.service';
 import { DRIVE_FILES, SCHEMA_VERSION, SchemaVersioned, newId } from '../../core/drive/drive-schema';
-import { Holding, InvestmentsSnapshot, Quote } from '../../core/models/investment.model';
-import { Cell, parseCsv, parseHoldingsRows } from './holdings-import';
+import { Holding, HoldingKind, InvestmentsSnapshot, Quote } from '../../core/models/investment.model';
+import { Cell, HoldingsImportResult, parseCsv, parseFundRows, parseHoldingsRows } from './holdings-import';
 import { MarketDataService } from './market-data.service';
 
 interface InvestmentsDoc extends SchemaVersioned, InvestmentsSnapshot {}
@@ -12,6 +12,9 @@ export type PriceSource = 'live' | 'statement' | 'none';
 
 export interface HoldingRow {
   holding: Holding;
+  kind: HoldingKind;
+  /** Date of the price used (fund NAVs), when known. */
+  asOf: string | null;
   price: number | null;
   source: PriceSource;
   invested: number;
@@ -49,6 +52,8 @@ export class InvestmentsStore {
       const pnl = value - invested;
       return {
         holding: h,
+        kind: h.kind ?? 'stock',
+        asOf: quote?.asOf ?? null,
         price,
         source,
         invested,
@@ -66,7 +71,8 @@ export class InvestmentsStore {
     const value = rows.reduce((s, r) => s + r.value, 0);
     const withDay = rows.filter((r) => r.dayChange != null);
     const dayChange = withDay.length ? withDay.reduce((s, r) => s + r.dayChange!, 0) : null;
-    const prevValue = dayChange != null ? value - dayChange : null;
+    // Today's % is relative to the holdings that have a day change (stocks), not funds too.
+    const prevValue = dayChange != null ? withDay.reduce((s, r) => s + r.value, 0) - dayChange : null;
     return {
       invested,
       value,
@@ -105,28 +111,46 @@ export class InvestmentsStore {
    * Replace holdings with those in a broker holdings statement (.xlsx or .csv).
    * Returns how many were imported; throws a readable error if none were found.
    */
-  async importFile(file: File): Promise<{ imported: number; skipped: number }> {
+  /**
+   * Import a broker holdings statement (.xlsx or .csv) of stocks, mutual funds,
+   * or both. Only the kinds found in the file are replaced, so importing a funds
+   * report keeps the stocks and vice versa. Throws a readable error if the file
+   * has neither table.
+   */
+  async importFile(file: File): Promise<{ stocks: number; funds: number; skipped: number }> {
     const sheets = await readSheets(file);
-    const result = sheets.map((rows) => parseHoldingsRows(rows)).find((r) => r && r.holdings.length > 0);
-    if (!result) {
+    const firstWith = (parse: (rows: Cell[][]) => HoldingsImportResult | null) =>
+      sheets.map((rows) => parse(rows)).find((r) => r && r.holdings.length > 0) ?? null;
+    const found: [HoldingKind, HoldingsImportResult | null][] = [
+      ['stock', firstWith(parseHoldingsRows)],
+      ['mf', firstWith(parseFundRows)],
+    ];
+    const imported = found.filter((f): f is [HoldingKind, HoldingsImportResult] => f[1] !== null);
+    if (imported.length === 0) {
       throw new Error(
-        "Couldn't find a holdings table in that file. Use the stocks holdings report exported from your broker " +
-          '(it needs columns like Stock name, Quantity and Average price).',
+        "Couldn't find a holdings table in that file. Use the stocks or mutual funds holdings report exported " +
+          'from your broker (it needs columns like Stock / Scheme name, Quantity / Units and Average price / Invested value).',
       );
     }
-    // Keep symbols already found for the same ISIN / name, so they aren't looked up again.
+    // Keep symbols already found for the same holding, so they aren't looked up again.
+    const keyOf = (kind: HoldingKind, h: { isin: string | null; name: string }) => `${kind}|${h.isin ?? h.name.toLowerCase()}`;
     const known = new Map<string, string>();
     for (const h of this._snapshot().items) {
-      if (h.symbol) known.set(h.isin ?? h.name.toLowerCase(), h.symbol);
+      if (h.symbol) known.set(keyOf(h.kind ?? 'stock', h), h.symbol);
     }
-    const items: Holding[] = result.holdings.map((h) => ({
-      ...h,
-      id: newId('hold'),
-      symbol: known.get(h.isin ?? h.name.toLowerCase()) ?? null,
-    }));
-    await this.save({ items, importedAt: new Date().toISOString(), source: file.name });
+    const replacedKinds = new Set(imported.map(([kind]) => kind));
+    const kept = this._snapshot().items.filter((h) => !replacedKinds.has(h.kind ?? 'stock'));
+    const fresh: Holding[] = imported.flatMap(([kind, result]) =>
+      result.holdings.map((h) => ({ ...h, kind, id: newId('hold'), symbol: known.get(keyOf(kind, h)) ?? null })),
+    );
+    await this.save({ items: [...kept, ...fresh], importedAt: new Date().toISOString(), source: file.name });
     void this.refreshPrices();
-    return { imported: items.length, skipped: result.skipped };
+    const count = (kind: HoldingKind) => fresh.filter((h) => h.kind === kind).length;
+    return {
+      stocks: count('stock'),
+      funds: count('mf'),
+      skipped: imported.reduce((n, [, r]) => n + r.skipped, 0),
+    };
   }
 
   async clear(): Promise<void> {
@@ -143,7 +167,9 @@ export class InvestmentsStore {
       await runPool(items, async (h, i) => {
         if (h.symbol) return;
         const symbol =
-          (h.isin ? await this.market.resolveSymbol(h.isin) : null) ?? (await this.market.resolveSymbol(h.name));
+          h.kind === 'mf'
+            ? await this.market.resolveFund(h.name)
+            : (h.isin ? await this.market.resolveSymbol(h.isin) : null) ?? (await this.market.resolveSymbol(h.name));
         if (symbol) {
           items[i] = { ...h, symbol };
           symbolsChanged = true;
@@ -156,7 +182,7 @@ export class InvestmentsStore {
       const symbols = [...new Set(items.map((h) => h.symbol).filter((s): s is string => !!s))];
       const quotes: Record<string, Quote> = { ...this._quotes() };
       await runPool(symbols, async (symbol) => {
-        const q = await this.market.quote(symbol);
+        const q = symbol.startsWith('mf:') ? await this.market.fundQuote(symbol) : await this.market.quote(symbol);
         if (q) quotes[symbol] = q;
       });
       this._quotes.set(quotes);

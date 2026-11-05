@@ -7,6 +7,8 @@ export const environment = {
   apiBaseUrl: '',
   // Stock prices via the container's nginx proxy to Yahoo Finance (nginx template).
   marketDataBase: '/market',
+  // Mutual fund NAVs (mfapi.in, a free mirror of AMFI's daily NAVs).
+  fundDataBase: '/mfapi',
   google: {
     // Web application OAuth client ("Web client 2"). Used by every non-Android
     // build: the website, the Docker image and the desktop app.

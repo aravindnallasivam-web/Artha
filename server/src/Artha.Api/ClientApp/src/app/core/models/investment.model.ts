@@ -1,15 +1,20 @@
-/** One stock holding, as imported from a broker's holdings statement. */
+export type HoldingKind = 'stock' | 'mf';
+
+/** One stock or mutual fund holding, as imported from a broker's holdings statement. */
 export interface Holding {
   id: string;
+  /** Missing on holdings saved before mutual funds existed; treat as 'stock'. */
+  kind?: HoldingKind;
   name: string;
   /** ISIN from the statement; used to look up the market symbol. */
   isin: string | null;
-  /** Market-data symbol (e.g. "RELIANCE.NS"); null until resolved. */
+  /** Price lookup key: a market symbol ("RELIANCE.NS") or "mf:<AMFI scheme code>"; null until resolved. */
   symbol: string | null;
+  /** Shares, or units for a mutual fund. */
   quantity: number;
-  /** Average buy price per share. */
+  /** Average buy price per share / average NAV per unit. */
   avgPrice: number;
-  /** Closing price printed on the statement, used when no live price is available. */
+  /** Closing price / NAV implied by the statement, used when no live price is available. */
   statementPrice: number | null;
 }
 
@@ -25,6 +30,8 @@ export interface InvestmentsSnapshot {
 export interface Quote {
   price: number;
   previousClose: number | null;
+  /** Date the price applies to (mutual fund NAVs are daily), e.g. "2026-11-04". */
+  asOf?: string | null;
   /** ISO timestamp the quote was fetched. */
   fetchedAt: string;
 }

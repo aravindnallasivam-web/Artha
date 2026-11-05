@@ -20,7 +20,7 @@ interface MoreLink {
 const LINKS: MoreLink[] = [
   { path: '/planned-expenses', label: 'Planned', icon: 'calendar-outline', hint: 'Fixed monthly bills' },
   { path: '/loans', label: 'Loans', icon: 'cash-outline', hint: 'EMIs, interest & payoff' },
-  { path: '/investments', label: 'Investments', icon: 'trending-up-outline', hint: 'Stocks, value & P&L' },
+  { path: '/investments', label: 'Investments', icon: 'trending-up-outline', hint: 'Stocks, mutual funds & P&L' },
   { path: '/categories', label: 'Categories', icon: 'pricetag-outline', hint: 'Organise your spending' },
   { path: '/settings', label: 'Settings', icon: 'settings-outline', hint: 'Currency, preferences' },
 ];

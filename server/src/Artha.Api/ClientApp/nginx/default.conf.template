@@ -36,6 +36,17 @@ server {
         add_header Cache-Control "no-store";
     }
 
+    # Mutual fund NAVs: only mfapi.in's scheme search and latest-NAV endpoints.
+    location ~ ^/mfapi/(mf/search|mf/[0-9]+/latest)$ {
+        limit_except GET { deny all; }
+        proxy_pass https://api.mfapi.in/$1$is_args$args;
+        proxy_ssl_server_name on;
+        proxy_set_header Host api.mfapi.in;
+        proxy_set_header Cookie "";
+        proxy_hide_header Set-Cookie;
+        add_header Cache-Control "no-store";
+    }
+
     # Hashed build output never changes for a given name: cache it for a year.
     location ~* \.(?:js|css|woff2?|ttf|png|jpg|jpeg|svg|ico|webp)$ {
         try_files $uri =404;

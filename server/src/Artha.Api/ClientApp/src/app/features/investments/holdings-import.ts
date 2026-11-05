@@ -4,7 +4,7 @@ import { Holding } from '../../core/models/investment.model';
 export type Cell = string | number | boolean | Date | null | undefined;
 
 export interface HoldingsImportResult {
-  holdings: Omit<Holding, 'id' | 'symbol'>[];
+  holdings: Omit<Holding, 'id' | 'symbol' | 'kind'>[];
   /** Rows that looked like holdings but couldn't be read. */
   skipped: number;
 }
@@ -120,4 +120,71 @@ export function parseCsv(text: string): Cell[][] {
     rows.push(row);
   }
   return rows;
+}
+
+// ---------------------------------------------------------------- mutual funds
+
+type FundColumn = 'name' | 'isin' | 'units' | 'avgNav' | 'invested' | 'nav' | 'currentValue';
+
+const FUND_HEADER_RULES: { column: FundColumn; test: RegExp }[] = [
+  { column: 'isin', test: /^isin/ },
+  { column: 'avgNav', test: /^(avg|average)(purchase|buy)?(nav|price|cost)/ },
+  { column: 'invested', test: /^(invested|investedvalue|investedamount|amountinvested|investment|purchasevalue|costvalue|cost)$/ },
+  { column: 'currentValue', test: /^(currentvalue|marketvalue|presentvalue|valuation|value)$/ },
+  { column: 'nav', test: /^(currentnav|latestnav|nav)$/ },
+  { column: 'units', test: /^(units|unitsheld|balanceunits|closingunits|quantity|qty)$/ },
+  { column: 'name', test: /^(schemename|scheme|fundname|fund|mutualfund|schemedetails)$/ },
+];
+
+function fundHeaderMap(row: Cell[]): Partial<Record<FundColumn, number>> | null {
+  const map: Partial<Record<FundColumn, number>> = {};
+  row.forEach((cell, idx) => {
+    const text = normalise(cell);
+    if (!text) return;
+    const rule = FUND_HEADER_RULES.find((r) => r.test.test(text));
+    if (rule && map[rule.column] === undefined) map[rule.column] = idx;
+  });
+  const hasCost = map.avgNav !== undefined || map.invested !== undefined;
+  return map.name !== undefined && map.units !== undefined && hasCost ? map : null;
+}
+
+/**
+ * Read mutual fund holdings (scheme name, units, and either average NAV or the
+ * amount invested). Average NAV and statement NAV are derived from invested
+ * and current value when the statement doesn't print them. Null when no fund
+ * table is found.
+ */
+export function parseFundRows(rows: Cell[][]): HoldingsImportResult | null {
+  const headerIdx = rows.findIndex((r) => fundHeaderMap(r) !== null);
+  if (headerIdx < 0) return null;
+  const cols = fundHeaderMap(rows[headerIdx])!;
+  const at = (row: Cell[], c: FundColumn) => (cols[c] === undefined ? undefined : row[cols[c]!]);
+
+  const holdings: HoldingsImportResult['holdings'] = [];
+  let skipped = 0;
+  for (const row of rows.slice(headerIdx + 1)) {
+    const name = String(at(row, 'name') ?? '').trim();
+    if (!name) {
+      if (holdings.length > 0) break;
+      continue;
+    }
+    if (/^(total|grand total|net)\b/i.test(name)) break;
+    const units = toNumber(at(row, 'units'));
+    const invested = toNumber(at(row, 'invested'));
+    const avgNav = toNumber(at(row, 'avgNav')) ?? (units && invested != null ? invested / units : null);
+    if (units == null || units <= 0 || avgNav == null) {
+      skipped++;
+      continue;
+    }
+    const currentValue = toNumber(at(row, 'currentValue'));
+    const isin = String(at(row, 'isin') ?? '').trim().toUpperCase();
+    holdings.push({
+      name,
+      isin: /^IN[A-Z0-9]{10}$/.test(isin) ? isin : null,
+      quantity: units,
+      avgPrice: avgNav,
+      statementPrice: toNumber(at(row, 'nav')) ?? (currentValue != null ? currentValue / units : null),
+    });
+  }
+  return { holdings, skipped };
 }

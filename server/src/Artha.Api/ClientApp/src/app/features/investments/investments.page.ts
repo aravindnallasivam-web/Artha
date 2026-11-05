@@ -1,5 +1,5 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { InvestmentsStore } from './investments.store';
@@ -32,12 +32,12 @@ import { InvestmentsStore } from './investments.store';
         } @else if (store.rows().length === 0) {
           <section class="empty">
             <span class="empty-badge"><ion-icon name="trending-up-outline"></ion-icon></span>
-            <h2>Track your stocks</h2>
-            <p>Import the holdings report from your broker and Artha keeps the prices up to date.</p>
+            <h2>Track your stocks and mutual funds</h2>
+            <p>Import the holdings reports from your broker and Artha keeps prices and NAVs up to date.</p>
             <ol>
-              <li>In Groww, open <b>Stocks → Holdings</b> and download the <b>holdings report</b> as Excel.</li>
-              <li>Tap <b>Import</b> above and choose that file (.xlsx or .csv).</li>
-              <li>Import a fresh report whenever you buy or sell.</li>
+              <li>In Groww, download the <b>holdings report</b> as Excel, once for <b>Stocks</b> and once for <b>Mutual Funds</b>.</li>
+              <li>Tap <b>Import</b> above and choose a file (.xlsx or .csv). Import the second one the same way.</li>
+              <li>Import a fresh report whenever you buy or sell; it only replaces holdings of the same kind.</li>
             </ol>
           </section>
         } @else {
@@ -54,7 +54,7 @@ import { InvestmentsStore } from './investments.store';
                 </div>
               </div>
               <div>
-                <div class="sum-k">Today</div>
+                <div class="sum-k">{{ fundRows().length && stockRows().length ? 'Today (stocks)' : 'Today' }}</div>
                 @if (t.dayChange != null) {
                   <div class="sum-v num" [class.up]="t.dayChange >= 0" [class.down]="t.dayChange < 0">
                     {{ sign(t.dayChange) }}{{ abs(t.dayChange) | currency: currency() : 'symbol' : '1.0-0' }}
@@ -72,40 +72,57 @@ import { InvestmentsStore } from './investments.store';
           </section>
 
           <p class="meta">
-            {{ t.count }} {{ t.count === 1 ? 'stock' : 'stocks' }}
+            {{ countLabel() }}
             @if (pricesLabel(); as p) { · Prices {{ p }} }
             @if (t.liveCount < t.count) { · {{ t.count - t.liveCount }} using statement price }
           </p>
 
-          <div class="list">
-            @for (r of store.rows(); track r.holding.id) {
-              <article class="row">
-                <div class="row-main">
-                  <div class="row-name">{{ r.holding.name }}</div>
-                  <div class="row-sub num">
-                    {{ r.holding.quantity | number: '1.0-4' }} × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }}
-                    @if (r.holding.symbol) { · {{ shortSymbol(r.holding.symbol) }} }
+          @for (section of sections(); track section.title) {
+            <div class="section-head">
+              <span>{{ section.title }}</span>
+              <span class="num" [class.up]="section.pnl >= 0" [class.down]="section.pnl < 0">
+                {{ section.value | currency: currency() : 'symbol' : '1.0-0' }} · {{ sign(section.pnl) }}{{ abs(section.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
+              </span>
+            </div>
+            <div class="list">
+              @for (r of section.rows; track r.holding.id) {
+                <article class="row">
+                  <div class="row-main">
+                    <div class="row-name">{{ r.holding.name }}</div>
+                    <div class="row-sub num">
+                      @if (r.kind === 'mf') {
+                        {{ r.holding.quantity | number: '1.0-3' }} units × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }} avg
+                      } @else {
+                        {{ r.holding.quantity | number: '1.0-4' }} × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }}
+                        @if (r.holding.symbol) { · {{ shortSymbol(r.holding.symbol) }} }
+                      }
+                    </div>
                   </div>
-                </div>
-                <div class="row-side">
-                  <div class="row-value num">{{ r.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
-                  <div class="row-pnl num" [class.up]="r.pnl >= 0" [class.down]="r.pnl < 0">
-                    {{ sign(r.pnl) }}{{ abs(r.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
-                    @if (r.pnlPct != null) { ({{ sign(r.pnl) }}{{ abs(r.pnlPct) | number: '1.1-1' }}%) }
+                  <div class="row-side">
+                    <div class="row-value num">{{ r.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
+                    <div class="row-pnl num" [class.up]="r.pnl >= 0" [class.down]="r.pnl < 0">
+                      {{ sign(r.pnl) }}{{ abs(r.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
+                      @if (r.pnlPct != null) { ({{ sign(r.pnl) }}{{ abs(r.pnlPct) | number: '1.1-1' }}%) }
+                    </div>
+                    <div class="row-price num">
+                      @if (r.price != null) {
+                        @if (r.kind === 'mf') { NAV }
+                        {{ r.price | currency: currency() : 'symbol' : '1.0-2' }}
+                        @if (r.asOf) { · {{ shortDate(r.asOf) }} }
+                      }
+                      @if (r.source === 'statement') { <span class="tag">statement</span> }
+                      @if (r.source === 'none') { <span class="tag">no price</span> }
+                    </div>
                   </div>
-                  <div class="row-price num">
-                    @if (r.price != null) { {{ r.price | currency: currency() : 'symbol' : '1.0-2' }} }
-                    @if (r.source === 'statement') { <span class="tag">statement</span> }
-                    @if (r.source === 'none') { <span class="tag">no price</span> }
-                  </div>
-                </div>
-              </article>
-            }
-          </div>
+                </article>
+              }
+            </div>
+          }
 
           <p class="foot">
             {{ importedNote() }}
-            Live prices from Yahoo Finance, delayed about 15 minutes; "statement" means the closing price in your report.
+            Stock prices from Yahoo Finance, delayed about 15 minutes. Fund NAVs from AMFI (via mfapi.in), updated
+            once a day. "statement" means the price in your report.
             <button type="button" class="link" (click)="clearAll()">Remove all holdings</button>
           </p>
         }
@@ -158,6 +175,13 @@ import { InvestmentsStore } from './investments.store';
     .muted { color: #94a3b8; }
 
     .meta { margin: 0 4px; font-size: 12.5px; color: var(--artha-text-subtle); }
+    .section-head {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+      margin: 6px 4px -4px; font-size: 13px; font-weight: 800; color: var(--artha-text);
+    }
+    .section-head .num { font-size: 12.5px; font-weight: 700; }
+    .section-head .up { color: var(--artha-positive); }
+    .section-head .down { color: var(--artha-negative); }
     .list { display: flex; flex-direction: column; gap: 10px; }
     .row {
       display: flex; justify-content: space-between; gap: 12px;
@@ -184,6 +208,34 @@ export class InvestmentsPage implements OnInit {
   private readonly alertCtrl = inject(AlertController);
 
   protected readonly importing = signal(false);
+
+  protected readonly stockRows = computed(() => this.store.rows().filter((r) => r.kind === 'stock'));
+  protected readonly fundRows = computed(() => this.store.rows().filter((r) => r.kind === 'mf'));
+
+  protected readonly sections = computed(() =>
+    [
+      { title: 'Stocks', rows: this.stockRows() },
+      { title: 'Mutual funds', rows: this.fundRows() },
+    ]
+      .filter((s) => s.rows.length > 0)
+      .map((s) => {
+        const value = s.rows.reduce((n, r) => n + r.value, 0);
+        const invested = s.rows.reduce((n, r) => n + r.invested, 0);
+        return { ...s, value, pnl: value - invested };
+      }),
+  );
+
+  protected countLabel(): string {
+    const st = this.stockRows().length;
+    const mf = this.fundRows().length;
+    return [st ? `${st} ${st === 1 ? 'stock' : 'stocks'}` : '', mf ? `${mf} ${mf === 1 ? 'fund' : 'funds'}` : '']
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  protected shortDate(iso: string): string {
+    return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
   // NSE/BSE prices are always in rupees, whatever the app's display currency is.
   protected readonly currency = signal('INR');
 
@@ -205,7 +257,7 @@ export class InvestmentsPage implements OnInit {
     if (this.store.rows().length > 0) {
       const alert = await this.alertCtrl.create({
         header: 'Replace holdings?',
-        message: `Your current ${this.store.rows().length} holdings will be replaced by the ones in ${file.name}.`,
+        message: `Holdings of the same kind (stocks or mutual funds) will be replaced by the ones in ${file.name}.`,
         buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Replace', role: 'confirm' }],
       });
       await alert.present();
@@ -213,9 +265,13 @@ export class InvestmentsPage implements OnInit {
     }
     this.importing.set(true);
     try {
-      const { imported, skipped } = await this.store.importFile(file);
+      const { stocks, funds, skipped } = await this.store.importFile(file);
+      const parts = [
+        stocks ? `${stocks} ${stocks === 1 ? 'stock' : 'stocks'}` : '',
+        funds ? `${funds} mutual ${funds === 1 ? 'fund' : 'funds'}` : '',
+      ].filter(Boolean);
       await this.notifier.notifyInfo(
-        `Imported ${imported} ${imported === 1 ? 'holding' : 'holdings'}` +
+        `Imported ${parts.join(' and ')}` +
           (skipped ? `; ${skipped} ${skipped === 1 ? 'row' : 'rows'} couldn't be read.` : '.'),
       );
     } catch (err) {

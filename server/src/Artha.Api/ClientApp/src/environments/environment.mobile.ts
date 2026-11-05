@@ -16,6 +16,8 @@ export const environment = {
   apiBaseUrl: '',
   // Stock prices, fetched with native HTTP on the device.
   marketDataBase: 'https://query1.finance.yahoo.com',
+  // Mutual fund NAVs (mfapi.in, a free mirror of AMFI's daily NAVs).
+  fundDataBase: 'https://api.mfapi.in',
   google: {
     clientId: '952436597649-6bpd2mli17eg30falj66bqpt8p5svvso.apps.googleusercontent.com',
     authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
