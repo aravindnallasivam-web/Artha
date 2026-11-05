@@ -130,6 +130,7 @@ const RANGES: { label: string; months: number | null }[] = [
           <section class="card">
             <h2>Your holding</h2>
             <dl class="facts">
+              @if (r.holding.platform) { <dt>Platform</dt><dd>{{ r.holding.platform }}</dd> }
               <dt>{{ isFund() ? 'Units' : 'Quantity' }}</dt><dd class="num">{{ r.holding.quantity | number: '1.0-4' }}</dd>
               <dt>{{ isFund() ? 'Average NAV' : 'Average price' }}</dt><dd class="num">{{ r.holding.avgPrice | currency: 'INR' : 'symbol' : '1.2-2' }}</dd>
               <dt>Invested</dt><dd class="num">{{ r.invested | currency: 'INR' : 'symbol' : '1.0-0' }}</dd>

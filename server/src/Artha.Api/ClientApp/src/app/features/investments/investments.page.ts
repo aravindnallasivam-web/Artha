@@ -3,7 +3,27 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { InvestmentsStore } from './investments.store';
+import { InvestmentsStore, summarize } from './investments.store';
+
+const DEFAULT_PLATFORMS = ['Groww', 'Zerodha', 'Upstox', 'Angel One', 'Kuvera', 'Paytm Money', 'ICICI Direct', 'HDFC Securities'];
+const LAST_PLATFORM_KEY = 'artha.investments.lastPlatform';
+
+/** Platform suggested by a statement's file name ("Groww_Holdings.xlsx" → Groww). */
+function guessPlatform(fileName: string, options: string[]): string | null {
+  const name = fileName.toLowerCase();
+  const rules: [RegExp, string][] = [
+    [/groww/, 'Groww'],
+    [/zerodha|kite|console|coin/, 'Zerodha'],
+    [/upstox/, 'Upstox'],
+    [/angel/, 'Angel One'],
+    [/kuvera/, 'Kuvera'],
+    [/paytm/, 'Paytm Money'],
+    [/icici/, 'ICICI Direct'],
+    [/hdfc ?sec/, 'HDFC Securities'],
+  ];
+  const hit = rules.find(([re]) => re.test(name))?.[1];
+  return hit ?? options.find((o) => name.includes(o.toLowerCase().replace(/\s+/g, ''))) ?? null;
+}
 
 @Component({
   selector: 'artha-investments',
@@ -37,12 +57,20 @@ import { InvestmentsStore } from './investments.store';
             <p>Import the holdings reports from your broker and Artha keeps prices and NAVs up to date.</p>
             <ol>
               <li>In Groww, download the <b>holdings report</b> as Excel, once for <b>Stocks</b> and once for <b>Mutual Funds</b>.</li>
-              <li>Tap <b>Import</b> above and choose a file (.xlsx or .csv). Import the second one the same way.</li>
-              <li>Import a fresh report whenever you buy or sell; it only replaces holdings of the same kind.</li>
+              <li>Tap <b>Import</b> above, choose a file (.xlsx or .csv) and pick the platform it's from. Import the second one the same way.</li>
+              <li>Import a fresh report whenever you buy or sell; it only replaces holdings from that platform, of the same kind.</li>
             </ol>
           </section>
         } @else {
-          @let t = store.totals();
+          @if (store.platforms().length > 1) {
+            <div class="chips" role="group" aria-label="Platform">
+              <button type="button" [class.on]="!platformFilter()" (click)="platformFilter.set('')">All</button>
+              @for (p of store.platforms(); track p) {
+                <button type="button" [class.on]="platformFilter() === p" (click)="platformFilter.set(p)">{{ p }}</button>
+              }
+            </div>
+          }
+          @let t = totals();
           <section class="summary">
             <div class="sum-label">Current value</div>
             <div class="sum-value num">{{ t.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
@@ -93,9 +121,11 @@ import { InvestmentsStore } from './investments.store';
                     <div class="row-sub num">
                       @if (r.kind === 'mf') {
                         {{ r.holding.quantity | number: '1.0-3' }} units × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }} avg
+                        @if (r.holding.platform) { · {{ r.holding.platform }} }
                       } @else {
                         {{ r.holding.quantity | number: '1.0-4' }} × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }}
                         @if (r.holding.symbol) { · {{ shortSymbol(r.holding.symbol) }} }
+                        @if (r.holding.platform) { · {{ r.holding.platform }} }
                       }
                     </div>
                   </div>
@@ -124,7 +154,11 @@ import { InvestmentsStore } from './investments.store';
             {{ importedNote() }}
             Stock prices from Yahoo Finance, delayed about 15 minutes. Fund NAVs from AMFI (via mfapi.in), updated
             once a day. "statement" means the price in your report.
-            <button type="button" class="link" (click)="clearAll()">Remove all holdings</button>
+            @if (platformFilter(); as pf) {
+              <button type="button" class="link" (click)="removePlatform(pf)">Remove {{ pf }} holdings</button>
+            } @else {
+              <button type="button" class="link" (click)="clearAll()">Remove all holdings</button>
+            }
           </p>
         }
       </div>
@@ -176,6 +210,13 @@ import { InvestmentsStore } from './investments.store';
     .muted { color: #94a3b8; }
 
     .meta { margin: 0 4px; font-size: 12.5px; color: var(--artha-text-subtle); }
+    .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+    .chips button {
+      flex: none; height: 34px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--artha-border); background: var(--artha-surface);
+      color: var(--artha-text); font: inherit; font-size: 13px; font-weight: 600;
+    }
+    .chips button.on { background: var(--artha-tabbar-bg, #0f172a); border-color: transparent; color: #fff; }
     .section-head {
       display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
       margin: 6px 4px -4px; font-size: 13px; font-weight: 800; color: var(--artha-text);
@@ -212,8 +253,15 @@ export class InvestmentsPage implements OnInit {
 
   protected readonly importing = signal(false);
 
-  protected readonly stockRows = computed(() => this.store.rows().filter((r) => r.kind === 'stock'));
-  protected readonly fundRows = computed(() => this.store.rows().filter((r) => r.kind === 'mf'));
+  /** '' = all platforms. */
+  protected readonly platformFilter = signal('');
+  protected readonly filteredRows = computed(() => {
+    const p = this.platformFilter();
+    return p ? this.store.rows().filter((r) => r.holding.platform === p) : this.store.rows();
+  });
+  protected readonly totals = computed(() => summarize(this.filteredRows()));
+  protected readonly stockRows = computed(() => this.filteredRows().filter((r) => r.kind === 'stock'));
+  protected readonly fundRows = computed(() => this.filteredRows().filter((r) => r.kind === 'mf'));
 
   protected readonly sections = computed(() =>
     [
@@ -257,30 +305,82 @@ export class InvestmentsPage implements OnInit {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    if (this.store.rows().length > 0) {
-      const alert = await this.alertCtrl.create({
-        header: 'Replace holdings?',
-        message: `Holdings of the same kind (stocks or mutual funds) will be replaced by the ones in ${file.name}.`,
-        buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Replace', role: 'confirm' }],
-      });
-      await alert.present();
-      if ((await alert.onDidDismiss()).role !== 'confirm') return;
-    }
+    const platform = await this.askPlatform(file.name);
+    if (!platform) return;
     this.importing.set(true);
     try {
-      const { stocks, funds, skipped } = await this.store.importFile(file);
+      const { stocks, funds, skipped } = await this.store.importFile(file, platform);
       const parts = [
         stocks ? `${stocks} ${stocks === 1 ? 'stock' : 'stocks'}` : '',
         funds ? `${funds} mutual ${funds === 1 ? 'fund' : 'funds'}` : '',
       ].filter(Boolean);
       await this.notifier.notifyInfo(
         `Imported ${parts.join(' and ')}` +
+          ` from ${platform}` +
           (skipped ? `; ${skipped} ${skipped === 1 ? 'row' : 'rows'} couldn't be read.` : '.'),
       );
     } catch (err) {
       await this.notifier.notifyError(err instanceof Error ? err.message : 'Import failed.');
     } finally {
       this.importing.set(false);
+    }
+  }
+
+  /**
+   * Ask which platform a statement is from. Holdings already imported from
+   * that platform (of the kinds in the file) are replaced; others are kept.
+   */
+  private async askPlatform(fileName: string): Promise<string | null> {
+    const options = [...new Set([...this.store.platforms(), ...DEFAULT_PLATFORMS])];
+    let last: string | null = null;
+    try {
+      last = localStorage.getItem(LAST_PLATFORM_KEY);
+    } catch {
+      // No remembered platform.
+    }
+    const guess = guessPlatform(fileName, options) ?? (last && options.includes(last) ? last : options[0]);
+    const pick = await this.alertCtrl.create({
+      header: 'Which platform is this from?',
+      message: `Your holdings from this platform will be replaced by the ones in ${fileName}. Holdings on other platforms are kept.`,
+      inputs: [
+        ...options.map((p) => ({ type: 'radio' as const, label: p, value: p, checked: p === guess })),
+        { type: 'radio' as const, label: 'Other…', value: '__other__' },
+      ],
+      buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Import', role: 'confirm' }],
+    });
+    await pick.present();
+    const choice = await pick.onDidDismiss<{ values: string }>();
+    if (choice.role !== 'confirm' || !choice.data?.values) return null;
+    let platform = choice.data.values;
+    if (platform === '__other__') {
+      const other = await this.alertCtrl.create({
+        header: 'Platform name',
+        inputs: [{ name: 'name', type: 'text', placeholder: 'e.g. Dhan' }],
+        buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Import', role: 'confirm' }],
+      });
+      await other.present();
+      const res = await other.onDidDismiss<{ values: { name: string } }>();
+      platform = res.role === 'confirm' ? (res.data?.values?.name ?? '').trim() : '';
+      if (!platform) return null;
+    }
+    try {
+      localStorage.setItem(LAST_PLATFORM_KEY, platform);
+    } catch {
+      // Remembering is a convenience.
+    }
+    return platform;
+  }
+
+  protected async removePlatform(platform: string): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: `Remove ${platform} holdings?`,
+      message: `This deletes the holdings imported from ${platform}. Your account there is not affected.`,
+      buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Remove', role: 'destructive' }],
+    });
+    await alert.present();
+    if ((await alert.onDidDismiss()).role === 'destructive') {
+      await this.store.removePlatform(platform);
+      this.platformFilter.set('');
     }
   }
 

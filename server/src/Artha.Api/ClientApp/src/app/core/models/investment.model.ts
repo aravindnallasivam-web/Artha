@@ -5,6 +5,8 @@ export interface Holding {
   id: string;
   /** Missing on holdings saved before mutual funds existed; treat as 'stock'. */
   kind?: HoldingKind;
+  /** Broker / app the holding is held on (e.g. "Groww"); missing on holdings imported before platforms existed. */
+  platform?: string;
   name: string;
   /** ISIN from the statement; used to look up the market symbol. */
   isin: string | null;

@@ -65,25 +65,7 @@ export class InvestmentsStore {
     }),
   );
 
-  readonly totals = computed(() => {
-    const rows = this.rows();
-    const invested = rows.reduce((s, r) => s + r.invested, 0);
-    const value = rows.reduce((s, r) => s + r.value, 0);
-    const withDay = rows.filter((r) => r.dayChange != null);
-    const dayChange = withDay.length ? withDay.reduce((s, r) => s + r.dayChange!, 0) : null;
-    // Today's % is relative to the holdings that have a day change (stocks), not funds too.
-    const prevValue = dayChange != null ? withDay.reduce((s, r) => s + r.value, 0) - dayChange : null;
-    return {
-      invested,
-      value,
-      pnl: value - invested,
-      pnlPct: invested > 0 ? ((value - invested) / invested) * 100 : null,
-      dayChange,
-      dayChangePct: dayChange != null && prevValue ? (dayChange / prevValue) * 100 : null,
-      liveCount: rows.filter((r) => r.source === 'live').length,
-      count: rows.length,
-    };
-  });
+  readonly totals = computed(() => summarize(this.rows()));
 
   /** When the newest live quote was fetched. */
   readonly pricesAt = computed(() => {
@@ -117,7 +99,7 @@ export class InvestmentsStore {
    * report keeps the stocks and vice versa. Throws a readable error if the file
    * has neither table.
    */
-  async importFile(file: File): Promise<{ stocks: number; funds: number; skipped: number }> {
+  async importFile(file: File, platform: string): Promise<{ stocks: number; funds: number; skipped: number }> {
     const sheets = await readSheets(file);
     const firstWith = (parse: (rows: Cell[][]) => HoldingsImportResult | null) =>
       sheets.map((rows) => parse(rows)).find((r) => r && r.holdings.length > 0) ?? null;
@@ -138,10 +120,14 @@ export class InvestmentsStore {
     for (const h of this._snapshot().items) {
       if (h.symbol) known.set(keyOf(h.kind ?? 'stock', h), h.symbol);
     }
+    // Replace only this platform's holdings of the kinds in the file. Holdings saved
+    // before platforms existed have none; the next import of that kind claims them.
     const replacedKinds = new Set(imported.map(([kind]) => kind));
-    const kept = this._snapshot().items.filter((h) => !replacedKinds.has(h.kind ?? 'stock'));
+    const kept = this._snapshot().items.filter(
+      (h) => !(replacedKinds.has(h.kind ?? 'stock') && (!h.platform || h.platform === platform)),
+    );
     const fresh: Holding[] = imported.flatMap(([kind, result]) =>
-      result.holdings.map((h) => ({ ...h, kind, id: newId('hold'), symbol: known.get(keyOf(kind, h)) ?? null })),
+      result.holdings.map((h) => ({ ...h, kind, platform, id: newId('hold'), symbol: known.get(keyOf(kind, h)) ?? null })),
     );
     await this.save({ items: [...kept, ...fresh], importedAt: new Date().toISOString(), source: file.name });
     void this.refreshPrices();
@@ -167,6 +153,17 @@ export class InvestmentsStore {
         // Cache only.
       }
     }
+  }
+
+  /** Platforms the holdings are on, in first-seen order. */
+  readonly platforms = computed(() => [
+    ...new Set(this._snapshot().items.map((h) => h.platform).filter((p): p is string => !!p)),
+  ]);
+
+  /** Remove every holding imported from one platform. */
+  async removePlatform(platform: string): Promise<void> {
+    const items = this._snapshot().items.filter((h) => h.platform !== platform);
+    await this.save({ ...this._snapshot(), items });
   }
 
   async clear(): Promise<void> {
@@ -223,6 +220,26 @@ export class InvestmentsStore {
     this._snapshot.set(snapshot);
     this.loaded.set(true);
   }
+}
+
+/** Value, invested, P&L and today's change across a set of holding rows. */
+export function summarize(rows: HoldingRow[]) {
+  const invested = rows.reduce((s, r) => s + r.invested, 0);
+  const value = rows.reduce((s, r) => s + r.value, 0);
+  const withDay = rows.filter((r) => r.dayChange != null);
+  const dayChange = withDay.length ? withDay.reduce((s, r) => s + r.dayChange!, 0) : null;
+  // Today's % is relative to the holdings that have a day change (stocks), not funds too.
+  const prevValue = dayChange != null ? withDay.reduce((s, r) => s + r.value, 0) - dayChange : null;
+  return {
+    invested,
+    value,
+    pnl: value - invested,
+    pnlPct: invested > 0 ? ((value - invested) / invested) * 100 : null,
+    dayChange,
+    dayChangePct: dayChange != null && prevValue ? (dayChange / prevValue) * 100 : null,
+    liveCount: rows.filter((r) => r.source === 'live').length,
+    count: rows.length,
+  };
 }
 
 /** Every sheet's rows: .csv as one sheet, .xlsx via read-excel-file (loaded on demand). */
