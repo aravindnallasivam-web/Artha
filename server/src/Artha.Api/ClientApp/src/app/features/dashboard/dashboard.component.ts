@@ -5,6 +5,7 @@ import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone'
 import { SessionService } from '../../core/auth/session.service';
 import { cardOwed, daysUntil, dueLabel, nextDueDate } from '../../core/models/card-cycle';
 import { AccountsStore } from '../accounts/accounts.store';
+import { InvestmentsStore } from '../investments/investments.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { LoansStore } from '../loans/loans.store';
@@ -125,6 +126,36 @@ interface CategorySlice {
           </nav>
 
           <!-- Pending SMS expenses -->
+          @if (netWorth(); as nw) {
+            <a class="card networth" routerLink="/accounts">
+              <div class="card-head">
+                <h2>Net worth</h2>
+                <span class="more">Accounts <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon></span>
+              </div>
+              <p class="nw-value num" [class.nw-neg]="nw.total < 0">
+                {{ nw.total < 0 ? '−' : '' }}{{ abs(nw.total) | currency: currency() : 'symbol' : '1.0-0' }}
+              </p>
+              @if (nw.assets > 0 && nw.liabilities > 0) {
+                <div class="nw-bar" aria-hidden="true">
+                  <span class="nw-bar-own" [style.flex]="nw.assets"></span>
+                  <span class="nw-bar-owe" [style.flex]="nw.liabilities"></span>
+                </div>
+              }
+              <div class="nw-parts">
+                @for (p of nw.parts; track p.label) {
+                  <span class="nw-part">
+                    <span class="nw-dot" [class.nw-dot--owe]="p.amount < 0"></span>
+                    {{ p.label }}
+                    <b class="num">{{ p.amount < 0 ? '−' : '' }}{{ abs(p.amount) | currency: currency() : 'symbol' : '1.0-0' }}</b>
+                  </span>
+                }
+              </div>
+              @if (nw.excluded) {
+                <p class="nw-note">{{ nw.excluded }}</p>
+              }
+            </a>
+          }
+
           @if (sms.isSupported() && sms.pendingCount() > 0) {
             <button type="button" class="pending" (click)="reviewPending()">
               <span class="pending-badge">{{ sms.pendingCount() }}</span>
@@ -361,6 +392,20 @@ interface CategorySlice {
     .card-due-badge { background: var(--artha-negative); }
     .card-due-badge ion-icon { font-size: 15px; color: #fff; }
 
+    /* Net worth */
+    .networth { display: flex; flex-direction: column; gap: 10px; }
+    .nw-value { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; color: var(--artha-text); }
+    .nw-neg { color: var(--artha-negative); }
+    .nw-bar { display: flex; gap: 3px; height: 8px; border-radius: 999px; overflow: hidden; }
+    .nw-bar-own { background: var(--artha-positive); }
+    .nw-bar-owe { background: var(--artha-negative); }
+    .nw-parts { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12.5px; color: var(--artha-text-muted); }
+    .nw-part { display: inline-flex; align-items: center; gap: 6px; }
+    .nw-part b { color: var(--artha-text); font-weight: 700; }
+    .nw-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--artha-positive); }
+    .nw-dot--owe { background: var(--artha-negative); }
+    .nw-note { margin: 0; font-size: 11.5px; color: var(--artha-text-subtle); }
+
     /* Cards */
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
     .card {
@@ -434,6 +479,49 @@ export class DashboardComponent implements OnInit {
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
   private readonly accountsStore = inject(AccountsStore);
+  private readonly investmentsStore = inject(InvestmentsStore);
+
+  /**
+   * Net worth = bank/cash/other balances + investments − card dues − loans,
+   * counting only amounts in the app currency. Null until there's something to show.
+   */
+  protected readonly netWorth = computed(() => {
+    const cur = this.currency();
+    const accounts = this.accountsStore.active();
+    const same = accounts.filter((a) => a.currency === cur);
+    const bank = same.filter((a) => a.type !== 'credit_card').reduce((n, a) => n + a.openingBalance, 0);
+    const cards = same.filter((a) => a.type === 'credit_card').reduce((n, a) => n + cardOwed(a), 0);
+    const invRows = this.investmentsStore.rows();
+    // Indian stock and fund prices are in rupees.
+    const investments = cur === 'INR' ? this.investmentsStore.totals().value : 0;
+    const loans = this.loansStore.active().length ? this.loansStore.totalOutstanding() : 0;
+    if (accounts.length === 0 && invRows.length === 0 && loans === 0) return null;
+
+    const parts = [
+      { label: 'Bank & cash', amount: bank },
+      { label: 'Investments', amount: investments },
+      { label: 'Credit cards', amount: -cards },
+      { label: 'Loans', amount: -loans },
+    ].filter((p) => Math.round(p.amount) !== 0);
+    const assets = Math.max(0, bank) + investments;
+    const liabilities = cards + loans + Math.max(0, -bank);
+    const otherCurrency = accounts.length - same.length;
+    const notes = [
+      otherCurrency ? `${otherCurrency} ${otherCurrency === 1 ? 'account' : 'accounts'} in another currency` : '',
+      cur !== 'INR' && invRows.length ? 'investments (priced in INR)' : '',
+    ].filter(Boolean);
+    return {
+      total: bank + investments - cards - loans,
+      assets,
+      liabilities,
+      parts,
+      excluded: notes.length ? `Not included: ${notes.join(', ')}.` : '',
+    };
+  });
+
+  protected abs(n: number): number {
+    return Math.abs(n);
+  }
 
   /** Credit cards whose bill is due within the next 5 days, soonest first. */
   protected readonly cardBillsDue = computed(() =>
@@ -554,6 +642,16 @@ export class DashboardComponent implements OnInit {
     void this.plannedStore.load();
     void this.loansStore.load();
     void this.accountsStore.load();
+    // Investments feed the net worth card; refresh prices if they're over an hour old.
+    void this.investmentsStore
+      .load()
+      .then(() => {
+        const at = this.investmentsStore.pricesAt();
+        if (this.investmentsStore.rows().length && (!at || Date.now() - Date.parse(at) > 3_600_000)) {
+          void this.investmentsStore.refreshPrices();
+        }
+      })
+      .catch(() => undefined);
     if (!this.settingsStore.settings()) {
       void this.settingsStore.load();
     }
