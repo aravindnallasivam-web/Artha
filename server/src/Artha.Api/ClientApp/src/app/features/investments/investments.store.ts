@@ -153,6 +153,22 @@ export class InvestmentsStore {
     };
   }
 
+  /** Point a holding at a different symbol / fund scheme (when the automatic match was wrong). */
+  async setSymbol(id: string, symbol: string): Promise<void> {
+    const items = this._snapshot().items.map((h) => (h.id === id ? { ...h, symbol } : h));
+    await this.save({ ...this._snapshot(), items });
+    const q = symbol.startsWith('mf:') ? await this.market.fundQuote(symbol) : await this.market.quote(symbol);
+    if (q) {
+      const quotes = { ...this._quotes(), [symbol]: q };
+      this._quotes.set(quotes);
+      try {
+        localStorage.setItem(QUOTES_KEY, JSON.stringify(quotes));
+      } catch {
+        // Cache only.
+      }
+    }
+  }
+
   async clear(): Promise<void> {
     await this.save({ items: [], importedAt: null, source: null });
   }

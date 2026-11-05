@@ -1,5 +1,6 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { InvestmentsStore } from './investments.store';
@@ -7,7 +8,7 @@ import { InvestmentsStore } from './investments.store';
 @Component({
   selector: 'artha-investments',
   standalone: true,
-  imports: [CurrencyPipe, DecimalPipe, IonContent, IonIcon, IonSpinner],
+  imports: [CurrencyPipe, DecimalPipe, RouterLink, IonContent, IonIcon, IonSpinner],
   template: `
     <ion-content>
       <div class="wrap">
@@ -86,7 +87,7 @@ import { InvestmentsStore } from './investments.store';
             </div>
             <div class="list">
               @for (r of section.rows; track r.holding.id) {
-                <article class="row">
+                <a class="row" [routerLink]="['/investments', r.holding.id]">
                   <div class="row-main">
                     <div class="row-name">{{ r.holding.name }}</div>
                     <div class="row-sub num">
@@ -114,7 +115,7 @@ import { InvestmentsStore } from './investments.store';
                       @if (r.source === 'none') { <span class="tag">no price</span> }
                     </div>
                   </div>
-                </article>
+                </a>
               }
             </div>
           }
@@ -186,7 +187,9 @@ import { InvestmentsStore } from './investments.store';
     .row {
       display: flex; justify-content: space-between; gap: 12px;
       padding: 14px; border-radius: 20px; background: var(--artha-surface);
+      text-decoration: none; color: inherit; cursor: pointer;
     }
+    .row:active { transform: scale(0.99); }
     .row-main { min-width: 0; }
     .row-name { font-size: 14.5px; font-weight: 700; color: var(--artha-text); }
     .row-sub { margin-top: 3px; font-size: 12px; color: var(--artha-text-subtle); }

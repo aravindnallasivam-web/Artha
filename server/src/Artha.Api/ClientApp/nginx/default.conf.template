@@ -36,8 +36,8 @@ server {
         add_header Cache-Control "no-store";
     }
 
-    # Mutual fund NAVs: only mfapi.in's scheme search and latest-NAV endpoints.
-    location ~ ^/mfapi/(mf/search|mf/[0-9]+/latest)$ {
+    # Mutual fund NAVs: only mfapi.in's scheme search, latest NAV and NAV history.
+    location ~ ^/mfapi/(mf/search|mf/[0-9]+/latest|mf/[0-9]+)$ {
         limit_except GET { deny all; }
         proxy_pass https://api.mfapi.in/$1$is_args$args;
         proxy_ssl_server_name on;

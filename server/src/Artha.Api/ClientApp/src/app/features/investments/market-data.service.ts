@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Quote } from '../../core/models/investment.model';
+import { PricePoint } from './price-history';
 import { environment } from '../../../environments/environment';
 
 interface SearchResponse {
@@ -24,9 +25,57 @@ const fundWords = (name: string) =>
 
 interface ChartResponse {
   chart?: {
-    result?: { meta?: { regularMarketPrice?: number; chartPreviousClose?: number; previousClose?: number } }[];
+    result?: {
+      meta?: {
+        regularMarketPrice?: number;
+        chartPreviousClose?: number;
+        previousClose?: number;
+        exchangeName?: string;
+        longName?: string;
+        currency?: string;
+      };
+      timestamp?: number[];
+      indicators?: { quote?: { close?: (number | null)[] }[] };
+    }[];
   };
 }
+
+interface FundDetailResponse {
+  meta?: {
+    fund_house?: string;
+    scheme_type?: string;
+    scheme_category?: string;
+    scheme_code?: number | string;
+    scheme_name?: string;
+    isin_growth?: string | null;
+    isin_div_reinvestment?: string | null;
+  };
+  data?: { date?: string; nav?: string }[];
+}
+
+export interface FundDetails {
+  code: string;
+  name: string;
+  fundHouse: string | null;
+  category: string | null;
+  type: string | null;
+  isin: string | null;
+  /** Daily NAVs, oldest first. */
+  history: PricePoint[];
+}
+
+export interface StockDetails {
+  exchange: string | null;
+  name: string | null;
+  /** Daily closes for up to 5 years, oldest first. */
+  history: PricePoint[];
+}
+
+/** dd-mm-yyyy (mfapi) to yyyy-mm-dd. */
+const fromDmy = (dmy: string | undefined) => {
+  const [d, m, y] = (dmy ?? '').split('-');
+  return y && m && d ? `${y}-${m}-${d}` : null;
+};
 
 /**
  * Indian stock prices from Yahoo Finance (free, no key, ~15 min delayed).
@@ -82,6 +131,60 @@ export class MarketDataService {
       asOf: yyyy && mm && dd ? `${yyyy}-${mm}-${dd}` : null,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  /** Fund schemes whose name matches `query`, for picking the right one by hand. */
+  async searchFunds(query: string): Promise<{ code: string; name: string }[]> {
+    const q = query.trim();
+    if (q.length < 3) return [];
+    const found = (await this.getFrom(this.fundBase, `/mf/search?q=${encodeURIComponent(q)}`)) as FundSearchResult[] | null;
+    return (Array.isArray(found) ? found : [])
+      .filter((c) => c.schemeCode && c.schemeName)
+      .slice(0, 40)
+      .map((c) => ({ code: String(c.schemeCode), name: c.schemeName! }));
+  }
+
+  /** Scheme details and full daily NAV history for an "mf:<code>" symbol. */
+  async fundDetails(symbol: string): Promise<FundDetails | null> {
+    const code = symbol.replace(/^mf:/, '');
+    const data = (await this.getFrom(this.fundBase, `/mf/${encodeURIComponent(code)}`)) as FundDetailResponse | null;
+    if (!data?.meta) return null;
+    const history: PricePoint[] = [];
+    for (const row of data.data ?? []) {
+      const date = fromDmy(row.date);
+      const value = Number(row.nav);
+      if (date && Number.isFinite(value) && value > 0) history.push({ date, value });
+    }
+    history.sort((a, b) => a.date.localeCompare(b.date));
+    const m = data.meta;
+    return {
+      code,
+      name: m.scheme_name ?? '',
+      fundHouse: m.fund_house ?? null,
+      category: m.scheme_category ?? null,
+      type: m.scheme_type ?? null,
+      isin: m.isin_growth || m.isin_div_reinvestment || null,
+      history,
+    };
+  }
+
+  /** Up to 5 years of daily closes for a stock symbol. */
+  async stockDetails(symbol: string): Promise<StockDetails | null> {
+    const data = (await this.get(
+      `/v8/finance/chart/${encodeURIComponent(symbol)}?range=5y&interval=1d`,
+    )) as ChartResponse | null;
+    const result = data?.chart?.result?.[0];
+    if (!result) return null;
+    const closes = result.indicators?.quote?.[0]?.close ?? [];
+    const history: PricePoint[] = [];
+    (result.timestamp ?? []).forEach((ts, i) => {
+      const value = closes[i];
+      if (value == null || !Number.isFinite(value)) return;
+      const d = new Date(ts * 1000);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      history.push({ date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, value });
+    });
+    return { exchange: result.meta?.exchangeName ?? null, name: result.meta?.longName ?? null, history };
   }
 
   /** NSE symbol (e.g. "RELIANCE.NS") for an ISIN or company name, BSE if not on NSE. */
