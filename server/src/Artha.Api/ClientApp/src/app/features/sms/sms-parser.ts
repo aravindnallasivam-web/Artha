@@ -53,7 +53,7 @@ const MERCHANT_CARD_RE = /\bon\s+\d{1,2}[-/ ][A-Za-z]{3,}[-/ ]\d{2,4}\s+(?:at|on
 // Merchant after a connective keyword.
 const MERCHANT_RE = /(?:\bat\s+|\bto\s+|\bvpa\s+|\binfo[:\-]\s*|\btowards\s+|\bfor\s+)([A-Za-z0-9][A-Za-z0-9 ._@&'\-*]{1,39})/i;
 // Messages we never want to treat as a transaction.
-const NOISE_RE = /\b(otp|one[\s-]?time\s?password|do not share|verification code|will be debited|has been blocked|requested|e-?mandate|emi due|payment due|bill of|statement|is due|reward points|offer)\b/i;
+const NOISE_RE = /\b(otp|one[\s-]?time\s?password|do not share|verification code|will be (?:debited|deducted|charged)|has been blocked|requested|e-?mandate|emi due|payment due|bill of|statement|is due|reward points|offer)\b/i;
 
 const CATEGORY_KEYWORDS: { test: RegExp; category: string }[] = [
   { test: /swiggy|zomato|restaurant|cafe|coffee|pizza|biryani|mcdonald|kfc|domino|food|eatery|bakery|hotel\b/i, category: 'Food' },

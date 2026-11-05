@@ -58,7 +58,9 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     private static final Pattern AMOUNT = Pattern.compile("(?i)(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)");
     private static final Pattern DEBIT = Pattern.compile("(?i)\\b(debited|spent|withdrawn|withdrawal|purchase|paid|payment|deducted|charged|debit|sent)\\b");
     private static final Pattern CREDIT = Pattern.compile("(?i)\\b(credited|received|refund|reversal|deposited|salary|cashback)\\b");
-    private static final Pattern NOISE = Pattern.compile("(?i)\\b(otp|one[\\s-]?time|do not share|verification code|is due|payment due|reward|offer)\\b");
+    // Keep in step with NOISE_RE in sms-parser.ts, or a notice the app would
+    // ignore (e.g. an e-mandate pre-debit alert) still pops the lock-screen prompt.
+    private static final Pattern NOISE = Pattern.compile("(?i)\\b(otp|one[\\s-]?time|do not share|verification code|will be (?:debited|deducted|charged)|has been blocked|requested|e-?mandate|emi due|payment due|bill of|statement|is due|reward|offer)\\b");
 
     @Override
     public void onReceive(Context context, Intent intent) {
