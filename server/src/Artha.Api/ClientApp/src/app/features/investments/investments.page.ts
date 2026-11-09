@@ -3,6 +3,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
+import { HoldingKind } from '../../core/models/investment.model';
 import { HoldingRow, InvestmentsStore, summarize } from './investments.store';
 
 const COMBINE_KEY = 'artha.investments.combine';
@@ -160,7 +161,13 @@ function guessPlatform(fileName: string, options: string[]): string | null {
 
           @for (section of sections(); track section.title) {
             <div class="section-head">
-              <span>{{ section.title }}</span>
+              <span class="section-title">
+                {{ section.title }}
+                <button type="button" class="section-remove" (click)="removeKind(section.kind)"
+                  [attr.aria-label]="'Remove ' + (platformFilter() ? platformFilter() + ' ' : 'all ') + section.title.toLowerCase()">
+                  Remove
+                </button>
+              </span>
               <span class="num" [class.up]="section.pnl >= 0" [class.down]="section.pnl < 0">
                 {{ section.value | currency: currency() : 'symbol' : '1.0-0' }} · {{ sign(section.pnl) }}{{ abs(section.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
               </span>
@@ -333,6 +340,11 @@ function guessPlatform(fileName: string, options: string[]): string | null {
       margin: 6px 4px -4px; font-size: 13px; font-weight: 800; color: var(--artha-text);
     }
     .section-head .num { font-size: 12.5px; font-weight: 700; }
+    .section-title { display: inline-flex; align-items: baseline; gap: 8px; }
+    .section-remove {
+      border: 0; background: none; padding: 2px 0; cursor: pointer; font: inherit;
+      font-size: 12px; font-weight: 700; color: var(--artha-negative);
+    }
     .section-head .up { color: var(--artha-positive); }
     .section-head .down { color: var(--artha-negative); }
     .list { display: flex; flex-direction: column; gap: 10px; }
@@ -442,8 +454,8 @@ export class InvestmentsPage implements OnInit {
 
   protected readonly sections = computed(() =>
     [
-      { title: 'Stocks', rows: this.stockRows() },
-      { title: 'Mutual funds', rows: this.fundRows() },
+      { title: 'Stocks', kind: 'stock' as HoldingKind, rows: this.stockRows() },
+      { title: 'Mutual funds', kind: 'mf' as HoldingKind, rows: this.fundRows() },
     ]
       .filter((s) => s.rows.length > 0)
       .map((s) => {
@@ -564,6 +576,31 @@ export class InvestmentsPage implements OnInit {
 
   protected async refresh(): Promise<void> {
     await this.store.refreshPrices();
+  }
+
+  /** Remove every stock or every fund (only the selected platform's when filtered), e.g. before a fresh import. */
+  protected async removeKind(kind: HoldingKind): Promise<void> {
+    const platform = this.platformFilter() || undefined;
+    const what = kind === 'mf' ? 'mutual funds' : 'stocks';
+    const count = (kind === 'mf' ? this.fundRows() : this.stockRows()).length;
+    const alert = await this.alertCtrl.create({
+      header: platform ? `Remove ${platform} ${what}?` : `Remove all ${what}?`,
+      message:
+        `This deletes ${count} ${count === 1 ? what.replace(/s$/, '') : what}` +
+        (platform ? ` imported from ${platform}` : ' from every platform') +
+        ` in Artha. ${kind === 'mf' ? 'Your stocks' : 'Your mutual funds'} stay. ` +
+        'Then tap Import to add a fresh report. Your broker account is not affected.',
+      buttons: [{ text: 'Cancel', role: 'cancel' }, { text: 'Remove', role: 'destructive' }],
+    });
+    await alert.present();
+    if ((await alert.onDidDismiss()).role !== 'destructive') return;
+    try {
+      const removed = await this.store.removeKind(kind, platform);
+      if (platform && !this.store.platforms().includes(platform)) this.platformFilter.set('');
+      await this.notifier.notifyInfo(`Removed ${removed} ${removed === 1 ? what.replace(/s$/, '') : what}. Tap Import to add a fresh report.`);
+    } catch {
+      await this.notifier.notifyError(`Could not remove the ${what}.`);
+    }
   }
 
   protected async clearAll(): Promise<void> {

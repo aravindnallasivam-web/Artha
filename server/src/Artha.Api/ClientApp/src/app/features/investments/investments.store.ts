@@ -166,6 +166,14 @@ export class InvestmentsStore {
     await this.save({ ...this._snapshot(), items });
   }
 
+  /** Remove every stock or every fund, optionally only those from one platform. */
+  async removeKind(kind: HoldingKind, platform?: string): Promise<number> {
+    const before = this._snapshot().items;
+    const items = before.filter((h) => !((h.kind ?? 'stock') === kind && (!platform || h.platform === platform)));
+    await this.save({ ...this._snapshot(), items });
+    return before.length - items.length;
+  }
+
   async clear(): Promise<void> {
     await this.save({ items: [], importedAt: null, source: null });
   }
