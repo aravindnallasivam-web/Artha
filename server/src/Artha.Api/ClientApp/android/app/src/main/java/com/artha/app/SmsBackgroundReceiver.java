@@ -1,5 +1,14 @@
 package com.artha.app;
 
+import android.app.KeyguardManager;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -104,8 +113,13 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             return;
         }
 
+        // Keep the receiver alive while the prompt is launched (see launchPrompt).
+        pendingResult = goAsync();
         postNotification(context, amount.group(1), address, body);
     }
+
+    /** Set in onReceive so launchPrompt can finish the broadcast once it's done. */
+    private PendingResult pendingResult;
 
     private boolean isIgnored(Context ctx, String sender) {
         if (sender == null || sender.isEmpty()) {
@@ -238,6 +252,10 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         NotificationManager nm =
             (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
+            if (pendingResult != null) {
+                pendingResult.finish();
+                pendingResult = null;
+            }
             return;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -366,16 +384,72 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
 
         nm.notify(NOTIF_ID, builder.build());
 
-        // Also launch the prompt directly so it pops over whatever is on screen.
-        // setFullScreenIntent only takes over when the screen is off / locked;
-        // on an unlocked phone Android shows it as a heads-up banner. A direct
-        // startActivity() from a background receiver is blocked by Android's
-        // Background Activity Launch rules (Android 10+) unless the app may
-        // "Display over other apps" (SYSTEM_ALERT_WINDOW) — the Settings screen
-        // asks for that. Without it the call is silently dropped and the
-        // notification above is what the user sees.
+        // Also launch the prompt directly so it pops over whatever is on screen
+        // (the full-screen intent alone only takes over a locked / off screen).
+        PendingResult pending = pendingResult;
+        pendingResult = null;
+        launchPrompt(context.getApplicationContext(), prompt, pending);
+    }
+
+    /**
+     * Open the prompt Activity from the background. Android blocks background
+     * activity starts; on Android 15+ "Display over other apps" only exempts an
+     * app while one of its overlay windows is actually visible. So when the
+     * phone is unlocked and the permission is granted, show an invisible 1 px
+     * overlay, start the prompt once it's on screen, then remove it. Locked or
+     * screen off: the notification's full-screen intent does the takeover.
+     */
+    static void launchPrompt(Context ctx, Intent prompt, PendingResult pending) {
+        KeyguardManager km = (KeyguardManager) ctx.getSystemService(Context.KEYGUARD_SERVICE);
+        PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+        boolean locked = km != null && km.isKeyguardLocked();
+        boolean screenOn = pm == null || pm.isInteractive();
+        boolean canOverlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+            || android.provider.Settings.canDrawOverlays(ctx);
+        WindowManager wm = (WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE);
+        if (locked || !screenOn || !canOverlay || wm == null) {
+            startQuietly(ctx, prompt);
+            if (pending != null) pending.finish();
+            return;
+        }
+
+        View anchor = new View(ctx);
+        anchor.setBackgroundColor(Color.argb(1, 0, 0, 0));
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+            1, 1,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
         try {
-            context.startActivity(prompt);
+            wm.addView(anchor, lp);
+        } catch (Exception e) {
+            startQuietly(ctx, prompt);
+            if (pending != null) pending.finish();
+            return;
+        }
+        Handler h = new Handler(Looper.getMainLooper());
+        // Give the overlay a moment to be drawn: the exemption counts only once it's visible.
+        h.postDelayed(() -> {
+            startQuietly(ctx, prompt);
+            h.postDelayed(() -> {
+                try {
+                    wm.removeView(anchor);
+                } catch (Exception ignored) {
+                    // Already gone.
+                }
+                if (pending != null) pending.finish();
+            }, 1500);
+        }, 400);
+    }
+
+    private static void startQuietly(Context ctx, Intent prompt) {
+        try {
+            ctx.startActivity(prompt);
         } catch (Exception ignored) {
             // Refused: the notification + its full-screen intent are the fallback.
         }
