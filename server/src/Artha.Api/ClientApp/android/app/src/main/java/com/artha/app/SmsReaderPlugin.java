@@ -302,6 +302,16 @@ public class SmsReaderPlugin extends Plugin {
         if (accounts != null) {
             editor.putString(SmsBackgroundReceiver.KEY_ACCOUNT_LIST, accounts.toString());
         }
+        // AI provider for the full-screen prompt: an object to store, null to clear.
+        // Absent (older web builds) leaves whatever is stored.
+        if (call.getData().has("ai")) {
+            JSObject ai = call.getObject("ai");
+            if (ai != null && ai.length() > 0) {
+                editor.putString(AiClient.KEY_AI_CONFIG, ai.toString());
+            } else {
+                editor.remove(AiClient.KEY_AI_CONFIG);
+            }
+        }
         editor
             .putString(SmsBackgroundReceiver.KEY_ACCOUNT_NAMES,
                 accountNames != null ? accountNames.toString() : "{}")

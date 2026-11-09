@@ -20,6 +20,9 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -74,6 +77,11 @@ public class SmsPromptActivity extends AppCompatActivity {
     private TextView accountLabel;
     private FlowLayout categoryChips;
     private FlowLayout accountChips;
+    private TextView aiStatus;
+    /** Bumped on every render so a late AI answer for a previous SMS is ignored. */
+    private int renderSeq;
+    /** The user tapped a chip: an AI answer arriving later won't override it. */
+    private boolean userPicked;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,6 +101,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         accountLabel = findViewById(R.id.prompt_account_label);
         categoryChips = findViewById(R.id.prompt_category_chips);
         accountChips = findViewById(R.id.prompt_account_chips);
+        aiStatus = findViewById(R.id.prompt_ai_status);
 
         TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
         secondaryBtn.setOnClickListener(v -> onDismiss());
@@ -164,6 +173,9 @@ public class SmsPromptActivity extends AppCompatActivity {
     private void render(String category, String account) {
         selectedCategory = category;
         selectedAccount = account;
+        renderSeq++;
+        userPicked = false;
+        aiStatus.setVisibility(View.GONE);
 
         amountView.setText(TextUtils.isEmpty(amountDisplay) ? "₹0" : amountDisplay);
         if (!TextUtils.isEmpty(merchant)) {
@@ -209,6 +221,9 @@ public class SmsPromptActivity extends AppCompatActivity {
             openLink.setVisibility(View.VISIBLE);
             if (!canAdd) {
                 showPickers(needCategory ? categories : null, needAccount ? accounts : null);
+                if (AiClient.isConfigured(this)) {
+                    askAi(names(categories, true), names(accounts, false), needCategory, needAccount);
+                }
             }
             refreshPrimary();
         } else {
@@ -291,6 +306,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         }
         styleChip(chip, false);
         chip.setOnClickListener(v -> {
+            userPicked = true;
             if (isCategory) {
                 selectedCategory = name;
                 markSelected(categoryChips, name);
@@ -301,6 +317,92 @@ public class SmsPromptActivity extends AppCompatActivity {
             refreshPrimary();
         });
         return chip;
+    }
+
+    /**
+     * Ask the AI provider for the missing category / account on a worker
+     * thread, then pre-select its picks (moved to the front of the chips).
+     * The user can still pick another chip; nothing is added until they tap Add.
+     */
+    private void askAi(List<String> categoryNames, List<String> accountNames,
+                       boolean needCategory, boolean needAccount) {
+        final int seq = renderSeq;
+        final String smsBody = body;
+        final String smsAddress = address != null ? address : "";
+        final double amount = parseAmount(amountDisplay);
+        final String isoDate = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(new java.util.Date(date));
+        aiStatus.setText("\u2728 Asking AI\u2026");
+        aiStatus.setVisibility(View.VISIBLE);
+        new Thread(() -> {
+            AiClient.Suggestion s = AiClient.classify(getApplicationContext(), smsAddress, smsBody, amount,
+                isoDate, categoryNames, accountNames, 8000);
+            runOnUiThread(() -> applyAi(seq, s, needCategory, needAccount));
+        }, "artha-ai").start();
+    }
+
+    private void applyAi(int seq, AiClient.Suggestion s, boolean needCategory, boolean needAccount) {
+        if (isFinishing() || isDestroyed() || seq != renderSeq) {
+            return;
+        }
+        boolean applied = false;
+        if (s != null && !userPicked) {
+            if (needCategory && s.category != null && selectedCategory == null) {
+                selectedCategory = s.category;
+                moveToFront(categoryChips, s.category);
+                markSelected(categoryChips, s.category);
+                applied = true;
+            }
+            if (needAccount && s.account != null && selectedAccount == null) {
+                selectedAccount = s.account;
+                moveToFront(accountChips, s.account);
+                markSelected(accountChips, s.account);
+                applied = true;
+            }
+            if (applied) {
+                refreshPrimary();
+            }
+        }
+        if (applied) {
+            aiStatus.setText("\u2728 AI picked \u00b7 tap another to change");
+        } else if (userPicked) {
+            aiStatus.setVisibility(View.GONE);
+        } else {
+            aiStatus.setText("AI wasn't sure \u00b7 pick one below");
+        }
+    }
+
+    private static void moveToFront(FlowLayout group, String name) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (name.equals(child.getTag())) {
+                group.removeViewAt(i);
+                group.addView(child, 0);
+                return;
+            }
+        }
+    }
+
+    /** Names from the synced lists (categories are {name, color} objects). */
+    private static List<String> names(JSONArray list, boolean objects) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < list.length(); i++) {
+            String name = objects
+                ? (list.optJSONObject(i) != null ? list.optJSONObject(i).optString("name", "") : "")
+                : list.optString(i, "");
+            if (!name.isEmpty()) out.add(name);
+        }
+        return out;
+    }
+
+    private static double parseAmount(String display) {
+        if (display == null) return 0;
+        String digits = display.replaceAll("[^0-9.]", "");
+        try {
+            return digits.isEmpty() ? 0 : Double.parseDouble(digits);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private void markSelected(FlowLayout group, String name) {

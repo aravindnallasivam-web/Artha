@@ -342,6 +342,7 @@ export class AiProviderModal {
 
   protected save(): void {
     this.ai.save(this.draft());
+    void this.sms.syncNativeAi();
     void this.modalCtrl.dismiss(null, 'saved');
   }
 

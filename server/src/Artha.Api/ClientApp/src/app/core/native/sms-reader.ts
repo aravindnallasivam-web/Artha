@@ -77,6 +77,11 @@ export interface SmsReaderPlugin {
     categories?: { name: string; color: string | null }[];
     /** Every active account name (most used first), for the prompt's account picker. */
     accounts?: string[];
+    /**
+     * AI provider for the full-screen prompt's suggestions, kept on this device
+     * only; null turns them off.
+     */
+    ai?: { kind: string; apiKey: string; model: string; baseUrl: string } | null;
   }): Promise<void>;
   /**
    * If the app was opened by tapping a background "expense detected"

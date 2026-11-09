@@ -256,9 +256,17 @@ export class SmsCaptureService {
       .sort(byUse(accUses))
       .map((a) => a.name);
 
-    await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts }).catch(
+    // The full-screen prompt asks the same AI provider when it can't tell the
+    // category / account itself; the config stays on this device.
+    const ai = this.ai.isEnabled() ? { ...this.ai.config() } : null;
+    await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai }).catch(
       () => undefined,
     );
+  }
+
+  /** Push the current AI provider (and lists) to the full-screen prompt, e.g. after it changes. */
+  async syncNativeAi(): Promise<void> {
+    await this.syncNotificationMappings();
   }
 
   /** SMS capture only exists on Android. */
