@@ -648,9 +648,15 @@ export class SmsCaptureService {
       return -1;
     }
 
-    const { messages } = await SmsReader.readInbox({ since: range.fromMs, limit: 1000 });
+    // Bounded at both ends so an older range isn't cut short by newer SMS.
+    const { messages } = await SmsReader.readInbox({ since: range.fromMs - 1, until: range.toMs, limit: SCAN_LIMIT });
+    if (messages.length >= SCAN_LIMIT) {
+      await this.notifier.notifyInfo(
+        `That range has over ${SCAN_LIMIT.toLocaleString()} messages; only the newest ${SCAN_LIMIT.toLocaleString()} were scanned. Pick a shorter range for the rest.`,
+      );
+    }
     const parsed = messages
-      .filter((m) => m.date <= range.toMs && !this.isIgnored(m.address))
+      .filter((m) => m.date >= range.fromMs && m.date <= range.toMs && !this.isIgnored(m.address))
       .map((m) => parseExpenseSms(m))
       .filter((p): p is ParsedExpense => p !== null);
     if (parsed.length === 0) {
@@ -1790,6 +1796,9 @@ export interface AiMessageTest {
   /** False when the provider answered in an unexpected format. */
   answered: boolean;
 }
+
+/** Most inbox messages one scan reads (newest first within the range). */
+const SCAN_LIMIT = 5000;
 
 const SAMPLE_KEYS_KEY = 'artha.sms.sampleKeys';
 

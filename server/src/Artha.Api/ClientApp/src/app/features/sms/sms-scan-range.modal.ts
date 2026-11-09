@@ -7,12 +7,23 @@ import {
   IonHeader,
   IonInput,
   IonItem,
-  IonLabel,
   IonNote,
   IonTitle,
   IonToolbar,
   ModalController,
 } from '@ionic/angular/standalone';
+
+function daysAgo(n: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d;
+}
+
+/** First day of the month `offset` months from this one (0 = this month). */
+function monthStart(offset: number): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + offset, 1);
+}
 
 function isoDate(d: Date): string {
   const y = d.getFullYear();
@@ -36,8 +47,7 @@ function isoDate(d: Date): string {
     IonHeader,
     IonInput,
     IonItem,
-    IonLabel,
-    IonNote,
+      IonNote,
     IonTitle,
     IonToolbar,
   ],
@@ -58,12 +68,12 @@ function isoDate(d: Date): string {
       <p class="lead">Look for bank expense messages in this period.</p>
 
       <div class="presets">
-        @for (p of presets; track p.days) {
+        @for (p of presets; track p.key) {
           <button
             type="button"
             class="preset"
-            [class.active]="activeDays() === p.days"
-            (click)="applyPreset(p.days)"
+            [class.active]="active() === p.key"
+            (click)="applyPreset(p.key)"
           >{{ p.label }}</button>
         }
       </div>
@@ -75,7 +85,7 @@ function isoDate(d: Date): string {
           type="date"
           [max]="today"
           [(ngModel)]="from"
-          (ngModelChange)="activeDays.set(0)"
+          (ngModelChange)="active.set('')"
         ></ion-input>
       </ion-item>
       <ion-item>
@@ -85,12 +95,14 @@ function isoDate(d: Date): string {
           type="date"
           [max]="today"
           [(ngModel)]="to"
-          (ngModelChange)="activeDays.set(0)"
+          (ngModelChange)="active.set('')"
         ></ion-input>
       </ion-item>
 
       @if (!isRangeValid()) {
         <ion-note color="danger" class="warn">“From” must be on or before “To”.</ion-note>
+      } @else {
+        <p class="summary">{{ summary() }}</p>
       }
     </ion-content>
   `,
@@ -107,33 +119,49 @@ function isoDate(d: Date): string {
       background: var(--artha-accent); border-color: var(--artha-accent); color: #fff;
     }
     .warn { display: block; margin-top: 10px; font-size: 13px; }
+    .summary { margin: 12px 4px 0; font-size: 13px; font-weight: 600; color: var(--artha-text-muted); }
   `],
 })
 export class SmsScanRangeModal implements OnInit {
   private readonly modalCtrl = inject(ModalController);
 
   protected readonly today = isoDate(new Date());
-  protected readonly presets = [
-    { label: 'Last 7 days', days: 7 },
-    { label: 'Last 30 days', days: 30 },
-    { label: 'Last 90 days', days: 90 },
+  /** Quick ranges; each returns [from, to]. */
+  protected readonly presets: { key: string; label: string; range: () => [Date, Date] }[] = [
+    { key: '7d', label: 'Last 7 days', range: () => [daysAgo(7), new Date()] },
+    { key: '30d', label: 'Last 30 days', range: () => [daysAgo(30), new Date()] },
+    { key: 'month', label: 'This month', range: () => [monthStart(0), new Date()] },
+    { key: 'last-month', label: 'Last month', range: () => [monthStart(-1), new Date(monthStart(0).getTime() - 86_400_000)] },
+    { key: '90d', label: 'Last 90 days', range: () => [daysAgo(90), new Date()] },
+    { key: '6m', label: 'Last 6 months', range: () => [monthStart(-5), new Date()] },
+    { key: 'year', label: 'This year', range: () => [new Date(new Date().getFullYear(), 0, 1), new Date()] },
   ];
 
   protected from = '';
   protected to = '';
-  protected readonly activeDays = signal<number>(30);
+  protected readonly active = signal<string>('30d');
 
   ngOnInit(): void {
-    this.applyPreset(30);
+    this.applyPreset('30d');
   }
 
-  protected applyPreset(days: number): void {
-    const now = new Date();
-    const start = new Date();
-    start.setDate(now.getDate() - days);
+  protected applyPreset(key: string): void {
+    const preset = this.presets.find((p) => p.key === key);
+    if (!preset) return;
+    const [start, end] = preset.range();
     this.from = isoDate(start);
-    this.to = isoDate(now);
-    this.activeDays.set(days);
+    this.to = isoDate(end);
+    this.active.set(key);
+  }
+
+  /** "1 Oct – 31 Oct 2026 · 31 days" for the chosen range. */
+  protected summary(): string {
+    const a = new Date(`${this.from}T00:00:00`);
+    const b = new Date(`${this.to}T00:00:00`);
+    const days = Math.round((b.getTime() - a.getTime()) / 86_400_000) + 1;
+    const fmt = (d: Date, year: boolean) =>
+      d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(year ? { year: 'numeric' } : {}) });
+    return `${fmt(a, a.getFullYear() !== b.getFullYear())} – ${fmt(b, true)} · ${days} ${days === 1 ? 'day' : 'days'}`;
   }
 
   // Custom edits clear the active preset highlight and re-validate.

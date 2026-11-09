@@ -55,7 +55,8 @@ export interface SmsReaderPlugin {
   /** List active SIM cards. `permissionGranted` is false if READ_PHONE_STATE is missing. */
   getSimCards(): Promise<{ permissionGranted: boolean; sims: SimCard[] }>;
   /** Read recent inbox messages, newest first. `since` = epoch ms lower bound. */
-  readInbox(options: { since?: number; limit?: number }): Promise<{ messages: SmsMessage[] }>;
+  /** Newest first; `since` is exclusive, `until` inclusive (epoch ms). Older APKs ignore `until`. */
+  readInbox(options: { since?: number; until?: number; limit?: number }): Promise<{ messages: SmsMessage[] }>;
   /** Begin emitting `smsReceived` for each incoming message. */
   startWatch(): Promise<void>;
   stopWatch(): Promise<void>;

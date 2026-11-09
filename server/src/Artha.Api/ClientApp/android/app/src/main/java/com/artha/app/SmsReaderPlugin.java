@@ -150,7 +150,7 @@ public class SmsReaderPlugin extends Plugin {
         }
     }
 
-    /** Read recent inbox messages, optionally only those newer than `since` (epoch ms). */
+    /** Read inbox messages, newest first, optionally only those after `since` and up to `until` (epoch ms). */
     @PluginMethod
     public void readInbox(PluginCall call) {
         if (getPermissionState("sms") != PermissionState.GRANTED) {
@@ -166,8 +166,21 @@ public class SmsReaderPlugin extends Plugin {
         JSArray messages = new JSArray();
         Uri uri = Telephony.Sms.Inbox.CONTENT_URI;
         String[] projection = { Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE };
-        String selection = since > 0 ? Telephony.Sms.DATE + " > ?" : null;
-        String[] args = since > 0 ? new String[] { String.valueOf(since) } : null;
+        // Optional upper bound, so a past range isn't crowded out by newer messages.
+        Long untilArg = call.getLong("until");
+        long until = untilArg != null ? untilArg : 0L;
+        java.util.List<String> clauses = new java.util.ArrayList<>();
+        java.util.List<String> values = new java.util.ArrayList<>();
+        if (since > 0) {
+            clauses.add(Telephony.Sms.DATE + " > ?");
+            values.add(String.valueOf(since));
+        }
+        if (until > 0) {
+            clauses.add(Telephony.Sms.DATE + " <= ?");
+            values.add(String.valueOf(until));
+        }
+        String selection = clauses.isEmpty() ? null : android.text.TextUtils.join(" AND ", clauses);
+        String[] args = values.isEmpty() ? null : values.toArray(new String[0]);
         String sortOrder = Telephony.Sms.DATE + " DESC LIMIT " + limit;
 
         Cursor cursor = null;
