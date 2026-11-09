@@ -245,11 +245,15 @@ export class SmsCaptureService {
     const accUses = uses(this.accountMap());
     const byUse = <T extends { id: string; name: string }>(counts: Record<string, number>) =>
       (a: T, b: T) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0) || a.name.localeCompare(b.name);
-    const categories = this.categoriesStore
-      .items()
-      .filter((c) => !c.archived)
-      .sort(byUse(catUses))
-      .map((c) => ({ name: c.name, color: c.color }));
+    // A group's use counts its subcategories too, so busy groups come first.
+    const active = this.categoriesStore.items().filter((c) => !c.archived);
+    const groupUses: Record<string, number> = { ...catUses };
+    for (const c of active) {
+      if (c.parentId) groupUses[c.parentId] = (groupUses[c.parentId] ?? 0) + (catUses[c.id] ?? 0);
+    }
+    const categories = active
+      .sort(byUse(groupUses))
+      .map((c) => ({ id: c.id, name: c.name, color: c.color, parentId: c.parentId ?? null }));
     const accounts = this.accountsStore
       .items()
       .filter((a) => !a.archived)
@@ -550,8 +554,11 @@ export class SmsCaptureService {
 
       const accountId = this.accountIdByName(entry.account)
         ?? this.learnedAccountId(parsed);
-      const categoryId = this.categoryIdByName(entry.category)
-        ?? this.learnedCategoryId(parsed);
+      // Exact id from the prompt's picker first (same-named subcategories), then by name.
+      const byId = entry.categoryId
+        ? this.categoriesStore.items().find((c) => c.id === entry.categoryId && !c.archived)?.id
+        : undefined;
+      const categoryId = byId ?? this.categoryIdByName(entry.category) ?? this.learnedCategoryId(parsed);
       if (!accountId || !categoryId) {
         // Native shouldn't have let this through — the Approve button is only
         // offered when BOTH the sender and merchant mappings resolve. Fall

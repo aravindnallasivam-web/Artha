@@ -30,6 +30,8 @@ export interface PreApprovedEntry {
   amountDisplay: string;
   merchant: string;
   category: string;
+  /** Exact category id when picked on the full-screen prompt (absent from older builds). */
+  categoryId?: string;
   account: string;
   approvedAt: number;
 }
@@ -74,7 +76,7 @@ export interface SmsReaderPlugin {
     accountNames: Record<string, string>;
     categoryNames: Record<string, string>;
     /** Every active category (most used first), for the full-screen prompt's picker. */
-    categories?: { name: string; color: string | null }[];
+    categories?: { id: string; name: string; color: string | null; parentId: string | null }[];
     /** Every active account name (most used first), for the prompt's account picker. */
     accounts?: string[];
     /**

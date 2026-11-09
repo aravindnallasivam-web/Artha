@@ -176,6 +176,27 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
+            <!-- Subcategories of the tapped group (optional), shown under its chips. -->
+            <TextView
+                android:id="@+id/prompt_sub_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="10dp"
+                android:textColor="@color/prompt_text_muted"
+                android:textSize="12sp"
+                android:letterSpacing="0.08"
+                android:textAllCaps="true"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+
+            <com.artha.app.FlowLayout
+                android:id="@+id/prompt_sub_chips"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/prompt_account_label"
                 android:layout_width="wrap_content"

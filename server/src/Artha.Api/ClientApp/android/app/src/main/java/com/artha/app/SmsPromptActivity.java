@@ -78,6 +78,33 @@ public class SmsPromptActivity extends AppCompatActivity {
     private FlowLayout categoryChips;
     private FlowLayout accountChips;
     private TextView aiStatus;
+    private TextView subLabel;
+    private FlowLayout subChips;
+    /** Id of the picked category (a subcategory when one was chosen); null when known by name only. */
+    private String selectedCategoryId;
+    /** Categories synced from the app, by id; subcategories carry their parent's id. */
+    private final java.util.Map<String, Cat> catById = new java.util.LinkedHashMap<>();
+
+    private static final class Cat {
+        final String id;
+        final String name;
+        final String parentId;
+        final Integer color;
+        final List<Cat> children = new ArrayList<>();
+
+        Cat(String id, String name, String parentId, Integer color) {
+            this.id = id;
+            this.name = name;
+            this.parentId = parentId;
+            this.color = color;
+        }
+
+        /** "Transport › Fuel" for a subcategory, as the AI sees it. */
+        String path(java.util.Map<String, Cat> byId) {
+            Cat parent = parentId != null ? byId.get(parentId) : null;
+            return parent != null ? parent.name + " \u203a " + name : name;
+        }
+    }
     /** Bumped on every render so a late AI answer for a previous SMS is ignored. */
     private int renderSeq;
     /** The user tapped a chip: an AI answer arriving later won't override it. */
@@ -102,6 +129,8 @@ public class SmsPromptActivity extends AppCompatActivity {
         categoryChips = findViewById(R.id.prompt_category_chips);
         accountChips = findViewById(R.id.prompt_account_chips);
         aiStatus = findViewById(R.id.prompt_ai_status);
+        subLabel = findViewById(R.id.prompt_sub_label);
+        subChips = findViewById(R.id.prompt_sub_chips);
 
         TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
         secondaryBtn.setOnClickListener(v -> onDismiss());
@@ -172,6 +201,7 @@ public class SmsPromptActivity extends AppCompatActivity {
 
     private void render(String category, String account) {
         selectedCategory = category;
+        selectedCategoryId = null;
         selectedAccount = account;
         renderSeq++;
         userPicked = false;
@@ -188,6 +218,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         // Reset the pickers from the previous SMS.
         categoryChips.removeAllViews();
         accountChips.removeAllViews();
+        hideSubs();
         pickers.setVisibility(View.GONE);
         setPickerWeight(0);
         spacerBottom.setVisibility(View.VISIBLE);
@@ -222,7 +253,7 @@ public class SmsPromptActivity extends AppCompatActivity {
             if (!canAdd) {
                 showPickers(needCategory ? categories : null, needAccount ? accounts : null);
                 if (AiClient.isConfigured(this)) {
-                    askAi(names(categories, true), names(accounts, false), needCategory, needAccount);
+                    askAi(categoryPaths(), names(accounts, false), needCategory, needAccount);
                 }
             }
             refreshPrimary();
@@ -253,13 +284,14 @@ public class SmsPromptActivity extends AppCompatActivity {
         boolean showCategories = categories != null;
         categoryLabel.setVisibility(showCategories ? View.VISIBLE : View.GONE);
         categoryChips.setVisibility(showCategories ? View.VISIBLE : View.GONE);
+        catById.clear();
         if (showCategories) {
-            for (int i = 0; i < categories.length(); i++) {
-                JSONObject c = categories.optJSONObject(i);
-                if (c == null) continue;
-                String name = c.optString("name", "");
-                if (name.isEmpty()) continue;
-                categoryChips.addView(makeChip(name, parseColor(c.optString("color", "")), true));
+            loadCategories(categories);
+            // Top-level categories as chips; one with subcategories opens them when tapped.
+            for (Cat c : catById.values()) {
+                if (c.parentId == null) {
+                    categoryChips.addView(makeCategoryChip(c, false));
+                }
             }
         }
 
@@ -281,6 +313,101 @@ public class SmsPromptActivity extends AppCompatActivity {
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) pickers.getLayoutParams();
         lp.weight = weight;
         pickers.setLayoutParams(lp);
+    }
+
+    /** Synced categories (most used first). Older app builds send no ids: names stand in. */
+    private void loadCategories(JSONArray list) {
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject o = list.optJSONObject(i);
+            if (o == null) continue;
+            String name = o.optString("name", "");
+            if (name.isEmpty()) continue;
+            String id = o.optString("id", "");
+            String parentId = o.optString("parentId", "");
+            catById.put(id.isEmpty() ? name : id, new Cat(id.isEmpty() ? name : id, name,
+                parentId.isEmpty() || "null".equals(parentId) ? null : parentId, parseColor(o.optString("color", ""))));
+        }
+        // Link subcategories; one whose parent is missing (archived) is shown as top-level.
+        List<Cat> orphans = new ArrayList<>();
+        for (Cat c : catById.values()) {
+            if (c.parentId == null) continue;
+            Cat parent = catById.get(c.parentId);
+            if (parent != null && parent.parentId == null) {
+                parent.children.add(c);
+            } else {
+                orphans.add(c);
+            }
+        }
+        for (Cat o : orphans) {
+            catById.put(o.id, new Cat(o.id, o.name, null, o.color));
+        }
+    }
+
+    /** Every category as the AI sees it ("Transport › Fuel"), same order as catById. */
+    private List<String> categoryPaths() {
+        List<String> out = new ArrayList<>();
+        for (Cat c : catById.values()) {
+            out.add(c.path(catById));
+        }
+        return out;
+    }
+
+    private Cat catByPath(String path) {
+        if (path == null) return null;
+        for (Cat c : catById.values()) {
+            if (path.equals(c.path(catById))) return c;
+        }
+        return null;
+    }
+
+    private TextView makeCategoryChip(Cat c, boolean isSub) {
+        String label = !isSub && !c.children.isEmpty() ? c.name + "  \u25be" : c.name;
+        TextView chip = makeChip(label, c.color, true);
+        chip.setTag(c.id);
+        chip.setOnClickListener(v -> {
+            userPicked = true;
+            selectCategory(c);
+        });
+        return chip;
+    }
+
+    /** Pick a category; a group shows its subcategories, a subcategory keeps its group highlighted. */
+    private void selectCategory(Cat c) {
+        selectedCategoryId = c.id;
+        selectedCategory = c.name;
+        Cat parent = c.parentId != null ? catById.get(c.parentId) : null;
+        if (parent != null) {
+            markSelected(categoryChips, parent.id);
+            if (subChips.getTag() != parent) showSubs(parent);
+            markSelected(subChips, c.id);
+        } else {
+            markSelected(categoryChips, c.id);
+            if (c.children.isEmpty()) {
+                hideSubs();
+            } else {
+                showSubs(c);
+                markSelected(subChips, null);
+            }
+        }
+        refreshPrimary();
+    }
+
+    private void showSubs(Cat parent) {
+        subChips.removeAllViews();
+        subChips.setTag(parent);
+        for (Cat child : parent.children) {
+            subChips.addView(makeCategoryChip(child, true));
+        }
+        subLabel.setText(parent.name + " \u00b7 subcategory (optional)");
+        subLabel.setVisibility(View.VISIBLE);
+        subChips.setVisibility(View.VISIBLE);
+    }
+
+    private void hideSubs() {
+        subChips.removeAllViews();
+        subChips.setTag(null);
+        subLabel.setVisibility(View.GONE);
+        subChips.setVisibility(View.GONE);
     }
 
     private TextView makeChip(String name, Integer dotColor, boolean isCategory) {
@@ -347,10 +474,11 @@ public class SmsPromptActivity extends AppCompatActivity {
         }
         boolean applied = false;
         if (s != null && !userPicked) {
-            if (needCategory && s.category != null && selectedCategory == null) {
-                selectedCategory = s.category;
-                moveToFront(categoryChips, s.category);
-                markSelected(categoryChips, s.category);
+            Cat picked = needCategory && selectedCategory == null ? catByPath(s.category) : null;
+            if (picked != null) {
+                Cat top = picked.parentId != null ? catById.get(picked.parentId) : picked;
+                if (top != null) moveToFront(categoryChips, top.id);
+                selectCategory(picked);
                 applied = true;
             }
             if (needAccount && s.account != null && selectedAccount == null) {
@@ -409,7 +537,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
             if (child instanceof TextView) {
-                styleChip((TextView) child, name.equals(child.getTag()));
+                styleChip((TextView) child, name != null && name.equals(child.getTag()));
             }
         }
     }
@@ -449,7 +577,8 @@ public class SmsPromptActivity extends AppCompatActivity {
             Toast.makeText(this, "Test alert works — would add to " + selectedCategory
                 + ". Nothing was saved.", Toast.LENGTH_LONG).show();
         } else {
-            enqueueApproved(body, address, date, amountDisplay, merchant, selectedCategory, selectedAccount);
+            enqueueApproved(body, address, date, amountDisplay, merchant, selectedCategory, selectedAccount,
+                selectedCategoryId);
             Toast.makeText(this, R.string.prompt_added, Toast.LENGTH_SHORT).show();
         }
         advance();
@@ -544,7 +673,7 @@ public class SmsPromptActivity extends AppCompatActivity {
      */
     private void enqueueApproved(String body, String address, long date,
                                  String amountDisplay, String merchant,
-                                 String category, String account) {
+                                 String category, String account, String categoryId) {
         android.content.SharedPreferences prefs =
             getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE);
         String raw = prefs.getString(KEY_PRE_APPROVED, "[]");
@@ -562,6 +691,8 @@ public class SmsPromptActivity extends AppCompatActivity {
             entry.put("amountDisplay", amountDisplay != null ? amountDisplay : "");
             entry.put("merchant", merchant != null ? merchant : "");
             entry.put("category", category != null ? category : "");
+            // Exact id when picked here, so same-named subcategories can't be confused.
+            entry.put("categoryId", categoryId != null && catById.containsKey(categoryId) ? categoryId : "");
             entry.put("account", account != null ? account : "");
             entry.put("approvedAt", System.currentTimeMillis());
             arr.put(entry);
