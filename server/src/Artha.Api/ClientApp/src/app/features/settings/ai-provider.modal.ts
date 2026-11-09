@@ -25,7 +25,8 @@ import {
   DEFAULT_CLAUDE_MODEL,
   NamedRef,
 } from '../../core/ai/ai-provider.service';
-import { SmsCaptureService } from '../sms/sms-capture.service';
+import { AiMessageTest, SmsCaptureService } from '../sms/sms-capture.service';
+import { SAMPLE_BANK_SMS } from '../sms/sms-samples';
 
 /** Add / change the AI provider used to categorise SMS Artha can't match on its own. */
 @Component({
@@ -160,15 +161,44 @@ import { SmsCaptureService } from '../sms/sms-capture.service';
           <p class="result" [class.ok]="r.ok">{{ r.message }}</p>
         }
 
-        @if (smsSupported) {
-          <ion-button expand="block" fill="clear" [disabled]="testing()" (click)="trySamples()">
-            Try on sample bank SMS
-          </ion-button>
-          <p class="samples-note">
-            Saves this setup and adds 6 sample bank SMS to Pending expenses so you can see what the AI picks.
-            Dismiss them afterwards — saving them would log them as real expenses.
+        <section class="try">
+          <h3>Test with a bank SMS</h3>
+          <p class="try-note">
+            Paste a bank SMS (or type one) to see what the AI picks. Nothing is added or saved.
           </p>
-        }
+          <textarea
+            class="try-text"
+            rows="4"
+            [(ngModel)]="sampleText"
+            placeholder="e.g. Rs.432.00 debited from A/c XX4821 to VPA bluetokaicoffee@okaxis on 09-11-26 -HDFC Bank"
+            aria-label="Bank SMS to test"
+          ></textarea>
+          <div class="try-actions">
+            <ion-button size="small" [disabled]="trying() || !sampleText.trim()" (click)="tryMessage()">
+              @if (trying()) { <ion-spinner name="dots"></ion-spinner> } @else { Test this SMS }
+            </ion-button>
+            <ion-button size="small" fill="clear" [disabled]="trying()" (click)="useExample()">Use an example</ion-button>
+          </div>
+          @if (tryError()) {
+            <p class="result">{{ tryError() }}</p>
+          }
+          @if (tryResult(); as r) {
+            <dl class="try-result">
+              <div><dt>Amount</dt><dd>₹{{ r.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 }) }}</dd></div>
+              <div><dt>Merchant</dt><dd>{{ r.merchant || '—' }}</dd></div>
+              <div><dt>Category</dt><dd [class.miss]="!r.category">{{ r.category || 'No confident match' }}</dd></div>
+              <div><dt>Account</dt><dd [class.miss]="!r.account">{{ r.account || 'No confident match' }}</dd></div>
+            </dl>
+            <p class="try-note">
+              @if (!r.answered) {
+                The provider answered, but not in the expected format. Try a different model.
+              } @else {
+                Category and account are the AI's picks from your own lists. Real SMS also use what Artha has learned
+                from you first, and you always confirm before anything is saved.
+              }
+            </p>
+          }
+        </section>
 
         <ion-note class="privacy">
           Sent to this provider: the note of an expense when you tap Suggest, and the full text of bank SMS
@@ -188,7 +218,22 @@ import { SmsCaptureService } from '../sms/sms-capture.service';
     .models-note { font-size: 12.5px; color: var(--artha-text-subtle); }
     .result { margin: 12px 4px 0; font-size: 13.5px; color: var(--artha-negative); }
     .result.ok { color: var(--artha-positive); }
-    .samples-note { margin: 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--artha-text-subtle); }
+    .try { margin: 20px 4px 0; padding: 14px; border-radius: 18px; background: var(--artha-surface); }
+    .try h3 { margin: 0; font-size: 15px; font-weight: 800; color: var(--artha-text); }
+    .try-note { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--artha-text-subtle); }
+    .try-text {
+      box-sizing: border-box; width: 100%; margin-top: 10px; padding: 10px 12px; resize: vertical;
+      border-radius: 12px; border: 1px solid var(--artha-border); background: var(--artha-bg);
+      color: var(--artha-text); font: inherit; font-size: 13.5px; line-height: 1.45;
+    }
+    .try-text:focus { outline: 2px solid var(--artha-accent); outline-offset: 1px; }
+    .try-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .try .result { margin: 10px 0 0; }
+    .try-result { margin: 12px 0 0; display: grid; gap: 8px; }
+    .try-result div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+    .try-result dt { color: var(--artha-text-muted); }
+    .try-result dd { margin: 0; font-weight: 700; color: var(--artha-text); text-align: right; }
+    .try-result dd.miss { font-weight: 600; color: var(--artha-text-subtle); }
     .privacy { display: block; margin: 16px 4px; font-size: 12.5px; line-height: 1.5; color: var(--artha-text-subtle); }
   `],
 })
@@ -300,11 +345,34 @@ export class AiProviderModal {
     void this.modalCtrl.dismiss(null, 'saved');
   }
 
-  /** Save the current setup, close, and open Pending with the sample SMS queued. */
-  protected async trySamples(): Promise<void> {
-    this.ai.save(this.draft());
-    await this.modalCtrl.dismiss(null, 'saved');
-    await this.sms.addSampleMessages();
+  // "Test with a bank SMS": classify a pasted SMS with the current (unsaved) setup.
+  protected sampleText = '';
+  protected readonly trying = signal(false);
+  protected readonly tryResult = signal<AiMessageTest | null>(null);
+  protected readonly tryError = signal<string | null>(null);
+
+  protected async tryMessage(): Promise<void> {
+    this.trying.set(true);
+    this.tryResult.set(null);
+    this.tryError.set(null);
+    try {
+      this.tryResult.set(await this.sms.tryAiOnMessage(this.draft(), this.sampleText));
+    } catch (err) {
+      this.tryError.set(err instanceof Error ? err.message : 'The test failed.');
+    } finally {
+      this.trying.set(false);
+    }
+  }
+
+  /** Fill the box with one of the built-in example SMS, dated today. */
+  protected useExample(): void {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const date = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${String(now.getFullYear()).slice(2)}`;
+    const pick = SAMPLE_BANK_SMS[Math.floor(Math.random() * SAMPLE_BANK_SMS.length)];
+    this.sampleText = pick.body.replace('{date}', date);
+    this.tryResult.set(null);
+    this.tryError.set(null);
   }
 
   protected close(): void {

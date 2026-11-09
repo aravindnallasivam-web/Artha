@@ -136,6 +136,19 @@ export class AiProviderService {
   }
 
   /**
+   * Classify one SMS with `config` (not necessarily saved). Throws on failure so
+   * the provider screen can show why; used by "Test with a bank SMS".
+   */
+  async tryClassify(
+    config: AiProviderConfig,
+    sms: SmsForAi,
+    categories: NamedRef[],
+    accounts: NamedRef[],
+  ): Promise<AiSuggestion | null> {
+    return this.classifyWith(config, sms, categories, accounts);
+  }
+
+  /**
    * Ask the configured provider which category and account an SMS belongs to.
    * Returns null when AI is off, the call fails, or the model declines.
    */

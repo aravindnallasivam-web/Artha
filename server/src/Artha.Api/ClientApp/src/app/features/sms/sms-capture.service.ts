@@ -15,7 +15,7 @@ import { SmsConfirmModal } from './sms-confirm.modal';
 import { SmsScanRangeModal } from './sms-scan-range.modal';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 import { SAMPLE_BANK_SMS } from './sms-samples';
-import { AiProviderService, AiSuggestion } from '../../core/ai/ai-provider.service';
+import { AiProviderConfig, AiProviderService, AiSuggestion } from '../../core/ai/ai-provider.service';
 
 const ENABLED_KEY = 'artha.sms.captureEnabled';
 // Watermark: epoch ms of the newest message we've already offered, so the
@@ -982,36 +982,42 @@ export class SmsCaptureService {
   }
 
   /**
-   * Queue the sample bank SMS (dated now) and open Pending, so the AI flow can
-   * be checked without a real transaction. Each sample's "recently resolved"
-   * guard and cached AI answer are cleared so it can be tried again, e.g.
-   * after switching model. Returns how many samples were queued.
+   * "Test with a bank SMS" on the AI provider screen: read a pasted SMS and ask
+   * the provider (with the draft `config`) for its category and account.
+   * Nothing is queued, saved or learned. Throws a readable error.
    */
-  async addSampleMessages(): Promise<number> {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const smsDate = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${String(now.getFullYear()).slice(2)}`;
-    let added = 0;
-    for (const sample of SAMPLE_BANK_SMS) {
-      const parsed = parseExpenseSms({
-        address: sample.address,
-        body: sample.body.replace('{date}', smsDate),
-        date: now.getTime(),
-      });
-      if (!parsed) {
-        continue;
-      }
-      const key = this.pendingKey(parsed);
-      delete this.resolved[key];
-      delete this.aiSuggestions[key];
-      this.sampleKeys.add(key);
-      this.enqueue(parsed);
-      added++;
+  async tryAiOnMessage(config: AiProviderConfig, text: string): Promise<AiMessageTest> {
+    const body = text.trim();
+    if (!body) {
+      throw new Error('Paste a bank SMS first.');
     }
-    this.persistSampleKeys();
-    this.persistResolved();
-    await this.presentQueue();
-    return added;
+    const parsed = parseExpenseSms({ address: 'PASTED', body, date: Date.now() });
+    if (!parsed) {
+      throw new Error(
+        "Artha doesn't read that as a spend: it needs an amount and words like debited, spent or paid. " +
+          'OTPs, credits, reminders and "will be debited" notices are skipped.',
+      );
+    }
+    await this.ensureStores();
+    const categories = this.namedCategories();
+    const accounts = this.namedAccounts();
+    const ai = await this.ai.tryClassify(
+      config,
+      { sender: parsed.sender, body: parsed.raw, amount: parsed.amount, date: parsed.date },
+      categories,
+      accounts,
+    );
+    const nameOf = (list: { id: string; name: string }[], id: string | null | undefined) =>
+      (id && list.find((x) => x.id === id)?.name) || null;
+    return {
+      amount: parsed.amount,
+      date: parsed.date,
+      merchant: parsed.merchant ?? ai?.merchant ?? null,
+      aiMerchant: ai?.merchant ?? null,
+      category: nameOf(categories, ai?.categoryId),
+      account: nameOf(accounts, ai?.accountId),
+      answered: ai != null,
+    };
   }
 
   /**
@@ -1755,6 +1761,19 @@ function descriptionMatches(smsDesc: string, expenseNote: string): boolean {
   return smsDesc === expenseNote
     || smsDesc.includes(expenseNote)
     || expenseNote.includes(smsDesc);
+}
+
+/** Result of "Test with a bank SMS". */
+export interface AiMessageTest {
+  amount: number;
+  date: string;
+  /** Merchant Artha's own parser read (or the AI's, when it found none). */
+  merchant: string | null;
+  aiMerchant: string | null;
+  category: string | null;
+  account: string | null;
+  /** False when the provider answered in an unexpected format. */
+  answered: boolean;
 }
 
 const SAMPLE_KEYS_KEY = 'artha.sms.sampleKeys';
