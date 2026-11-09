@@ -41,6 +41,8 @@ export interface SmsCandidateRow {
   key?: string;
   /** The category or account shown was filled in by the AI provider. */
   aiPicked?: boolean;
+  /** One of the AI provider's sample SMS: shown for review, never saved. */
+  sample?: boolean;
 }
 
 interface NamedRef {
@@ -181,6 +183,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
                       <span>{{ dayLabel(row.date) }}</span>
                       <span class="dot"></span>
                       <span class="sender">{{ row.parsed.sender }}</span>
+                      @if (row.sample) { <span class="badge sample">Sample · won't be saved</span> }
                       @if (row.duplicate) { <span class="badge">Possible duplicate</span> }
                       @if (row.aiPicked) {
                         <span class="ai-tag"><ion-icon name="sparkles-outline" aria-hidden="true"></ion-icon>AI picked</span>
@@ -331,6 +334,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
       border-color: color-mix(in srgb, var(--artha-accent) 35%, transparent);
       background: var(--artha-accent-tint);
     }
+    .badge.sample { background: var(--artha-surface-2); color: var(--artha-text-muted); }
     .ai-tag {
       display: inline-flex; align-items: center; gap: 3px;
       padding: 2px 7px; border-radius: 999px;

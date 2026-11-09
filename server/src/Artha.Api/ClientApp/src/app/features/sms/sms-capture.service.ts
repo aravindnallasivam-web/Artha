@@ -112,6 +112,23 @@ export class SmsCaptureService {
   // Content keys -> resolved-at epoch ms; suppresses re-queuing a just-handled
   // SMS that a later catch-up scan re-reads from the inbox.
   private resolved: Record<string, number> = this.loadResolved();
+  /** Queue keys of the AI provider's sample SMS: shown for review, never saved. */
+  private readonly sampleKeys = new Set<string>(loadSampleKeys());
+  /** Amount + merchant + sender of each sample, to also catch ones queued before they were marked. */
+  private readonly sampleSignatures = new Set<string>(
+    SAMPLE_BANK_SMS.map((s) => parseExpenseSms({ address: s.address, body: s.body.replace('{date}', '01-01-26'), date: 0 }))
+      .filter((p): p is ParsedExpense => !!p)
+      .map((p) => this.sampleSignature(p)),
+  );
+
+  private sampleSignature(p: ParsedExpense): string {
+    return `${p.amount.toFixed(2)}|${categoryKey(p.merchant)}|${normalizeSender(p.sender)}`;
+  }
+
+  /** True for the AI provider's sample SMS, which are never saved. */
+  private isSample(p: ParsedExpense, key?: string): boolean {
+    return this.sampleKeys.has(key ?? this.pendingKey(p)) || this.sampleSignatures.has(this.sampleSignature(p));
+  }
   // Guards so we never stack the queue-review or single-confirm dialogs.
   private reviewing = false;
   private confirming = false;
@@ -987,9 +1004,11 @@ export class SmsCaptureService {
       const key = this.pendingKey(parsed);
       delete this.resolved[key];
       delete this.aiSuggestions[key];
+      this.sampleKeys.add(key);
       this.enqueue(parsed);
       added++;
     }
+    this.persistSampleKeys();
     this.persistResolved();
     await this.presentQueue();
     return added;
@@ -1028,8 +1047,16 @@ export class SmsCaptureService {
       // …plus everything successfully saved.
       if (role === 'save' && data?.rows?.length) {
         let saved = 0;
+        let samples = 0;
         const balanced = new Set<string>();
         for (const r of data.rows) {
+          // Samples are only there to show the AI's picks: clear, never save,
+          // learn from or touch balances.
+          if (r.sample || this.isSample(r.parsed, r.key)) {
+            if (r.key) resolved.add(r.key);
+            samples++;
+            continue;
+          }
           if (!r.categoryId || !r.accountId || r.amount <= 0) {
             continue;
           }
@@ -1058,7 +1085,12 @@ export class SmsCaptureService {
           }
         }
         if (saved > 0) {
-          await this.notifier.notifyInfo(`Added ${saved} expense${saved === 1 ? '' : 's'} from SMS.`);
+          await this.notifier.notifyInfo(
+            `Added ${saved} expense${saved === 1 ? '' : 's'} from SMS.` +
+              (samples ? ` ${samples} sample${samples === 1 ? '' : 's'} cleared, not saved.` : ''),
+          );
+        } else if (samples > 0) {
+          await this.notifier.notifyInfo(`Samples are never saved. Cleared ${samples} sample SMS.`);
         }
       }
       this.removePending(resolved);
@@ -1176,6 +1208,7 @@ export class SmsCaptureService {
         note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
         excluded: false,
         aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
+        sample: this.isSample(p, i.key),
       };
     });
     return {
@@ -1214,10 +1247,15 @@ export class SmsCaptureService {
     // Remember these as just-resolved so a follow-up inbox scan won't re-queue
     // them, then drop them from the live queue.
     const now = Date.now();
+    let samplesDropped = false;
     for (const key of drop) {
       this.resolved[key] = now;
+      samplesDropped = this.sampleKeys.delete(key) || samplesDropped;
     }
     this.persistResolved();
+    if (samplesDropped) {
+      this.persistSampleKeys();
+    }
     const before = this.pending.length;
     this.pending = this.pending.filter((x) => !drop.has(x.key));
     if (this.pending.length !== before) {
@@ -1241,6 +1279,14 @@ export class SmsCaptureService {
       }
     }
     return fresh;
+  }
+
+  private persistSampleKeys(): void {
+    try {
+      localStorage.setItem(SAMPLE_KEYS_KEY, JSON.stringify([...this.sampleKeys]));
+    } catch {
+      // Best effort: samples just lose their marker after a restart.
+    }
   }
 
   private persistResolved(): void {
@@ -1318,6 +1364,10 @@ export class SmsCaptureService {
     // asked to log it, so we bypass the global auto-add toggle (but still only
     // log when the account + category are actually known).
     if (!force && !this.isAutoAddEnabled()) {
+      return false;
+    }
+    // Sample SMS (AI provider test) are never logged.
+    if (this.isSample(parsed)) {
       return false;
     }
     const categoryId = this.learnedCategoryId(parsed);
@@ -1705,4 +1755,15 @@ function descriptionMatches(smsDesc: string, expenseNote: string): boolean {
   return smsDesc === expenseNote
     || smsDesc.includes(expenseNote)
     || expenseNote.includes(smsDesc);
+}
+
+const SAMPLE_KEYS_KEY = 'artha.sms.sampleKeys';
+
+function loadSampleKeys(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAMPLE_KEYS_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : [];
+  } catch {
+    return [];
+  }
 }
