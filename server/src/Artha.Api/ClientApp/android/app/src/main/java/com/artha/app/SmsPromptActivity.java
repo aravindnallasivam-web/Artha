@@ -3,32 +3,42 @@ package com.artha.app;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 /**
- * MyGate / NoBroker-style lock-screen takeover for a bank-SMS expense. Rendered
- * from {@link SmsBackgroundReceiver}'s full-screen intent so the user can
- * Approve or Dismiss WITHOUT unlocking first and WITHOUT booting the WebView.
- *
- * Approve writes a one-line entry into the pre-approved queue (SharedPreferences);
- * the Angular layer drains that on next organic app open and silently syncs to
- * Drive. Dismiss just cancels the notification + clears the pending-SMS stash.
- * Both finish() this Activity immediately — it never stays on screen.
+ * Full-screen prompt for bank-SMS expenses, shown over the lock screen or other
+ * apps. Walks through {@link PromptQueue}: every SMS that arrives while it is
+ * up is added to the queue, the header shows "1 of 3", and Add / Dismiss move
+ * on to the next one. When the category or account isn't learned yet, chips
+ * let the user pick them here. Never boots the WebView: Add writes to the
+ * pre-approved queue (SharedPreferences) that the app logs on its next open.
  */
 public class SmsPromptActivity extends AppCompatActivity {
 
     /** Pre-approved queue (JSON array of entries), consumed by Angular on resume. */
     static final String KEY_PRE_APPROVED = "pre_approved";
 
+    // Launch extras. The prompt reads its SMS from PromptQueue; these extras are
+    // the fallback for an intent that arrives with an empty queue.
     static final String EXTRA_AMOUNT_DISPLAY = "artha_prompt_amount";
     static final String EXTRA_MERCHANT = "artha_prompt_merchant";
     static final String EXTRA_CATEGORY = "artha_prompt_category";
@@ -38,15 +48,30 @@ public class SmsPromptActivity extends AppCompatActivity {
     static final String EXTRA_DATE = "artha_prompt_date";
     static final String EXTRA_CAN_ADD = "artha_prompt_can_add";
     static final String EXTRA_NOTIF_ID = "artha_prompt_notif_id";
-    /** Sample prompt from Settings → Test lock-screen alert: nothing is saved. */
+    /** Sample prompt from Settings → Test expense alert: nothing is saved. */
     static final String EXTRA_TEST = "artha_prompt_test";
 
-    // Current choice; starts from what the receiver resolved, filled in by the chips.
-    private String selectedCategory;
-    private String selectedAccount;
+    // The SMS on screen and the user's choice for it.
     private String amountDisplay;
     private String merchant;
+    private String body;
+    private String address;
+    private long date;
+    private boolean test;
+    private boolean fromQueue;
+    private String selectedCategory;
+    private String selectedAccount;
+
+    private TextView counterView;
+    private TextView amountView;
+    private TextView merchantView;
+    private TextView metaView;
     private TextView primaryBtn;
+    private TextView openLink;
+    private View pickers;
+    private View spacerBottom;
+    private TextView categoryLabel;
+    private TextView accountLabel;
     private FlowLayout categoryChips;
     private FlowLayout accountChips;
 
@@ -56,116 +81,194 @@ public class SmsPromptActivity extends AppCompatActivity {
         showOverLockScreen();
         setContentView(R.layout.activity_sms_prompt);
 
-        Intent src = getIntent();
-        amountDisplay = src != null ? src.getStringExtra(EXTRA_AMOUNT_DISPLAY) : null;
-        merchant = src != null ? src.getStringExtra(EXTRA_MERCHANT) : null;
-        String category = src != null ? src.getStringExtra(EXTRA_CATEGORY) : null;
-        String account = src != null ? src.getStringExtra(EXTRA_ACCOUNT) : null;
-        boolean canAdd = src != null && src.getBooleanExtra(EXTRA_CAN_ADD, false);
-        selectedCategory = TextUtils.isEmpty(category) ? null : category;
-        selectedAccount = TextUtils.isEmpty(account) ? null : account;
+        counterView = findViewById(R.id.prompt_counter);
+        amountView = findViewById(R.id.prompt_amount);
+        merchantView = findViewById(R.id.prompt_merchant);
+        metaView = findViewById(R.id.prompt_meta);
+        primaryBtn = findViewById(R.id.prompt_primary_btn);
+        openLink = findViewById(R.id.prompt_open_link);
+        pickers = findViewById(R.id.prompt_pickers);
+        spacerBottom = findViewById(R.id.prompt_spacer_bottom);
+        categoryLabel = findViewById(R.id.prompt_category_label);
+        accountLabel = findViewById(R.id.prompt_account_label);
+        categoryChips = findViewById(R.id.prompt_category_chips);
+        accountChips = findViewById(R.id.prompt_account_chips);
 
-        TextView amountView = findViewById(R.id.prompt_amount);
-        if (!TextUtils.isEmpty(amountDisplay)) {
-            amountView.setText(amountDisplay);
+        TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
+        secondaryBtn.setOnClickListener(v -> onDismiss());
+        openLink.setOnClickListener(v -> onReview());
+        primaryBtn.setOnClickListener(v -> onPrimary());
+
+        if (!showNext()) {
+            finish();
         }
-        TextView merchantView = findViewById(R.id.prompt_merchant);
+    }
+
+    /** Another SMS arrived while this is on screen: it's queued, just update "1 of N". */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (fromQueue) {
+            updateCounter();
+        } else {
+            showNext();
+        }
+    }
+
+    /** Show the oldest waiting SMS. False when there's nothing to show. */
+    private boolean showNext() {
+        JSONObject entry = PromptQueue.first(this);
+        String category;
+        String account;
+        if (entry != null) {
+            fromQueue = true;
+            amountDisplay = entry.optString(PromptQueue.F_AMOUNT, "");
+            merchant = nullIfEmpty(entry.optString(PromptQueue.F_MERCHANT, ""));
+            category = nullIfEmpty(entry.optString(PromptQueue.F_CATEGORY, ""));
+            account = nullIfEmpty(entry.optString(PromptQueue.F_ACCOUNT, ""));
+            body = entry.optString(PromptQueue.F_BODY, "");
+            address = entry.optString(PromptQueue.F_ADDRESS, "");
+            date = entry.optLong(PromptQueue.F_DATE, System.currentTimeMillis());
+            test = entry.optBoolean(PromptQueue.F_TEST, false);
+        } else {
+            Intent src = getIntent();
+            if (src == null || !src.hasExtra(EXTRA_AMOUNT_DISPLAY)) {
+                return false;
+            }
+            fromQueue = false;
+            amountDisplay = src.getStringExtra(EXTRA_AMOUNT_DISPLAY);
+            merchant = nullIfEmpty(src.getStringExtra(EXTRA_MERCHANT));
+            category = nullIfEmpty(src.getStringExtra(EXTRA_CATEGORY));
+            account = nullIfEmpty(src.getStringExtra(EXTRA_ACCOUNT));
+            body = src.getStringExtra(EXTRA_BODY);
+            address = src.getStringExtra(EXTRA_ADDRESS);
+            date = src.getLongExtra(EXTRA_DATE, System.currentTimeMillis());
+            test = src.getBooleanExtra(EXTRA_TEST, false);
+        }
+        render(category, account);
+        updateCounter();
+        return true;
+    }
+
+    private void updateCounter() {
+        int waiting = fromQueue ? PromptQueue.size(this) : 1;
+        if (waiting > 1) {
+            counterView.setText("1 of " + waiting);
+            counterView.setVisibility(View.VISIBLE);
+        } else {
+            counterView.setVisibility(View.GONE);
+        }
+    }
+
+    private void render(String category, String account) {
+        selectedCategory = category;
+        selectedAccount = account;
+
+        amountView.setText(TextUtils.isEmpty(amountDisplay) ? "₹0" : amountDisplay);
         if (!TextUtils.isEmpty(merchant)) {
             merchantView.setText(merchant);
+            merchantView.setVisibility(View.VISIBLE);
         } else {
             merchantView.setVisibility(View.GONE);
         }
 
-        primaryBtn = findViewById(R.id.prompt_primary_btn);
-        TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
-        TextView openLink = findViewById(R.id.prompt_open_link);
-        categoryChips = findViewById(R.id.prompt_category_chips);
-        accountChips = findViewById(R.id.prompt_account_chips);
-        secondaryBtn.setOnClickListener(v -> onDismiss());
-        openLink.setOnClickListener(v -> onReview());
+        // Reset the pickers from the previous SMS.
+        categoryChips.removeAllViews();
+        accountChips.removeAllViews();
+        pickers.setVisibility(View.GONE);
+        setPickerWeight(0);
+        spacerBottom.setVisibility(View.VISIBLE);
+        pickers.scrollTo(0, 0);
 
+        boolean canAdd = category != null && account != null;
         // Whatever is still unknown can be picked here, from the lists the app
         // last synced. Without a list for a missing part, fall back to review.
-        org.json.JSONArray categories = SmsBackgroundReceiver.readArray(this, SmsBackgroundReceiver.KEY_CATEGORY_LIST);
-        org.json.JSONArray accounts = SmsBackgroundReceiver.readArray(this, SmsBackgroundReceiver.KEY_ACCOUNT_LIST);
-        boolean needCategory = selectedCategory == null;
-        boolean needAccount = selectedAccount == null;
+        JSONArray categories = SmsBackgroundReceiver.readArray(this, SmsBackgroundReceiver.KEY_CATEGORY_LIST);
+        JSONArray accounts = SmsBackgroundReceiver.readArray(this, SmsBackgroundReceiver.KEY_ACCOUNT_LIST);
+        boolean needCategory = category == null;
+        boolean needAccount = account == null;
         boolean canPick = (!needCategory || categories.length() > 0) && (!needAccount || accounts.length() > 0);
 
-        TextView metaView = findViewById(R.id.prompt_meta);
-        String meta = buildMeta(selectedCategory, selectedAccount);
+        String meta = buildMeta(category, account);
         if (!canAdd && !canPick) {
             if (needAccount && !needCategory) {
-                meta = selectedCategory + " · pick the account in Artha";
+                meta = category + " · pick the account in Artha";
             } else if (needCategory && !needAccount) {
-                meta = selectedAccount + " · pick the category in Artha";
+                meta = account + " · pick the category in Artha";
             }
         }
         if (!TextUtils.isEmpty(meta)) {
             metaView.setText(meta);
+            metaView.setVisibility(View.VISIBLE);
         } else {
             metaView.setVisibility(View.GONE);
         }
 
         if (canAdd || canPick) {
-            primaryBtn.setOnClickListener(v -> {
-                if (selectedCategory != null && selectedAccount != null) {
-                    onApprove(amountDisplay, merchant, selectedCategory, selectedAccount);
-                }
-            });
+            openLink.setVisibility(View.VISIBLE);
             if (!canAdd) {
                 showPickers(needCategory ? categories : null, needAccount ? accounts : null);
             }
             refreshPrimary();
         } else {
             // A silent Add could log it to the wrong bucket; open Artha to pick.
+            primaryBtn.setEnabled(true);
+            primaryBtn.setAlpha(1f);
             primaryBtn.setText(R.string.prompt_review);
-            primaryBtn.setOnClickListener(v -> onReview());
             openLink.setVisibility(View.GONE);
         }
     }
 
+    private void onPrimary() {
+        if (selectedCategory != null && selectedAccount != null) {
+            onApprove();
+        } else if (!pickers.isShown()) {
+            onReview();
+        }
+    }
+
     /** Show chip pickers for the missing category and/or account (null = known). */
-    private void showPickers(org.json.JSONArray categories, org.json.JSONArray accounts) {
-        View pickers = findViewById(R.id.prompt_pickers);
+    private void showPickers(JSONArray categories, JSONArray accounts) {
         pickers.setVisibility(View.VISIBLE);
         // The pickers take the spare height; the amount block moves up.
-        android.widget.LinearLayout.LayoutParams lp =
-            (android.widget.LinearLayout.LayoutParams) pickers.getLayoutParams();
-        lp.weight = 3;
-        pickers.setLayoutParams(lp);
-        findViewById(R.id.prompt_spacer_bottom).setVisibility(View.GONE);
+        setPickerWeight(3);
+        spacerBottom.setVisibility(View.GONE);
 
-        if (categories != null) {
+        boolean showCategories = categories != null;
+        categoryLabel.setVisibility(showCategories ? View.VISIBLE : View.GONE);
+        categoryChips.setVisibility(showCategories ? View.VISIBLE : View.GONE);
+        if (showCategories) {
             for (int i = 0; i < categories.length(); i++) {
-                org.json.JSONObject c = categories.optJSONObject(i);
+                JSONObject c = categories.optJSONObject(i);
                 if (c == null) continue;
                 String name = c.optString("name", "");
                 if (name.isEmpty()) continue;
                 categoryChips.addView(makeChip(name, parseColor(c.optString("color", "")), true));
             }
-        } else {
-            findViewById(R.id.prompt_category_label).setVisibility(View.GONE);
-            categoryChips.setVisibility(View.GONE);
         }
-        if (accounts != null) {
+
+        boolean showAccounts = accounts != null;
+        accountLabel.setVisibility(showAccounts ? View.VISIBLE : View.GONE);
+        accountChips.setVisibility(showAccounts ? View.VISIBLE : View.GONE);
+        ((LinearLayout.LayoutParams) accountLabel.getLayoutParams()).topMargin =
+            showCategories ? dp(20) : 0;
+        if (showAccounts) {
             for (int i = 0; i < accounts.length(); i++) {
                 String name = accounts.optString(i, "");
                 if (name.isEmpty()) continue;
                 accountChips.addView(makeChip(name, null, false));
             }
-            if (categories == null) {
-                ((android.widget.LinearLayout.LayoutParams) findViewById(R.id.prompt_account_label)
-                    .getLayoutParams()).topMargin = 0;
-            }
-        } else {
-            findViewById(R.id.prompt_account_label).setVisibility(View.GONE);
-            accountChips.setVisibility(View.GONE);
         }
     }
 
+    private void setPickerWeight(float weight) {
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) pickers.getLayoutParams();
+        lp.weight = weight;
+        pickers.setLayoutParams(lp);
+    }
+
     private TextView makeChip(String name, Integer dotColor, boolean isCategory) {
-        float d = getResources().getDisplayMetrics().density;
         TextView chip = new TextView(this);
         chip.setText(name);
         chip.setTag(name);
@@ -173,19 +276,18 @@ public class SmsPromptActivity extends AppCompatActivity {
         chip.setTextSize(14);
         chip.setMaxLines(1);
         chip.setEllipsize(TextUtils.TruncateAt.END);
-        chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        chip.setMinHeight(Math.round(40 * d));
-        chip.setPadding(Math.round(14 * d), Math.round(8 * d), Math.round(16 * d), Math.round(8 * d));
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setMinHeight(dp(40));
+        chip.setPadding(dp(14), dp(8), dp(16), dp(8));
         chip.setClickable(true);
         chip.setFocusable(true);
         if (dotColor != null) {
-            android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
-            dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL);
             dot.setColor(dotColor);
-            int size = Math.round(10 * d);
-            dot.setSize(size, size);
+            dot.setSize(dp(10), dp(10));
             chip.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null);
-            chip.setCompoundDrawablePadding(Math.round(8 * d));
+            chip.setCompoundDrawablePadding(dp(8));
         }
         styleChip(chip, false);
         chip.setOnClickListener(v -> {
@@ -211,20 +313,19 @@ public class SmsPromptActivity extends AppCompatActivity {
     }
 
     private void styleChip(TextView chip, boolean selected) {
-        float d = getResources().getDisplayMetrics().density;
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setCornerRadius(999 * d);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(999));
         if (selected) {
             bg.setColor(getColor(R.color.prompt_approve));
-            bg.setStroke(Math.round(1 * d), getColor(R.color.prompt_approve));
+            bg.setStroke(dp(1), getColor(R.color.prompt_approve));
         } else {
             bg.setColor(Color.argb(0x1F, 0xFF, 0xFF, 0xFF));
-            bg.setStroke(Math.round(1 * d), Color.argb(0x40, 0xFF, 0xFF, 0xFF));
+            bg.setStroke(dp(1), Color.argb(0x40, 0xFF, 0xFF, 0xFF));
         }
-        chip.setBackground(new android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf(Color.argb(0x40, 0xFF, 0xFF, 0xFF)), bg, null));
-        chip.setTypeface(android.graphics.Typeface.create("sans-serif-medium",
-            selected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+        chip.setBackground(new RippleDrawable(
+            ColorStateList.valueOf(Color.argb(0x40, 0xFF, 0xFF, 0xFF)), bg, null));
+        chip.setTypeface(Typeface.create("sans-serif-medium",
+            selected ? Typeface.BOLD : Typeface.NORMAL));
     }
 
     /** Primary button reflects the choice: enabled "Add to X" once both are set. */
@@ -241,28 +342,70 @@ public class SmsPromptActivity extends AppCompatActivity {
         }
     }
 
-    private static Integer parseColor(String hex) {
-        if (hex == null || hex.isEmpty()) return null;
-        try {
-            return Color.parseColor(hex);
-        } catch (IllegalArgumentException e) {
-            return null;
+    private void onApprove() {
+        if (test) {
+            Toast.makeText(this, "Test alert works — would add to " + selectedCategory
+                + ". Nothing was saved.", Toast.LENGTH_LONG).show();
+        } else {
+            enqueueApproved(body, address, date, amountDisplay, merchant, selectedCategory, selectedAccount);
+            Toast.makeText(this, R.string.prompt_added, Toast.LENGTH_SHORT).show();
         }
+        advance();
+    }
+
+    private void onDismiss() {
+        Toast.makeText(this, R.string.prompt_dismissed, Toast.LENGTH_SHORT).show();
+        advance();
+    }
+
+    /** Done with the SMS on screen: show the next waiting one, or close. */
+    private void advance() {
+        if (fromQueue) {
+            PromptQueue.removeFirst(this);
+            if (showNext()) {
+                return;
+            }
+        }
+        cancelNotification();
+        if (!test) {
+            clearPendingStash();
+        }
+        finish();
     }
 
     /**
-     * Enable the show-over-lock-screen + turn-screen-on bits BEFORE
-     * setContentView, so the Activity renders directly on top of the keyguard
-     * without the user unlocking first — the MyGate / NoBroker approval
-     * pattern. On API 27+ we use the typed setters; older OSes fall back to
-     * the window flags.
+     * Open Artha on the SMS on screen. The rest of the queue is left to the
+     * app, whose scan lists them under Pending expenses.
+     */
+    private void onReview() {
+        if (!test && body != null && !body.isEmpty()) {
+            // Point the app's "opened from the alert" fast path at this SMS.
+            getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(SmsBackgroundReceiver.KEY_PENDING_BODY, body)
+                .putString(SmsBackgroundReceiver.KEY_PENDING_ADDRESS, address)
+                .putLong(SmsBackgroundReceiver.KEY_PENDING_DATE, date)
+                .apply();
+        }
+        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (launch != null) {
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            launch.putExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS, !test);
+            startActivity(launch);
+        }
+        PromptQueue.clear(this);
+        cancelNotification();
+        finish();
+    }
+
+    /**
+     * Show over the keyguard and turn the screen on, before setContentView, so
+     * the prompt appears without unlocking first.
      */
     private void showOverLockScreen() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            // Secure keyguard still shows the Activity above the lock screen;
-            // a swipe up to unlock surfaces the PIN before any dismiss. The
-            // KeyguardManager.requestDismissKeyguard call is intentionally
-            // skipped — the whole point is to NOT force an unlock.
             setShowWhenLocked(true);
             setTurnScreenOn(true);
         } else {
@@ -272,10 +415,7 @@ public class SmsPromptActivity extends AppCompatActivity {
                     | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                     | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
         }
-
-        // Draw into the system bars so the gradient background bleeds edge-to-
-        // edge instead of leaving a strip of grey at the top. The layout keeps
-        // its content clear of the status bar via fitsSystemWindows.
+        // Draw into the system bars so the gradient reaches the screen edges.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
@@ -296,62 +436,9 @@ public class SmsPromptActivity extends AppCompatActivity {
         return null;
     }
 
-    private void onApprove(String amountDisplay, String merchant, String category, String account) {
-        Intent src = getIntent();
-        String body = src != null ? src.getStringExtra(EXTRA_BODY) : null;
-        String address = src != null ? src.getStringExtra(EXTRA_ADDRESS) : null;
-        long date = src != null ? src.getLongExtra(EXTRA_DATE, System.currentTimeMillis())
-                                : System.currentTimeMillis();
-
-        if (isTest()) {
-            cancelNotification();
-            Toast.makeText(this, "Test alert works — would add to " + category + ". Nothing was saved.",
-                Toast.LENGTH_LONG).show();
-            finish();
-            return;
-        }
-        enqueueApproved(body, address, date, amountDisplay, merchant, category, account);
-        cancelNotification();
-        clearPendingStash();
-        Toast.makeText(this, R.string.prompt_added, Toast.LENGTH_SHORT).show();
-        finish();
-    }
-
-    private boolean isTest() {
-        Intent src = getIntent();
-        return src != null && src.getBooleanExtra(EXTRA_TEST, false);
-    }
-
-    private void onDismiss() {
-        cancelNotification();
-        if (!isTest()) {
-            clearPendingStash();
-        }
-        Toast.makeText(this, R.string.prompt_dismissed, Toast.LENGTH_SHORT).show();
-        finish();
-    }
-
-    /**
-     * Launch MainActivity with the open-SMS flag so the WebView opens the
-     * confirm dialog from the stash SmsBackgroundReceiver already wrote.
-     */
-    private void onReview() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (launch != null) {
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            launch.putExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS, !isTest());
-            startActivity(launch);
-        }
-        cancelNotification();
-        finish();
-    }
-
     /**
      * Append a JSON entry to the pre-approved queue. Angular drains this on the
-     * next app resume and quietly syncs each entry to Drive, so the user never
-     * sees the confirm dialog for it.
+     * next app resume and quietly syncs each entry to Drive.
      */
     private void enqueueApproved(String body, String address, long date,
                                  String amountDisplay, String merchant,
@@ -359,14 +446,14 @@ public class SmsPromptActivity extends AppCompatActivity {
         android.content.SharedPreferences prefs =
             getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE);
         String raw = prefs.getString(KEY_PRE_APPROVED, "[]");
-        org.json.JSONArray arr;
+        JSONArray arr;
         try {
-            arr = new org.json.JSONArray(raw);
-        } catch (org.json.JSONException e) {
-            arr = new org.json.JSONArray();
+            arr = new JSONArray(raw);
+        } catch (JSONException e) {
+            arr = new JSONArray();
         }
         try {
-            org.json.JSONObject entry = new org.json.JSONObject();
+            JSONObject entry = new JSONObject();
             entry.put("address", address != null ? address : "");
             entry.put("body", body != null ? body : "");
             entry.put("date", date);
@@ -377,20 +464,15 @@ public class SmsPromptActivity extends AppCompatActivity {
             entry.put("approvedAt", System.currentTimeMillis());
             arr.put(entry);
             prefs.edit().putString(KEY_PRE_APPROVED, arr.toString()).apply();
-        } catch (org.json.JSONException ignored) {
+        } catch (JSONException ignored) {
         }
     }
 
     private void cancelNotification() {
-        int notifId = getIntent() != null
-            ? getIntent().getIntExtra(EXTRA_NOTIF_ID, -1)
-            : -1;
-        if (notifId > 0) {
-            NotificationManager nm =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) {
-                nm.cancel(notifId);
-            }
+        NotificationManager nm =
+            (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) {
+            nm.cancel(SmsBackgroundReceiver.NOTIF_ID);
         }
     }
 
@@ -401,5 +483,22 @@ public class SmsPromptActivity extends AppCompatActivity {
             .remove(SmsBackgroundReceiver.KEY_PENDING_ADDRESS)
             .remove(SmsBackgroundReceiver.KEY_PENDING_DATE)
             .apply();
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static String nullIfEmpty(String s) {
+        return s == null || s.isEmpty() ? null : s;
+    }
+
+    private static Integer parseColor(String hex) {
+        if (hex == null || hex.isEmpty()) return null;
+        try {
+            return Color.parseColor(hex);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }

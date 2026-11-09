@@ -373,6 +373,9 @@ public class SmsReaderPlugin extends Plugin {
      */
     @PluginMethod
     public void consumePreApproved(PluginCall call) {
+        // Artha is open: its own scan lists anything still waiting on the
+        // full-screen prompt under Pending expenses, so drop that queue.
+        PromptQueue.clear(getContext());
         android.content.SharedPreferences prefs = getContext()
             .getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE);
         String raw = prefs.getString(SmsPromptActivity.KEY_PRE_APPROVED, "[]");

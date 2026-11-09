@@ -348,19 +348,40 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         PendingIntent fullScreenIntent =
             PendingIntent.getActivity(context, 3, prompt, flags);
 
-        String text = canAdd
+        // Queue it for the full-screen prompt, which walks through every SMS
+        // that arrives while it's up ("1 of 3").
+        try {
+            org.json.JSONObject entry = new org.json.JSONObject();
+            entry.put(PromptQueue.F_AMOUNT, "₹" + amount);
+            entry.put(PromptQueue.F_MERCHANT, merchantHint(body) != null ? merchantHint(body) : "");
+            entry.put(PromptQueue.F_CATEGORY, categoryName != null ? categoryName : "");
+            entry.put(PromptQueue.F_ACCOUNT, accountName != null ? accountName : "");
+            entry.put(PromptQueue.F_BODY, body);
+            entry.put(PromptQueue.F_ADDRESS, address);
+            entry.put(PromptQueue.F_DATE, System.currentTimeMillis());
+            entry.put(PromptQueue.F_TEST, test);
+            PromptQueue.add(context, entry);
+        } catch (org.json.JSONException ignored) {
+            // The prompt falls back to the intent extras.
+        }
+        int waiting = Math.max(1, PromptQueue.size(context));
+
+        String latest = canAdd
             ? "₹" + amount + " · " + categoryName + " · " + accountName
             : "₹" + amount + " — tap to review and log it in Artha";
+        String text = waiting > 1 ? "Latest: ₹" + amount + " · tap to go through them" : latest;
+        String title = waiting > 1 ? waiting + " expenses detected" : "Expense detected";
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.getApplicationInfo().icon)
-            .setContentTitle(test ? "Expense detected (test)" : "Expense detected")
+            .setContentTitle(test ? title + " (test)" : title)
             .setContentText(text)
+            .setNumber(waiting)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(contentIntent)
+            .setContentIntent(waiting > 1 ? fullScreenIntent : contentIntent)
             // Backup path to the takeover for the screen-off / locked case,
             // and the fallback when Background Activity Launch is refused
             // (some OEMs, future restrictions). The primary path is the
@@ -376,7 +397,9 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             builder.setLargeIcon(logo);
         }
 
-        if (canAdd) {
+        // One-tap Add from the shade only when this is the only SMS waiting;
+        // with several, the prompt walks through them.
+        if (canAdd && waiting == 1) {
             // Silent Approve: fires SmsActionReceiver which enqueues the
             // pre-approved entry and cancels the notification. Does NOT open
             // the WebView — same pattern as the lock-screen Approve button.
@@ -404,7 +427,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .putExtra(EXTRA_NOTIF_ID, NOTIF_ID)
             .putExtra(SmsPromptActivity.EXTRA_TEST, test);
         PendingIntent dismissPending = PendingIntent.getBroadcast(context, 2, dismissIntent, flags);
-        builder.addAction(0, "Dismiss", dismissPending);
+        builder.addAction(0, waiting > 1 ? "Dismiss all" : "Dismiss", dismissPending);
         builder.setDeleteIntent(dismissPending);
 
         nm.notify(NOTIF_ID, builder.build());

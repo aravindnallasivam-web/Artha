@@ -51,6 +51,23 @@
         android:textAllCaps="true"
         android:fontFamily="sans-serif-medium" />
 
+    <!-- "1 of 3" when several SMS are waiting; Add / Dismiss move to the next. -->
+    <TextView
+        android:id="@+id/prompt_counter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/prompt_btn_outline"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/prompt_text"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif-medium"
+        android:visibility="gone" />
+
     <View
         android:id="@+id/prompt_spacer_top"
         android:layout_width="match_parent"

@@ -27,6 +27,9 @@ public class SmsActionReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
         // Test prompt (Settings → Test lock-screen alert): just clear it.
+        // Either action ends the whole prompt queue: Add is only offered when a
+        // single SMS is waiting, and Dismiss on the notification means "all".
+        PromptQueue.clear(context);
         if (intent.getBooleanExtra(SmsPromptActivity.EXTRA_TEST, false)) {
             cancelNotification(context, intent);
             return;
