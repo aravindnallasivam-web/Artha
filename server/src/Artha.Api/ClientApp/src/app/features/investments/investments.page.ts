@@ -3,7 +3,49 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { InvestmentsStore, summarize } from './investments.store';
+import { HoldingRow, InvestmentsStore, summarize } from './investments.store';
+
+const COMBINE_KEY = 'artha.investments.combine';
+
+/** One line in the list: a holding, or the same stock / fund held on several platforms. */
+interface DisplayRow {
+  key: string;
+  rows: HoldingRow[];
+  /** First row, for name / kind / symbol / price. */
+  lead: HoldingRow;
+  quantity: number;
+  avgPrice: number;
+  invested: number;
+  value: number;
+  pnl: number;
+  pnlPct: number | null;
+  platforms: string[];
+}
+
+/** Same stock across brokers: by price symbol, else by name without Ltd / Limited / punctuation. */
+function groupKey(r: HoldingRow): string {
+  const name = r.holding.name.toLowerCase().replace(/\b(the|limited|ltd)\b/g, '').replace(/[^a-z0-9]/g, '');
+  return `${r.kind}|${r.holding.symbol ?? name}`;
+}
+
+function toDisplay(key: string, rows: HoldingRow[]): DisplayRow {
+  const quantity = rows.reduce((n, r) => n + r.holding.quantity, 0);
+  const invested = rows.reduce((n, r) => n + r.invested, 0);
+  const value = rows.reduce((n, r) => n + r.value, 0);
+  const pnl = value - invested;
+  return {
+    key,
+    rows,
+    lead: rows[0],
+    quantity,
+    avgPrice: quantity > 0 ? invested / quantity : 0,
+    invested,
+    value,
+    pnl,
+    pnlPct: invested > 0 && rows.some((r) => r.price != null) ? (pnl / invested) * 100 : null,
+    platforms: [...new Set(rows.map((r) => r.holding.platform ?? 'Unknown platform'))],
+  };
+}
 
 const DEFAULT_PLATFORMS = ['Groww', 'Zerodha', 'Upstox', 'Angel One', 'Kuvera', 'Paytm Money', 'ICICI Direct', 'HDFC Securities'];
 const LAST_PLATFORM_KEY = 'artha.investments.lastPlatform';
@@ -69,6 +111,16 @@ function guessPlatform(fileName: string, options: string[]): string | null {
                 <button type="button" [class.on]="platformFilter() === p" (click)="platformFilter.set(p)">{{ p }}</button>
               }
             </div>
+            @if (!platformFilter()) {
+              <label class="combine">
+                <input type="checkbox" [checked]="combine()" (change)="setCombine($any($event.target).checked)" />
+                <span class="switch" aria-hidden="true"></span>
+                <span class="combine-text">
+                  Combine same stock
+                  <small>{{ combine() ? 'Holdings on several platforms show as one line' : 'Each platform listed separately' }}</small>
+                </span>
+              </label>
+            }
           }
           @let t = totals();
           <section class="summary">
@@ -114,38 +166,97 @@ function guessPlatform(fileName: string, options: string[]): string | null {
               </span>
             </div>
             <div class="list">
-              @for (r of section.rows; track r.holding.id) {
-                <a class="row" [routerLink]="['/investments', r.holding.id]">
-                  <div class="row-main">
-                    <div class="row-name">{{ r.holding.name }}</div>
-                    <div class="row-sub num">
-                      @if (r.kind === 'mf') {
-                        {{ r.holding.quantity | number: '1.0-3' }} units × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }} avg
-                        @if (r.holding.platform) { · {{ r.holding.platform }} }
-                      } @else {
-                        {{ r.holding.quantity | number: '1.0-4' }} × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }}
-                        @if (r.holding.symbol) { · {{ shortSymbol(r.holding.symbol) }} }
-                        @if (r.holding.platform) { · {{ r.holding.platform }} }
-                      }
+              @for (d of section.items; track d.key) {
+                @if (d.rows.length === 1) {
+                  @let r = d.lead;
+                  <a class="row" [routerLink]="['/investments', r.holding.id]">
+                    <div class="row-main">
+                      <div class="row-name">{{ r.holding.name }}</div>
+                      <div class="row-sub num">
+                        @if (r.kind === 'mf') {
+                          {{ r.holding.quantity | number: '1.0-3' }} units × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }} avg
+                          @if (r.holding.platform) { · {{ r.holding.platform }} }
+                        } @else {
+                          {{ r.holding.quantity | number: '1.0-4' }} × {{ r.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }}
+                          @if (r.holding.symbol) { · {{ shortSymbol(r.holding.symbol) }} }
+                          @if (r.holding.platform) { · {{ r.holding.platform }} }
+                        }
+                      </div>
                     </div>
+                    <div class="row-side">
+                      <div class="row-value num">{{ r.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
+                      <div class="row-pnl num" [class.up]="r.pnl >= 0" [class.down]="r.pnl < 0">
+                        {{ sign(r.pnl) }}{{ abs(r.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
+                        @if (r.pnlPct != null) { ({{ sign(r.pnl) }}{{ abs(r.pnlPct) | number: '1.1-1' }}%) }
+                      </div>
+                      <div class="row-price num">
+                        @if (r.price != null) {
+                          @if (r.kind === 'mf') { NAV }
+                          {{ r.price | currency: currency() : 'symbol' : '1.0-2' }}
+                          @if (r.asOf) { · {{ shortDate(r.asOf) }} }
+                        }
+                        @if (r.source === 'statement') { <span class="tag">statement</span> }
+                        @if (r.source === 'none') { <span class="tag">no price</span> }
+                      </div>
+                    </div>
+                  </a>
+                } @else {
+                  @let r = d.lead;
+                  @let open = expanded().has(d.key);
+                  <div class="group" [class.open]="open">
+                    <button type="button" class="row" (click)="toggle(d.key)" [attr.aria-expanded]="open">
+                      <div class="row-main">
+                        <div class="row-name">
+                          {{ r.holding.name }}
+                          <span class="plat-tag">{{ d.platforms.length }} platforms</span>
+                        </div>
+                        <div class="row-sub num">
+                          @if (r.kind === 'mf') {
+                            {{ d.quantity | number: '1.0-3' }} units × {{ d.avgPrice | currency: currency() : 'symbol' : '1.0-2' }} avg
+                          } @else {
+                            {{ d.quantity | number: '1.0-4' }} × {{ d.avgPrice | currency: currency() : 'symbol' : '1.0-2' }} avg
+                            @if (r.holding.symbol) { · {{ shortSymbol(r.holding.symbol) }} }
+                          }
+                        </div>
+                        <div class="row-sub">{{ d.platforms.join(' · ') }}</div>
+                      </div>
+                      <div class="row-side">
+                        <div class="row-value num">{{ d.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
+                        <div class="row-pnl num" [class.up]="d.pnl >= 0" [class.down]="d.pnl < 0">
+                          {{ sign(d.pnl) }}{{ abs(d.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
+                          @if (d.pnlPct != null) { ({{ sign(d.pnl) }}{{ abs(d.pnlPct) | number: '1.1-1' }}%) }
+                        </div>
+                        <div class="row-price num">
+                          @if (r.price != null) {
+                            @if (r.kind === 'mf') { NAV }
+                            {{ r.price | currency: currency() : 'symbol' : '1.0-2' }}
+                          }
+                          <ion-icon class="chev" [name]="open ? 'chevron-up' : 'chevron-down'"></ion-icon>
+                        </div>
+                      </div>
+                    </button>
+                    @if (open) {
+                      <div class="subs">
+                        @for (sr of d.rows; track sr.holding.id) {
+                          <a class="sub" [routerLink]="['/investments', sr.holding.id]">
+                            <div class="row-main">
+                              <div class="sub-name">{{ sr.holding.platform ?? 'Unknown platform' }}</div>
+                              <div class="row-sub num">
+                                {{ sr.holding.quantity | number: '1.0-4' }} × {{ sr.holding.avgPrice | currency: currency() : 'symbol' : '1.0-2' }}
+                              </div>
+                            </div>
+                            <div class="row-side">
+                              <div class="sub-value num">{{ sr.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
+                              <div class="row-pnl num" [class.up]="sr.pnl >= 0" [class.down]="sr.pnl < 0">
+                                {{ sign(sr.pnl) }}{{ abs(sr.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
+                              </div>
+                            </div>
+                          </a>
+                        }
+                      </div>
+                    }
                   </div>
-                  <div class="row-side">
-                    <div class="row-value num">{{ r.value | currency: currency() : 'symbol' : '1.0-0' }}</div>
-                    <div class="row-pnl num" [class.up]="r.pnl >= 0" [class.down]="r.pnl < 0">
-                      {{ sign(r.pnl) }}{{ abs(r.pnl) | currency: currency() : 'symbol' : '1.0-0' }}
-                      @if (r.pnlPct != null) { ({{ sign(r.pnl) }}{{ abs(r.pnlPct) | number: '1.1-1' }}%) }
-                    </div>
-                    <div class="row-price num">
-                      @if (r.price != null) {
-                        @if (r.kind === 'mf') { NAV }
-                        {{ r.price | currency: currency() : 'symbol' : '1.0-2' }}
-                        @if (r.asOf) { · {{ shortDate(r.asOf) }} }
-                      }
-                      @if (r.source === 'statement') { <span class="tag">statement</span> }
-                      @if (r.source === 'none') { <span class="tag">no price</span> }
-                    </div>
-                  </div>
-                </a>
+                }
               }
             </div>
           }
@@ -242,6 +353,40 @@ function guessPlatform(fileName: string, options: string[]): string | null {
     .row .down { color: var(--artha-negative); }
     .tag { margin-left: 4px; padding: 1px 6px; border-radius: 999px; background: var(--artha-surface-2); font-size: 10.5px; font-weight: 700; }
     .num { font-variant-numeric: tabular-nums; }
+
+    /* Combine same stock */
+    .combine { display: flex; align-items: center; gap: 10px; margin: -4px 4px 0; cursor: pointer; }
+    .combine input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch {
+      flex: none; width: 40px; height: 24px; border-radius: 999px; position: relative;
+      background: var(--artha-surface-2); border: 1px solid var(--artha-border); transition: background 0.2s;
+    }
+    .switch::after {
+      content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+      background: var(--artha-surface); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25); transition: transform 0.2s;
+    }
+    .combine input:checked + .switch { background: var(--artha-accent); border-color: transparent; }
+    .combine input:checked + .switch::after { transform: translateX(16px); }
+    .combine input:focus-visible + .switch { outline: 2px solid var(--artha-accent); outline-offset: 2px; }
+    .combine-text { display: flex; flex-direction: column; font-size: 13.5px; font-weight: 700; color: var(--artha-text); }
+    .combine-text small { font-size: 11.5px; font-weight: 500; color: var(--artha-text-subtle); }
+    button.row { width: 100%; border: 0; font: inherit; text-align: left; }
+    .plat-tag {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: 2px;
+      background: var(--artha-accent-tint); color: var(--artha-accent); font-size: 10.5px; font-weight: 800;
+    }
+    .group { border-radius: 20px; background: var(--artha-surface); }
+    .group .row { background: transparent; }
+    .chev { margin-left: 4px; font-size: 13px; vertical-align: -2px; }
+    .subs { display: flex; flex-direction: column; padding: 0 10px 10px; gap: 6px; }
+    .sub {
+      display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 14px;
+      background: var(--artha-surface-2); text-decoration: none; color: inherit;
+    }
+    .sub-name { font-size: 13px; font-weight: 700; color: var(--artha-text); }
+    .sub-value { font-size: 13.5px; font-weight: 800; color: var(--artha-text); }
+    .sub .up { color: var(--artha-positive); }
+    .sub .down { color: var(--artha-negative); }
     .foot { margin: 4px 4px 0; font-size: 12px; line-height: 1.5; color: var(--artha-text-subtle); }
     .link { border: 0; background: none; padding: 0; margin-left: 4px; font: inherit; font-weight: 700; color: var(--artha-negative); cursor: pointer; }
   `],
@@ -263,6 +408,38 @@ export class InvestmentsPage implements OnInit {
   protected readonly stockRows = computed(() => this.filteredRows().filter((r) => r.kind === 'stock'));
   protected readonly fundRows = computed(() => this.filteredRows().filter((r) => r.kind === 'mf'));
 
+  /** Merge the same stock / fund across platforms (All view only). Remembered per device. */
+  protected readonly combine = signal(loadCombine());
+  protected readonly expanded = signal<Set<string>>(new Set());
+
+  protected setCombine(on: boolean): void {
+    this.combine.set(on);
+    try {
+      localStorage.setItem(COMBINE_KEY, on ? '1' : '0');
+    } catch {
+      // Not remembered; still applies now.
+    }
+  }
+
+  protected toggle(key: string): void {
+    const next = new Set(this.expanded());
+    next.has(key) ? next.delete(key) : next.add(key);
+    this.expanded.set(next);
+  }
+
+  /** Rows as listed: grouped when combining, one per holding otherwise. */
+  private display(rows: HoldingRow[]): DisplayRow[] {
+    if (!this.combine() || this.platformFilter()) {
+      return rows.map((r) => toDisplay(r.holding.id, [r]));
+    }
+    const groups = new Map<string, HoldingRow[]>();
+    for (const r of rows) {
+      const key = groupKey(r);
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+    return [...groups.entries()].map(([key, rs]) => toDisplay(key, rs));
+  }
+
   protected readonly sections = computed(() =>
     [
       { title: 'Stocks', rows: this.stockRows() },
@@ -272,13 +449,14 @@ export class InvestmentsPage implements OnInit {
       .map((s) => {
         const value = s.rows.reduce((n, r) => n + r.value, 0);
         const invested = s.rows.reduce((n, r) => n + r.invested, 0);
-        return { ...s, value, pnl: value - invested };
+        return { ...s, items: this.display(s.rows), value, pnl: value - invested };
       }),
   );
 
   protected countLabel(): string {
-    const st = this.stockRows().length;
-    const mf = this.fundRows().length;
+    const items = (title: string) => this.sections().find((s) => s.title === title)?.items.length ?? 0;
+    const st = items('Stocks');
+    const mf = items('Mutual funds');
     return [st ? `${st} ${st === 1 ? 'stock' : 'stocks'}` : '', mf ? `${mf} ${mf === 1 ? 'fund' : 'funds'}` : '']
       .filter(Boolean)
       .join(' · ');
@@ -423,5 +601,13 @@ export class InvestmentsPage implements OnInit {
     if (!importedAt) return '';
     const date = new Date(importedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     return `Imported ${date}${source ? ` from ${source}` : ''}.`;
+  }
+}
+
+function loadCombine(): boolean {
+  try {
+    return localStorage.getItem(COMBINE_KEY) !== '0';
+  } catch {
+    return true;
   }
 }
