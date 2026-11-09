@@ -9,17 +9,24 @@ export interface HoldingsImportResult {
   skipped: number;
 }
 
-type Column = 'name' | 'isin' | 'quantity' | 'avgPrice' | 'statementPrice';
+type Column = 'name' | 'isin' | 'quantity' | 'avgPrice' | 'statementPrice' | 'invested' | 'currentValue';
 
 // Header text → column, checked in order (first match wins per header cell).
 // Broker exports differ in wording, so match loosely on normalised text.
 const HEADER_RULES: { column: Column; test: RegExp }[] = [
   { column: 'isin', test: /^isin/ },
   { column: 'avgPrice', test: /^(avg|average)(buy)?(price|cost|rate)|^buyavg|^avgprice|^averageprice/ },
-  { column: 'statementPrice', test: /^(closing|close|current|market|last|ltp)(price|rate)?$|^ltp/ },
+  // CMP = "current market price" (ICICI Direct and others).
+  { column: 'statementPrice', test: /^(closing|close|current|market|last|ltp|cmp)(price|rate)?$|^ltp|^cmp/ },
+  { column: 'invested', test: /^(invested|investedvalue|investedamount|investment|buyvalue|costvalue|totalcost)$/ },
+  { column: 'currentValue', test: /^(currentvalue|marketvalue|presentvalue)$/ },
   { column: 'quantity', test: /^(quantity|qty|shares|units|holdingqty|freeqty)/ },
   { column: 'name', test: /^(stockname|companyname|company|security(name)?|instrument|scrip(name)?|symbol|name|stock)$/ },
 ];
+
+// When a statement has several name columns (e.g. ICICI Direct's "Stock Name"
+// holds a code like ASTERDMEQ next to "Company Name"), prefer the readable one.
+const NAME_RANK = ['companyname', 'company', 'securityname', 'security', 'scripname', 'instrument', 'stockname', 'name', 'stock', 'scrip', 'symbol'];
 
 const normalise = (v: Cell) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -34,13 +41,22 @@ function toNumber(v: Cell): number | null {
 /** Map header cells to columns; null when this row isn't a holdings header. */
 function headerMap(row: Cell[]): Partial<Record<Column, number>> | null {
   const map: Partial<Record<Column, number>> = {};
+  let nameRank = Number.MAX_SAFE_INTEGER;
   row.forEach((cell, idx) => {
     const text = normalise(cell);
     if (!text) return;
     const rule = HEADER_RULES.find((r) => r.test.test(text));
-    if (rule && map[rule.column] === undefined) map[rule.column] = idx;
+    if (!rule) return;
+    if (map[rule.column] === undefined) {
+      map[rule.column] = idx;
+      nameRank = rule.column === 'name' ? NAME_RANK.indexOf(text) : nameRank;
+    } else if (rule.column === 'name' && NAME_RANK.indexOf(text) < nameRank) {
+      map.name = idx;
+      nameRank = NAME_RANK.indexOf(text);
+    }
   });
-  const ok = map.name !== undefined && map.quantity !== undefined && map.avgPrice !== undefined;
+  const ok =
+    map.name !== undefined && map.quantity !== undefined && (map.avgPrice !== undefined || map.invested !== undefined);
   return ok ? map : null;
 }
 
@@ -56,17 +72,33 @@ export function parseHoldingsRows(rows: Cell[][]): HoldingsImportResult | null {
   const cols = headerMap(rows[headerIdx])!;
   const at = (row: Cell[], c: Column) => (cols[c] === undefined ? undefined : row[cols[c]!]);
 
+  // Price from the statement, or its current value ÷ quantity.
+  const statementPrice = (row: Cell[]): number | null => {
+    const price = toNumber(at(row, 'statementPrice'));
+    if (price != null) return price;
+    const value = toNumber(at(row, 'currentValue'));
+    const qty = toNumber(at(row, 'quantity'));
+    return value != null && qty ? value / qty : null;
+  };
+
   const holdings: HoldingsImportResult['holdings'] = [];
   let skipped = 0;
   for (const row of rows.slice(headerIdx + 1)) {
-    const name = String(at(row, 'name') ?? '').trim();
+    const name = String(at(row, 'name') ?? '').trim().replace(/\s+/g, ' ');
     if (!name) {
       if (holdings.length > 0) break;
       continue;
     }
     if (/^(total|grand total|net)\b/i.test(name)) break;
     const quantity = toNumber(at(row, 'quantity'));
-    const avgPrice = toNumber(at(row, 'avgPrice'));
+    const invested = toNumber(at(row, 'invested'));
+    let avgPrice = toNumber(at(row, 'avgPrice'));
+    if (quantity != null && quantity > 0 && invested != null && invested > 0) {
+      // No average column, or one that actually holds the total cost.
+      if (avgPrice == null || (quantity > 1 && Math.abs(avgPrice - invested) < invested * 0.01)) {
+        avgPrice = invested / quantity;
+      }
+    }
     if (quantity == null || avgPrice == null || quantity <= 0) {
       skipped++;
       continue;
@@ -77,7 +109,7 @@ export function parseHoldingsRows(rows: Cell[][]): HoldingsImportResult | null {
       isin: /^IN[A-Z0-9]{10}$/.test(isin) ? isin : null,
       quantity,
       avgPrice,
-      statementPrice: toNumber(at(row, 'statementPrice')),
+      statementPrice: statementPrice(row),
     });
   }
   return { holdings, skipped };
