@@ -9,9 +9,6 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.Button;
-import android.widget.ImageButton;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -82,48 +79,26 @@ public class SmsPromptActivity extends AppCompatActivity {
             metaView.setVisibility(View.GONE);
         }
 
-        LinearLayout approveGroup = findViewById(R.id.prompt_approve_group);
-        LinearLayout dismissGroup = findViewById(R.id.prompt_dismiss_group);
-        Button reviewBtn = findViewById(R.id.prompt_review_btn);
-        TextView approveLabel = findViewById(R.id.prompt_approve_label);
-
-        if (canAdd) {
-            approveGroup.setVisibility(View.VISIBLE);
-            dismissGroup.setVisibility(View.VISIBLE);
-            reviewBtn.setVisibility(View.GONE);
-            if (!TextUtils.isEmpty(category)) {
-                approveLabel.setText(getString(R.string.prompt_approve) + " · " + category);
-            }
-        } else {
-            // Mappings unknown: hide the Approve/Dismiss pair and show the
-            // single CTA that opens the app for review. The user hasn't told us
-            // what account or category this message maps to yet, so a silent
-            // Approve could log it to the wrong bucket.
-            approveGroup.setVisibility(View.GONE);
-            dismissGroup.setVisibility(View.GONE);
-            reviewBtn.setVisibility(View.VISIBLE);
-        }
-
-        // Approve: enqueue + toast + finish, never boots the WebView.
-        ImageButton approveBtn = findViewById(R.id.prompt_approve_btn);
-        approveBtn.setOnClickListener(v -> onApprove(amountDisplay, merchant, category, account));
-
-        // Dismiss: silent, mirrors swipe-to-dismiss.
-        ImageButton dismissBtn = findViewById(R.id.prompt_dismiss_btn);
-        dismissBtn.setOnClickListener(v -> onDismiss());
-
-        reviewBtn.setOnClickListener(v -> onReview());
-
-        // "Open Artha to edit" link always opens the app so the user can
-        // tweak account / category / note before saving.
+        TextView primaryBtn = findViewById(R.id.prompt_primary_btn);
+        TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
         TextView openLink = findViewById(R.id.prompt_open_link);
+
         if (canAdd) {
+            // Category + account learned: one tap logs it without opening the app.
+            primaryBtn.setText(TextUtils.isEmpty(category)
+                ? getString(R.string.prompt_approve)
+                : "Add to " + category);
+            primaryBtn.setOnClickListener(v -> onApprove(amountDisplay, merchant, category, account));
+            openLink.setVisibility(View.VISIBLE);
             openLink.setOnClickListener(v -> onReview());
         } else {
-            // The big button already opens Artha; offer the way out instead.
-            openLink.setText(R.string.prompt_dismiss);
-            openLink.setOnClickListener(v -> onDismiss());
+            // Mappings unknown: a silent Add could log it to the wrong bucket,
+            // so the main action opens Artha to pick them.
+            primaryBtn.setText(R.string.prompt_review);
+            primaryBtn.setOnClickListener(v -> onReview());
+            openLink.setVisibility(View.GONE);
         }
+        secondaryBtn.setOnClickListener(v -> onDismiss());
     }
 
     /**

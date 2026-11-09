@@ -105,118 +105,67 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Bottom: two large circular buttons, Dismiss (left) + Approve (right).
-         When mappings aren't learned we hide these and show the single
-         "Open Artha to review" button instead (JavaScript — ahem, Java —
-         logic in the Activity swaps visibility). -->
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <!-- Bottom: a primary pill (Add to <category>, or Review in Artha when the
+         category / account isn't learned yet), an outlined Dismiss pill, and a
+         small "Edit in Artha" link when one-tap Add is offered. -->
+    <LinearLayout
         android:id="@+id/prompt_actions"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="48dp"
-        android:paddingEnd="48dp"
-        android:paddingBottom="56dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="32dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- Dismiss (red circle) -->
-        <LinearLayout
-            android:id="@+id/prompt_dismiss_group"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center_horizontal"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent">
-
-            <ImageButton
-                android:id="@+id/prompt_dismiss_btn"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:background="@drawable/prompt_btn_dismiss"
-                android:src="@drawable/ic_prompt_close"
-                android:contentDescription="@string/prompt_dismiss"
-                android:scaleType="center" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/prompt_dismiss"
-                android:textColor="@color/prompt_text"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium" />
-        </LinearLayout>
-
-        <!-- Approve (green circle) -->
-        <LinearLayout
-            android:id="@+id/prompt_approve_group"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center_horizontal"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent">
-
-            <ImageButton
-                android:id="@+id/prompt_approve_btn"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:background="@drawable/prompt_btn_approve"
-                android:src="@drawable/ic_prompt_check"
-                android:contentDescription="@string/prompt_approve"
-                android:scaleType="center" />
-
-            <TextView
-                android:id="@+id/prompt_approve_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/prompt_approve"
-                android:textColor="@color/prompt_text"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium" />
-        </LinearLayout>
-
-        <!-- Fallback: single CTA when we don't know category + account.
-             Visibility is swapped in SmsPromptActivity. -->
-        <Button
-            android:id="@+id/prompt_review_btn"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="@string/prompt_review"
-            android:textColor="@color/prompt_text"
-            android:textAllCaps="false"
-            android:textSize="15sp"
-            android:fontFamily="sans-serif-medium"
+        <TextView
+            android:id="@+id/prompt_primary_btn"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center"
             android:background="@drawable/prompt_btn_pill"
-            android:minHeight="56dp"
-            android:stateListAnimator="@null"
-            android:paddingTop="16dp"
-            android:paddingBottom="18dp"
-            android:visibility="gone"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent" />
-    </androidx.constraintlayout.widget.ConstraintLayout>
+            android:clickable="true"
+            android:focusable="true"
+            android:text="@string/prompt_approve"
+            android:textColor="@color/prompt_text"
+            android:textSize="16sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp" />
 
-    <!-- Thin link at the bottom to open the full app (for edit / review). -->
-    <TextView
-        android:id="@+id/prompt_open_link"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="@string/prompt_open"
-        android:textColor="@color/prompt_text_muted"
-        android:textSize="13sp"
-        android:fontFamily="sans-serif-medium"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        app:layout_constraintBottom_toTopOf="@id/prompt_actions"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        <TextView
+            android:id="@+id/prompt_secondary_btn"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:background="@drawable/prompt_btn_outline"
+            android:clickable="true"
+            android:focusable="true"
+            android:text="@string/prompt_dismiss"
+            android:textColor="@color/prompt_text"
+            android:textSize="16sp"
+            android:fontFamily="sans-serif-medium" />
+
+        <TextView
+            android:id="@+id/prompt_open_link"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="4dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/prompt_open"
+            android:textColor="@color/prompt_text_muted"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
