@@ -41,6 +41,8 @@ public class SmsPromptActivity extends AppCompatActivity {
     static final String EXTRA_DATE = "artha_prompt_date";
     static final String EXTRA_CAN_ADD = "artha_prompt_can_add";
     static final String EXTRA_NOTIF_ID = "artha_prompt_notif_id";
+    /** Sample prompt from Settings → Test lock-screen alert: nothing is saved. */
+    static final String EXTRA_TEST = "artha_prompt_test";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -166,6 +168,12 @@ public class SmsPromptActivity extends AppCompatActivity {
         long date = src != null ? src.getLongExtra(EXTRA_DATE, System.currentTimeMillis())
                                 : System.currentTimeMillis();
 
+        if (isTest()) {
+            cancelNotification();
+            Toast.makeText(this, "Test alert works — nothing was added", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
         enqueueApproved(body, address, date, amountDisplay, merchant, category, account);
         cancelNotification();
         clearPendingStash();
@@ -173,9 +181,16 @@ public class SmsPromptActivity extends AppCompatActivity {
         finish();
     }
 
+    private boolean isTest() {
+        Intent src = getIntent();
+        return src != null && src.getBooleanExtra(EXTRA_TEST, false);
+    }
+
     private void onDismiss() {
         cancelNotification();
-        clearPendingStash();
+        if (!isTest()) {
+            clearPendingStash();
+        }
         Toast.makeText(this, R.string.prompt_dismissed, Toast.LENGTH_SHORT).show();
         finish();
     }
@@ -190,7 +205,7 @@ public class SmsPromptActivity extends AppCompatActivity {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
                 | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            launch.putExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS, true);
+            launch.putExtra(SmsBackgroundReceiver.EXTRA_OPEN_SMS, !isTest());
             startActivity(launch);
         }
         cancelNotification();

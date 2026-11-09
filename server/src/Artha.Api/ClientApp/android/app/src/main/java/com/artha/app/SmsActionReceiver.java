@@ -26,6 +26,11 @@ public class SmsActionReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
+        // Test prompt (Settings → Test lock-screen alert): just clear it.
+        if (intent.getBooleanExtra(SmsPromptActivity.EXTRA_TEST, false)) {
+            cancelNotification(context, intent);
+            return;
+        }
         if (SmsBackgroundReceiver.ACTION_DISMISS.equals(action)) {
             handleDismiss(context, intent);
             return;

@@ -421,6 +421,50 @@ public class SmsReaderPlugin extends Plugin {
     }
 
     /**
+     * Whether Artha may "Display over other apps". With it, the receiver's direct
+     * startActivity() is exempt from Background Activity Launch limits, so the
+     * expense prompt pops up on an unlocked phone instead of only a banner.
+     */
+    @PluginMethod
+    public void canDrawOverlays(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("granted", Build.VERSION.SDK_INT < 23
+            || android.provider.Settings.canDrawOverlays(getContext()));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openOverlaySettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not open Display over other apps settings");
+        }
+    }
+
+    /**
+     * Post the sample expense prompt the way a real bank SMS would. With
+     * delaySeconds > 0 it fires later, so the user can lock the phone or leave
+     * the app first and see the real lock-screen / background behaviour.
+     */
+    @PluginMethod
+    public void testSmsPrompt(PluginCall call) {
+        int delay = Math.max(0, call.getInt("delaySeconds", 0));
+        final Context ctx = getContext().getApplicationContext();
+        Runnable show = () -> SmsBackgroundReceiver.showTestPrompt(ctx);
+        if (delay == 0) {
+            show.run();
+        } else {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(show, delay * 1000L);
+        }
+        call.resolve();
+    }
+
+    /**
      * Open the system settings page where the user grants Full-screen
      * notifications for Artha (Android 14+ only). No-op on older OSes where
      * the permission is auto-granted.

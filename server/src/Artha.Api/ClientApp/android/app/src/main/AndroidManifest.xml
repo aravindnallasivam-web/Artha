@@ -20,6 +20,8 @@
          or the alert quietly degrades to a heads-up banner. The in-app Settings
          toggle links out to that screen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Lets the expense prompt open over other apps (Background Activity Launch exemption). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"

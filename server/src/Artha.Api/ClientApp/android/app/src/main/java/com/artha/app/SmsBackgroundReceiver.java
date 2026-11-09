@@ -216,7 +216,25 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .replaceAll("[^A-Z0-9]", "");
     }
 
+    /** Sample SMS used by the in-app "Test lock-screen alert" button. */
+    static final String TEST_ADDRESS = "AD-HDFCBK";
+    static final String TEST_BODY =
+        "Rs.432.00 spent on HDFC Bank Card XX1234 at BLUE TOKAI COFFEE on 09-11-26. Not you? Call 18002586161";
+
+    /**
+     * Post the sample expense prompt exactly like a real SMS would (notification +
+     * full-screen intent + direct launch), but flagged as a test so Approve/Dismiss
+     * never touch the pre-approved queue or the pending-SMS stash.
+     */
+    static void showTestPrompt(Context context) {
+        new SmsBackgroundReceiver().postNotification(context, "432", TEST_ADDRESS, TEST_BODY, true);
+    }
+
     private void postNotification(Context context, String amount, String address, String body) {
+        postNotification(context, amount, address, body, false);
+    }
+
+    void postNotification(Context context, String amount, String address, String body, boolean test) {
         NotificationManager nm =
             (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
@@ -235,18 +253,20 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         }
 
         // Stash the triggering SMS so a tap can open the confirm dialog straight
-        // from it, without waiting on an inbox re-scan.
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_PENDING_BODY, body)
-            .putString(KEY_PENDING_ADDRESS, address)
-            .putLong(KEY_PENDING_DATE, System.currentTimeMillis())
-            .apply();
+        // from it, without waiting on an inbox re-scan. (Not for the test prompt.)
+        if (!test) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_PENDING_BODY, body)
+                .putString(KEY_PENDING_ADDRESS, address)
+                .putLong(KEY_PENDING_DATE, System.currentTimeMillis())
+                .apply();
+        }
 
         // Both the account (by sender) and category (a learned merchant key found
         // in the body) must resolve to offer the one-tap "Add" action.
-        String accountName = accountNameFor(context, address);
-        String categoryName = categoryNameFor(context, body);
+        String accountName = test ? "HDFC Credit Card" : accountNameFor(context, address);
+        String categoryName = test ? "Food & Dining" : categoryNameFor(context, body);
         boolean canAdd = accountName != null && !accountName.isEmpty()
             && categoryName != null && !categoryName.isEmpty();
 
@@ -259,7 +279,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (launch != null) {
             launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            launch.putExtra(EXTRA_OPEN_SMS, true);
+            launch.putExtra(EXTRA_OPEN_SMS, !test);
         }
         PendingIntent contentIntent = PendingIntent.getActivity(context, 0, launch, flags);
 
@@ -281,6 +301,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         prompt.putExtra(SmsPromptActivity.EXTRA_DATE, System.currentTimeMillis());
         prompt.putExtra(SmsPromptActivity.EXTRA_CAN_ADD, canAdd);
         prompt.putExtra(SmsPromptActivity.EXTRA_NOTIF_ID, NOTIF_ID);
+        prompt.putExtra(SmsPromptActivity.EXTRA_TEST, test);
         PendingIntent fullScreenIntent =
             PendingIntent.getActivity(context, 3, prompt, flags);
 
@@ -290,7 +311,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.getApplicationInfo().icon)
-            .setContentTitle("Expense detected")
+            .setContentTitle(test ? "Expense detected (test)" : "Expense detected")
             .setContentText(text)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -325,7 +346,8 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
                 .putExtra(SmsPromptActivity.EXTRA_ACCOUNT, accountName)
                 .putExtra(SmsPromptActivity.EXTRA_BODY, body)
                 .putExtra(SmsPromptActivity.EXTRA_ADDRESS, address)
-                .putExtra(SmsPromptActivity.EXTRA_DATE, System.currentTimeMillis());
+                .putExtra(SmsPromptActivity.EXTRA_DATE, System.currentTimeMillis())
+                .putExtra(SmsPromptActivity.EXTRA_TEST, test);
             PendingIntent approvePending =
                 PendingIntent.getBroadcast(context, 1, approveIntent, flags);
             builder.addAction(0, "Add to " + categoryName, approvePending);
@@ -336,26 +358,26 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         // away deleteIntent so swipe-to-dismiss goes through the same path.
         Intent dismissIntent = new Intent(context, SmsActionReceiver.class)
             .setAction(ACTION_DISMISS)
-            .putExtra(EXTRA_NOTIF_ID, NOTIF_ID);
+            .putExtra(EXTRA_NOTIF_ID, NOTIF_ID)
+            .putExtra(SmsPromptActivity.EXTRA_TEST, test);
         PendingIntent dismissPending = PendingIntent.getBroadcast(context, 2, dismissIntent, flags);
         builder.addAction(0, "Dismiss", dismissPending);
         builder.setDeleteIntent(dismissPending);
 
         nm.notify(NOTIF_ID, builder.build());
 
-        // Directly launch the Activity — the MyGate / NoBroker trick.
-        // setFullScreenIntent only renders as a takeover when the screen is
-        // off / locked; on an unlocked phone Android downgrades it to a heads-
-        // up banner. SMS_RECEIVED broadcasts, however, grant us Background
-        // Activity Launch (one of the system-exempt broadcasts), so a direct
-        // startActivity() pops the prompt over whatever the user was doing —
-        // exactly how a visitor-approval screen behaves. The notification
-        // still goes out as the shade entry / fallback.
+        // Also launch the prompt directly so it pops over whatever is on screen.
+        // setFullScreenIntent only takes over when the screen is off / locked;
+        // on an unlocked phone Android shows it as a heads-up banner. A direct
+        // startActivity() from a background receiver is blocked by Android's
+        // Background Activity Launch rules (Android 10+) unless the app may
+        // "Display over other apps" (SYSTEM_ALERT_WINDOW) — the Settings screen
+        // asks for that. Without it the call is silently dropped and the
+        // notification above is what the user sees.
         try {
             context.startActivity(prompt);
         } catch (Exception ignored) {
-            // BAL may be refused on some OEMs or with changed restrictions —
-            // the notification + its full-screen intent are the fallback.
+            // Refused: the notification + its full-screen intent are the fallback.
         }
     }
 }

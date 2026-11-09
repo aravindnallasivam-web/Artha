@@ -102,6 +102,12 @@ export interface SmsReaderPlugin {
    * notifications for Artha. No-op on older OSes.
    */
   openFullScreenIntentSettings(): Promise<void>;
+  /** Whether Artha may "Display over other apps" (lets the prompt pop up while the phone is unlocked). */
+  canDrawOverlays(): Promise<{ granted: boolean }>;
+  /** Open the system "Display over other apps" page for Artha. */
+  openOverlaySettings(): Promise<void>;
+  /** Show the sample expense prompt (notification + full-screen alert), optionally after a delay. */
+  testSmsPrompt(options: { delaySeconds: number }): Promise<void>;
   addListener(
     eventName: 'smsReceived',
     listenerFunc: (message: SmsMessage) => void,

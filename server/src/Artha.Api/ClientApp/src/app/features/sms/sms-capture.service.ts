@@ -123,6 +123,9 @@ export class SmsCaptureService {
   private readonly _fullScreenGranted = signal<boolean | null>(null);
   /** Reactive: true once Android grants USE_FULL_SCREEN_INTENT, null off-Android. */
   readonly fullScreenGranted = this._fullScreenGranted.asReadonly();
+  private readonly _overlayGranted = signal<boolean | null>(null);
+  /** Reactive: whether "Display over other apps" is granted; null off-Android. */
+  readonly overlayGranted = this._overlayGranted.asReadonly();
 
   // ----- Ignored senders -----
 
@@ -240,6 +243,28 @@ export class SmsCaptureService {
     } catch {
       this._fullScreenGranted.set(null);
     }
+    try {
+      this._overlayGranted.set((await SmsReader.canDrawOverlays()).granted);
+    } catch {
+      // Older APK without the method.
+      this._overlayGranted.set(null);
+    }
+  }
+
+  /** Open Android's "Display over other apps" page for Artha. */
+  async openOverlaySettings(): Promise<void> {
+    if (!this.isSupported()) return;
+    try {
+      await SmsReader.openOverlaySettings();
+    } catch {
+      // Nothing to do; the row stays Off.
+    }
+  }
+
+  /** Show the sample expense prompt now, or after `delaySeconds` (time to lock the phone). */
+  async testPrompt(delaySeconds = 0): Promise<void> {
+    if (!this.isSupported()) return;
+    await SmsReader.testSmsPrompt({ delaySeconds });
   }
 
   /**

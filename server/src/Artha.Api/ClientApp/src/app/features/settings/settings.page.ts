@@ -212,6 +212,42 @@ import { SettingsStore } from './settings.store';
                   {{ sms.fullScreenGranted() === true ? 'On' : 'Off' }}
                 </ion-note>
               </ion-item>
+              @if (sms.overlayGranted() !== null) {
+                <ion-item button detail="false" (click)="sms.openOverlaySettings()">
+                  <span class="icon-chip chip-accent" slot="start">
+                    <ion-icon name="browsers-outline"></ion-icon>
+                  </span>
+                  <ion-label class="ion-text-wrap">
+                    <h2>Pop up over other apps</h2>
+                    <p>
+                      @if (sms.overlayGranted()) {
+                        The expense prompt opens full screen even while you're using another app.
+                      } @else {
+                        Tap and allow "Display over other apps" — without it, an unlocked phone only shows a banner.
+                      }
+                    </p>
+                  </ion-label>
+                  <ion-note slot="end" class="pill" [class.pill-muted]="!sms.overlayGranted()">
+                    {{ sms.overlayGranted() ? 'On' : 'Off' }}
+                  </ion-note>
+                </ion-item>
+              }
+              <ion-item detail="false" lines="none">
+                <span class="icon-chip chip-accent" slot="start">
+                  <ion-icon name="flask-outline"></ion-icon>
+                </span>
+                <ion-label class="ion-text-wrap">
+                  <h2>Test expense alert</h2>
+                  <p>Shows a sample ₹432 Blue Tokai Coffee alert. Nothing is saved.
+                    Use “In 10 s”, then lock the phone or switch apps to see the real behaviour.</p>
+                  <div class="test-actions">
+                    <button type="button" class="test-btn" (click)="testAlert(0)">Show now</button>
+                    <button type="button" class="test-btn" (click)="testAlert(10)">
+                      {{ testCountdown() > 0 ? 'Showing in ' + testCountdown() + ' s…' : 'In 10 s' }}
+                    </button>
+                  </div>
+                </ion-label>
+              </ion-item>
             }
           </ion-list>
 
@@ -385,6 +421,14 @@ import { SettingsStore } from './settings.store';
       color: var(--artha-text-subtle, var(--ion-color-step-500));
     }
 
+    /* Test expense alert buttons */
+    .test-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .test-btn {
+      border: 1px solid var(--artha-accent); background: transparent; color: var(--artha-accent);
+      border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600;
+    }
+    .test-btn:active { background: var(--artha-accent); color: #fff; }
+
     /* Privacy hint */
     .hint {
       display: flex; align-items: flex-start; gap: 7px;
@@ -554,6 +598,32 @@ export class SettingsPage implements OnInit {
    * system Full-screen notifications screen where the user can grant it; on
    * `resume` the SMS service re-polls and the UI flips to On automatically.
    */
+  protected readonly testCountdown = signal(0);
+  private testTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Fire the sample expense prompt now or after a delay (to test lock screen / other apps). */
+  async testAlert(delaySeconds: number): Promise<void> {
+    try {
+      await this.sms.testPrompt(delaySeconds);
+    } catch {
+      await this.notifier.notifyError('Update the app to use the test alert.');
+      return;
+    }
+    if (delaySeconds > 0) {
+      if (this.testTimer) clearInterval(this.testTimer);
+      this.testCountdown.set(delaySeconds);
+      this.testTimer = setInterval(() => {
+        const left = this.testCountdown() - 1;
+        this.testCountdown.set(Math.max(0, left));
+        if (left <= 0 && this.testTimer) {
+          clearInterval(this.testTimer);
+          this.testTimer = null;
+        }
+      }, 1000);
+      await this.notifier.notifyInfo(`Test alert in ${delaySeconds} s — lock the phone or switch apps now.`);
+    }
+  }
+
   async onLockScreenAlertTap(): Promise<void> {
     await this.sms.openFullScreenIntentSettings();
   }
