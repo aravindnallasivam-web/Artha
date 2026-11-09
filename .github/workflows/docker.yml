@@ -9,10 +9,21 @@ name: Docker
 on:
   push:
     branches: [main, "claude/**"]
+    # Only what goes into the web image. The Android project lives under the
+    # same folder, so Android-only changes are excluded (they'd rebuild an
+    # identical image and burn Actions minutes).
     paths:
       - server/src/Artha.Api/ClientApp/**
       - .github/workflows/docker.yml
+      - '!server/src/Artha.Api/ClientApp/android/**'
+      - '!server/src/Artha.Api/ClientApp/capacitor.config.*'
+      - '!**/*.md'
   workflow_dispatch:
+
+# A newer push to the same branch replaces a build still in progress.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

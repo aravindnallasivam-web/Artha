@@ -8,9 +8,22 @@ name: Android
 on:
   push:
     branches: [main, "claude/**"]
+    # Changes that can't affect the APK: the web image's server setup and docs.
+    paths-ignore:
+      - server/src/Artha.Api/ClientApp/Dockerfile
+      - server/src/Artha.Api/ClientApp/.dockerignore
+      - server/src/Artha.Api/ClientApp/nginx/**
+      - docker-compose*.yml
+      - .github/workflows/docker.yml
+      - '**/*.md'
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+# A newer push to the same branch replaces a build still in progress.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 
 # The Capacitor project (web + native android/) lives under the API's ClientApp.
 defaults:
