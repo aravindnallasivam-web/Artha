@@ -11,7 +11,7 @@ import { DonutChartComponent, DonutSegment } from './donut-chart.component';
 import { LineChartComponent } from './line-chart.component';
 import { YearBarChartComponent } from './year-bar-chart.component';
 
-type ViewMode = 'monthly' | 'yearly';
+type ViewMode = 'daily' | 'monthly' | 'yearly';
 
 const PALETTE = [
   '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899',
@@ -47,6 +47,7 @@ interface CatRow {
         <header class="top">
           <h1>Reports</h1>
           <div class="seg" role="tablist" aria-label="Period">
+            <button type="button" role="tab" [attr.aria-selected]="view() === 'daily'" [class.on]="view() === 'daily'" (click)="setView('daily')">Day</button>
             <button type="button" role="tab" [attr.aria-selected]="view() === 'monthly'" [class.on]="view() === 'monthly'" (click)="setView('monthly')">Month</button>
             <button type="button" role="tab" [attr.aria-selected]="view() === 'yearly'" [class.on]="view() === 'yearly'" (click)="setView('yearly')">Year</button>
           </div>
@@ -69,6 +70,21 @@ interface CatRow {
             <span class="empty-badge"><ion-icon name="stats-chart-outline"></ion-icon></span>
             <p>No spending recorded for {{ rangeLabel() }}.</p>
           </div>
+          @if (view() === 'daily') {
+            <section class="card">
+              <h2>Last 7 days</h2>
+              <div class="mbars seven">
+                @for (d of lastSevenDays(); track d.iso) {
+                  <button type="button" class="mbar" (click)="openDay(d.iso)"
+                    [attr.aria-label]="d.label + ' ' + (d.total | currency: currency() : 'symbol' : '1.0-0')">
+                    <span class="mbar-amt num" [class.current]="d.current">{{ d.total > 0 ? (d.total | currency: currency() : 'symbol' : '1.0-0') : '' }}</span>
+                    <span class="mbar-fill" [class.current]="d.current" [style.height.%]="d.pct"></span>
+                    <span class="mbar-label" [class.current]="d.current">{{ d.label }}</span>
+                  </button>
+                }
+              </div>
+            </section>
+          }
         } @else {
           <!-- Donut + key stats -->
           <section class="card hero">
@@ -87,7 +103,7 @@ interface CatRow {
             <div class="stats">
               @if (deltaInfo(); as d) {
                 <div class="stat">
-                  <span class="stat-label">vs previous month</span>
+                  <span class="stat-label">{{ view() === 'daily' ? 'vs previous day' : 'vs previous month' }}</span>
                   <span class="stat-value num" [class.up]="d.up" [class.down]="!d.up">
                     {{ d.up ? '↑' : '↓' }} {{ d.amount | currency: currency() : 'symbol' : '1.0-0' }}
                   </span>
@@ -98,10 +114,17 @@ interface CatRow {
                   <span class="stat-value num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</span>
                 </div>
               }
-              <div class="stat">
-                <span class="stat-label">{{ view() === 'monthly' ? 'Daily average' : 'Monthly average' }}</span>
-                <span class="stat-value num">{{ averageSpend() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-              </div>
+              @if (view() === 'daily') {
+                <div class="stat">
+                  <span class="stat-label">{{ deltaInfo() ? 'Total spent' : 'Largest expense' }}</span>
+                  <span class="stat-value num">{{ (deltaInfo() ? total() : largest()) | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                </div>
+              } @else {
+                <div class="stat">
+                  <span class="stat-label">{{ view() === 'monthly' ? 'Daily average' : 'Monthly average' }}</span>
+                  <span class="stat-value num">{{ averageSpend() | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                </div>
+              }
               <div class="stat">
                 <span class="stat-label">Transactions</span>
                 <span class="stat-value num">{{ count() }}</span>
@@ -118,9 +141,45 @@ interface CatRow {
             </ul>
           </section>
 
-          <!-- Month bars -->
+          <!-- Day: the day's transactions -->
+          @if (view() === 'daily') {
+            <section class="card list-card">
+              <div class="card-head">
+                <h2>Transactions</h2>
+                <span class="card-sub">Tap to edit</span>
+              </div>
+              <ul class="txns">
+                @for (t of dayTransactions(); track t.id) {
+                  <li class="txn" (click)="openExpense(t.id)">
+                    <span class="txn-dot" [style.background]="t.color"></span>
+                    <div class="txn-body">
+                      <span class="txn-title">{{ t.title }}</span>
+                      <span class="txn-sub">{{ t.category }} · {{ t.account }}@if (t.excluded) { · not counted }</span>
+                    </div>
+                    <span class="txn-amt num" [class.income]="t.income" [class.excluded]="t.excluded">
+                      {{ t.income ? '+' : '' }}{{ t.amount | currency: currency() : 'symbol' : '1.0-2' }}
+                    </span>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+
+          <!-- Period bars -->
           <section class="card">
-            @if (view() === 'monthly') {
+            @if (view() === 'daily') {
+              <h2>Last 7 days</h2>
+              <div class="mbars seven">
+                @for (d of lastSevenDays(); track d.iso) {
+                  <button type="button" class="mbar" (click)="openDay(d.iso)"
+                    [attr.aria-label]="d.label + ' ' + (d.total | currency: currency() : 'symbol' : '1.0-0')">
+                    <span class="mbar-amt num" [class.current]="d.current">{{ d.total > 0 ? (d.total | currency: currency() : 'symbol' : '1.0-0') : '' }}</span>
+                    <span class="mbar-fill" [class.current]="d.current" [style.height.%]="d.pct"></span>
+                    <span class="mbar-label" [class.current]="d.current">{{ d.label }}</span>
+                  </button>
+                }
+              </div>
+            } @else if (view() === 'monthly') {
               <h2>Last 6 months</h2>
               <div class="mbars">
                 @for (m of lastSixMonths(); track m.key) {
@@ -141,6 +200,30 @@ interface CatRow {
             <section class="card">
               <h2>Daily spending</h2>
               <artha-line-chart [series]="dailySeries()" [currency]="currency()"></artha-line-chart>
+            </section>
+
+            <section class="card list-card">
+              <div class="card-head">
+                <h2>Day by day</h2>
+                <span class="card-sub">Tap a day for its report</span>
+              </div>
+              <ul class="days">
+                @for (d of dayByDay(); track d.iso) {
+                  <li class="day" (click)="openDay(d.iso)">
+                    <div class="day-date">
+                      <span class="day-num num">{{ d.dayNum }}</span>
+                      <span class="day-wd">{{ d.weekday }}</span>
+                    </div>
+                    <div class="cat-body">
+                      <div class="cat-top">
+                        <span class="day-count">{{ d.count }} {{ d.count === 1 ? 'transaction' : 'transactions' }}</span>
+                        <span class="cat-amt num">{{ d.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                      </div>
+                      <div class="track"><div class="fill" [style.width.%]="d.pct" [style.background]="'var(--artha-accent)'"></div></div>
+                    </div>
+                  </li>
+                }
+              </ul>
             </section>
           }
 
@@ -302,6 +385,35 @@ interface CatRow {
     .mbar-label { font-size: 11.5px; font-weight: 600; color: var(--artha-text-subtle); }
     .mbar-label.current { color: var(--artha-text); font-weight: 800; }
 
+    .mbars.seven { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; height: 150px; }
+    button.mbar { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
+    .mbar-amt { font-size: 10px; font-weight: 700; color: var(--artha-text-subtle); white-space: nowrap; }
+    .mbar-amt.current { color: var(--artha-text); }
+    .mbars.seven .mbar-fill { max-height: calc(100% - 40px); }
+
+    /* Day transactions */
+    .txns, .days { list-style: none; margin: 0; padding: 0; }
+    .txn { display: flex; align-items: center; gap: 12px; padding: 10px 6px; margin: 0 -6px; border-radius: 12px; cursor: pointer; }
+    .txn:hover { background: var(--artha-surface-2); }
+    .txn-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .txn-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .txn-title { font-size: 14px; font-weight: 700; color: var(--artha-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .txn-sub { font-size: 12px; color: var(--artha-text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .txn-amt { font-size: 14px; font-weight: 800; color: var(--artha-text); flex-shrink: 0; }
+    .txn-amt.income { color: var(--artha-positive); }
+    .txn-amt.excluded { color: var(--artha-text-subtle); text-decoration: line-through; }
+
+    /* Day-by-day rows */
+    .day { display: flex; align-items: center; gap: 12px; padding: 9px 6px; margin: 0 -6px; border-radius: 12px; cursor: pointer; }
+    .day:hover { background: var(--artha-surface-2); }
+    .day-date {
+      width: 44px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+      padding: 4px 0; border-radius: 12px; background: var(--artha-surface-2);
+    }
+    .day-num { font-size: 16px; font-weight: 800; line-height: 1.1; color: var(--artha-text); }
+    .day-wd { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--artha-text-subtle); }
+    .day-count { font-size: 13px; font-weight: 600; color: var(--artha-text-muted); }
+
     /* Category / account rows */
     .cats { list-style: none; margin: 0; padding: 0; }
     .cat { display: flex; align-items: center; gap: 12px; padding: 10px 6px; margin: 0 -6px; border-radius: 12px; cursor: pointer; }
@@ -352,6 +464,7 @@ export class ReportsPage implements OnInit {
   protected readonly view = signal<ViewMode>('monthly');
   protected readonly year = signal<number>(new Date().getFullYear());
   protected readonly month = signal<number>(new Date().getMonth() + 1);
+  protected readonly day = signal<number>(new Date().getDate());
 
   protected readonly loading = signal<boolean>(false);
   protected readonly currency = signal<string>('USD');
@@ -360,12 +473,27 @@ export class ReportsPage implements OnInit {
   /** Monthly view: the six months ending at the selected month (for the bars). */
   private readonly recentExpenses = signal<Expense[]>([]);
 
-  protected readonly rangeLabel = computed(() =>
-    this.view() === 'monthly' ? `${MONTH_LABELS[this.month() - 1]} ${this.year()}` : String(this.year()),
-  );
+  /** Day view: the selected date as 'YYYY-MM-DD'. */
+  private readonly dayIso = computed(() => isoDate(new Date(this.year(), this.month() - 1, this.day())));
+
+  protected readonly rangeLabel = computed(() => {
+    if (this.view() === 'daily') {
+      const d = new Date(this.year(), this.month() - 1, this.day());
+      const today = isoDate(new Date());
+      const yesterday = isoDate(addDays(new Date(), -1));
+      const full = `${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
+      if (this.dayIso() === today) return `Today · ${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)}`;
+      if (this.dayIso() === yesterday) return `Yesterday · ${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)}`;
+      return full;
+    }
+    return this.view() === 'monthly' ? `${MONTH_LABELS[this.month() - 1]} ${this.year()}` : String(this.year());
+  });
 
   protected readonly canStepForward = computed(() => {
     const now = new Date();
+    if (this.view() === 'daily') {
+      return this.dayIso() < isoDate(now);
+    }
     if (this.view() === 'monthly') {
       return new Date(this.year(), this.month() - 1) < new Date(now.getFullYear(), now.getMonth());
     }
@@ -379,6 +507,7 @@ export class ReportsPage implements OnInit {
     this.counted().reduce((s, e) => s + e.amount, 0),
   );
   protected readonly count = computed(() => this.counted().length);
+  protected readonly largest = computed(() => Math.max(0, ...this.counted().map((e) => e.amount)));
 
   protected readonly averageSpend = computed(() => {
     const total = this.total();
@@ -394,7 +523,7 @@ export class ReportsPage implements OnInit {
   });
 
   protected readonly deltaInfo = computed(() => {
-    if (this.view() !== 'monthly') return null;
+    if (this.view() === 'yearly') return null;
     const prev = this.prevTotal();
     if (prev <= 0) return null;
     const diff = this.total() - prev;
@@ -418,6 +547,69 @@ export class ReportsPage implements OnInit {
     const max = Math.max(...months.map((b) => b.total), 0);
     for (const b of months) b.pct = max > 0 ? Math.max(3, (b.total / max) * 100) : 3;
     return months;
+  });
+
+  /** Day view: the seven days ending at the selected one (bars). */
+  protected readonly lastSevenDays = computed(() => {
+    const end = new Date(this.year(), this.month() - 1, this.day());
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(end, i - 6);
+      return { iso: isoDate(d), label: WEEKDAYS[d.getDay()].slice(0, 2) + ' ' + d.getDate(), total: 0, current: i === 6, pct: 0 };
+    });
+    for (const e of this.recentExpenses()) {
+      if (e.excluded) continue;
+      const bucket = days.find((b) => b.iso === e.date);
+      if (bucket) bucket.total += e.amount;
+    }
+    const max = Math.max(...days.map((b) => b.total), 0);
+    for (const b of days) b.pct = max > 0 ? Math.max(3, (b.total / max) * 100) : 3;
+    return days;
+  });
+
+  /** Day view: that day's transactions, biggest first (excluded ones last). */
+  protected readonly dayTransactions = computed(() => {
+    const cats = this.categoriesStore.byId();
+    const accs = this.accountsStore.byId();
+    return [...this.periodExpenses()]
+      .sort((a, b) => Number(a.excluded) - Number(b.excluded) || b.amount - a.amount)
+      .map((e) => {
+        const cat = cats[e.categoryId];
+        return {
+          id: e.id,
+          title: e.note?.trim() ? merchantOf(e.note) : cat?.name ?? 'Expense',
+          category: cat?.name ?? 'Uncategorized',
+          account: accs[e.accountId]?.name ?? 'Account',
+          color: cat?.color ?? OTHER_COLOR,
+          amount: e.amount,
+          income: e.type === 'income',
+          excluded: e.excluded,
+        };
+      });
+  });
+
+  /** Month view: every day with spending, newest first. */
+  protected readonly dayByDay = computed(() => {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const e of this.counted()) {
+      const cur = map.get(e.date) ?? { total: 0, count: 0 };
+      cur.total += e.amount;
+      cur.count += 1;
+      map.set(e.date, cur);
+    }
+    const max = Math.max(...[...map.values()].map((v) => v.total), 0);
+    return [...map.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([iso, v]) => {
+        const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+        return {
+          iso,
+          dayNum: d.getDate(),
+          weekday: WEEKDAYS[d.getDay()].slice(0, 3),
+          total: v.total,
+          count: v.count,
+          pct: max > 0 ? Math.max(3, (v.total / max) * 100) : 0,
+        };
+      });
   });
 
   protected readonly byCategory = computed<CatRow[]>(() => {
@@ -586,13 +778,44 @@ export class ReportsPage implements OnInit {
 
   protected async setView(value: ViewMode): Promise<void> {
     if (value !== this.view()) {
+      if (value === 'daily') {
+        // Today when looking at this month (or a year); else that month's last day.
+        const now = new Date();
+        const thisMonth = this.year() === now.getFullYear() && this.month() === now.getMonth() + 1;
+        if (this.view() === 'yearly' || thisMonth) {
+          this.year.set(now.getFullYear());
+          this.month.set(now.getMonth() + 1);
+          this.day.set(now.getDate());
+        } else {
+          this.day.set(daysInMonth(this.year(), this.month()));
+        }
+      }
       this.view.set(value);
       await this.refresh();
     }
   }
 
+  /** Open the Day view on a date ('YYYY-MM-DD'). */
+  protected async openDay(iso: string): Promise<void> {
+    this.setDate(new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))));
+    this.view.set('daily');
+    await this.refresh();
+  }
+
+  protected openExpense(id: string): void {
+    void this.router.navigate(['/expenses', id]);
+  }
+
+  private setDate(d: Date): void {
+    this.year.set(d.getFullYear());
+    this.month.set(d.getMonth() + 1);
+    this.day.set(d.getDate());
+  }
+
   protected async stepBack(): Promise<void> {
-    if (this.view() === 'monthly') {
+    if (this.view() === 'daily') {
+      this.setDate(addDays(new Date(this.year(), this.month() - 1, this.day()), -1));
+    } else if (this.view() === 'monthly') {
       if (this.month() === 1) { this.year.update((y) => y - 1); this.month.set(12); }
       else { this.month.update((m) => m - 1); }
     } else {
@@ -603,7 +826,9 @@ export class ReportsPage implements OnInit {
 
   protected async stepForward(): Promise<void> {
     if (!this.canStepForward()) return;
-    if (this.view() === 'monthly') {
+    if (this.view() === 'daily') {
+      this.setDate(addDays(new Date(this.year(), this.month() - 1, this.day()), 1));
+    } else if (this.view() === 'monthly') {
       if (this.month() === 12) { this.year.update((y) => y + 1); this.month.set(1); }
       else { this.month.update((m) => m + 1); }
     } else {
@@ -626,7 +851,7 @@ export class ReportsPage implements OnInit {
 
   protected openCategory(categoryId: string): void {
     const queryParams: Record<string, string | number> = { category: categoryId };
-    if (this.view() === 'monthly') {
+    if (this.view() !== 'yearly') {
       queryParams['year'] = this.year();
       queryParams['month'] = this.month();
     }
@@ -638,7 +863,22 @@ export class ReportsPage implements OnInit {
     this.donutRoot.set(null);
     this.loading.set(true);
     try {
-      if (this.view() === 'monthly') {
+      if (this.view() === 'daily') {
+        const day = new Date(this.year(), this.month() - 1, this.day());
+        const from = addDays(day, -6);
+        const iso = isoDate(day);
+        const prevIso = isoDate(addDays(day, -1));
+        const res = await this.api.list(
+          monthPrefix(from.getFullYear(), from.getMonth() + 1),
+          monthPrefix(day.getFullYear(), day.getMonth() + 1),
+        );
+        this.currency.set(res.currency || 'USD');
+        this.recentExpenses.set(res.items);
+        this.periodExpenses.set(res.items.filter((e) => e.date === iso));
+        this.prevTotal.set(
+          res.items.filter((e) => e.date === prevIso && !e.excluded).reduce((s, e) => s + e.amount, 0),
+        );
+      } else if (this.view() === 'monthly') {
         const cur = monthPrefix(this.year(), this.month());
         const prev = prevMonthPrefix(this.year(), this.month());
         const res = await this.api.list(monthsBackPrefix(this.year(), this.month(), 5), cur);
@@ -661,6 +901,16 @@ export class ReportsPage implements OnInit {
       this.loading.set(false);
     }
   }
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 }
 
 function monthPrefix(year: number, month: number): string {
