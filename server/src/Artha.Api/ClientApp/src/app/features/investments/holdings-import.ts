@@ -16,7 +16,7 @@ type Column = 'name' | 'isin' | 'quantity' | 'avgPrice' | 'statementPrice' | 'in
 const HEADER_RULES: { column: Column; test: RegExp }[] = [
   { column: 'isin', test: /^isin/ },
   { column: 'avgPrice', test: /^(avg|average)(buy)?(price|cost|rate)|^buyavg|^avgprice|^averageprice/ },
-  // CMP = "current market price" (ICICI Direct and others).
+  // CMP = "current market price" (HDFC Securities and others).
   { column: 'statementPrice', test: /^(closing|close|current|market|last|ltp|cmp)(price|rate)?$|^ltp|^cmp/ },
   { column: 'invested', test: /^(invested|investedvalue|investedamount|investment|buyvalue|costvalue|totalcost)$/ },
   { column: 'currentValue', test: /^(currentvalue|marketvalue|presentvalue)$/ },
@@ -24,7 +24,7 @@ const HEADER_RULES: { column: Column; test: RegExp }[] = [
   { column: 'name', test: /^(stockname|companyname|company|security(name)?|instrument|scrip(name)?|symbol|name|stock)$/ },
 ];
 
-// When a statement has several name columns (e.g. ICICI Direct's "Stock Name"
+// When a statement has several name columns (e.g. HDFC Securities' "Stock Name"
 // holds a code like ASTERDMEQ next to "Company Name"), prefer the readable one.
 const NAME_RANK = ['companyname', 'company', 'securityname', 'security', 'scripname', 'instrument', 'stockname', 'name', 'stock', 'scrip', 'symbol'];
 
