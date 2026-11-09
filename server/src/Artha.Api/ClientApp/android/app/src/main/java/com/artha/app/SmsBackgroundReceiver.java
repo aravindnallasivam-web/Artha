@@ -44,6 +44,10 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     static final String KEY_ACCOUNT_NAMES = "account_names";
     /** JSON {merchantKey: categoryName} of learned category mappings (JS-synced). */
     static final String KEY_CATEGORY_NAMES = "category_names";
+    /** All active categories, [{name, color}], so the prompt can offer a picker. */
+    static final String KEY_CATEGORY_LIST = "category_list";
+    /** All active account names, [name], for the prompt's account picker. */
+    static final String KEY_ACCOUNT_LIST = "account_list";
     /** Extra set on the "Add" action's launch intent so the app logs straight away. */
     static final String EXTRA_ACTION_ADD = "artha_action_add";
 
@@ -230,6 +234,23 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             .replaceAll("[^A-Z0-9]", "");
     }
 
+    /** JSON array stored under `key`, or an empty array. */
+    static org.json.JSONArray readArray(Context ctx, String key) {
+        String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "[]");
+        try {
+            return new org.json.JSONArray(raw == null || raw.isEmpty() ? "[]" : raw);
+        } catch (org.json.JSONException e) {
+            return new org.json.JSONArray();
+        }
+    }
+
+    /** First real account for the test prompt, so the picker test is realistic. */
+    private static String testAccount(Context ctx) {
+        org.json.JSONArray accounts = readArray(ctx, KEY_ACCOUNT_LIST);
+        String first = accounts.length() > 0 ? accounts.optString(0, "") : "";
+        return first.isEmpty() ? "HDFC Credit Card" : first;
+    }
+
     /** Sample SMS used by the in-app "Test lock-screen alert" button. */
     static final String TEST_ADDRESS = "AD-HDFCBK";
     static final String TEST_BODY =
@@ -283,8 +304,12 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
 
         // Both the account (by sender) and category (a learned merchant key found
         // in the body) must resolve to offer the one-tap "Add" action.
-        String accountName = test ? "HDFC Credit Card" : accountNameFor(context, address);
-        String categoryName = test ? "Food & Dining" : categoryNameFor(context, body);
+        String accountName = test ? testAccount(context) : accountNameFor(context, address);
+        // The test leaves the category unknown (when the app has synced its
+        // list) so the prompt shows the category picker.
+        String categoryName = test
+            ? (readArray(context, KEY_CATEGORY_LIST).length() > 0 ? null : "Food & Dining")
+            : categoryNameFor(context, body);
         boolean canAdd = accountName != null && !accountName.isEmpty()
             && categoryName != null && !categoryName.isEmpty();
 

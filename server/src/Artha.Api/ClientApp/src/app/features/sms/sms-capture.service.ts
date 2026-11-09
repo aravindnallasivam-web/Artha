@@ -218,7 +218,30 @@ export class SmsCaptureService {
       }
     }
 
-    await SmsReader.setNotificationMappings({ accountNames, categoryNames }).catch(() => undefined);
+    // Full lists for the prompt's pickers, the ones learned most often first.
+    const uses = (map: Record<string, string>) => {
+      const counts: Record<string, number> = {};
+      for (const id of Object.values(map)) counts[id] = (counts[id] ?? 0) + 1;
+      return counts;
+    };
+    const catUses = uses(this.categoryMap());
+    const accUses = uses(this.accountMap());
+    const byUse = <T extends { id: string; name: string }>(counts: Record<string, number>) =>
+      (a: T, b: T) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0) || a.name.localeCompare(b.name);
+    const categories = this.categoriesStore
+      .items()
+      .filter((c) => !c.archived)
+      .sort(byUse(catUses))
+      .map((c) => ({ name: c.name, color: c.color }));
+    const accounts = this.accountsStore
+      .items()
+      .filter((a) => !a.archived)
+      .sort(byUse(accUses))
+      .map((a) => a.name);
+
+    await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts }).catch(
+      () => undefined,
+    );
   }
 
   /** SMS capture only exists on Android. */

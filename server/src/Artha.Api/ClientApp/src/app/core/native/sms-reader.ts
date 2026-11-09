@@ -73,6 +73,10 @@ export interface SmsReaderPlugin {
   setNotificationMappings(options: {
     accountNames: Record<string, string>;
     categoryNames: Record<string, string>;
+    /** Every active category (most used first), for the full-screen prompt's picker. */
+    categories?: { name: string; color: string | null }[];
+    /** Every active account name (most used first), for the prompt's account picker. */
+    accounts?: string[];
   }): Promise<void>;
   /**
    * If the app was opened by tapping a background "expense detected"

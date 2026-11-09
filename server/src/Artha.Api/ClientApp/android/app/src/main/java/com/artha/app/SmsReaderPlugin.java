@@ -290,9 +290,19 @@ public class SmsReaderPlugin extends Plugin {
     public void setNotificationMappings(PluginCall call) {
         JSObject accountNames = call.getObject("accountNames");
         JSObject categoryNames = call.getObject("categoryNames");
-        getContext()
+        // Optional full lists for the prompt's pickers (older web builds omit them).
+        JSArray categories = call.getArray("categories");
+        JSArray accounts = call.getArray("accounts");
+        android.content.SharedPreferences.Editor editor = getContext()
             .getSharedPreferences(SmsBackgroundReceiver.PREFS, android.content.Context.MODE_PRIVATE)
-            .edit()
+            .edit();
+        if (categories != null) {
+            editor.putString(SmsBackgroundReceiver.KEY_CATEGORY_LIST, categories.toString());
+        }
+        if (accounts != null) {
+            editor.putString(SmsBackgroundReceiver.KEY_ACCOUNT_LIST, accounts.toString());
+        }
+        editor
             .putString(SmsBackgroundReceiver.KEY_ACCOUNT_NAMES,
                 accountNames != null ? accountNames.toString() : "{}")
             .putString(SmsBackgroundReceiver.KEY_CATEGORY_NAMES,

@@ -41,6 +41,15 @@ public class SmsPromptActivity extends AppCompatActivity {
     /** Sample prompt from Settings → Test lock-screen alert: nothing is saved. */
     static final String EXTRA_TEST = "artha_prompt_test";
 
+    // Current choice; starts from what the receiver resolved, filled in by the chips.
+    private String selectedCategory;
+    private String selectedAccount;
+    private String amountDisplay;
+    private String merchant;
+    private TextView primaryBtn;
+    private FlowLayout categoryChips;
+    private FlowLayout accountChips;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -48,17 +57,18 @@ public class SmsPromptActivity extends AppCompatActivity {
         setContentView(R.layout.activity_sms_prompt);
 
         Intent src = getIntent();
-        String amountDisplay = src != null ? src.getStringExtra(EXTRA_AMOUNT_DISPLAY) : null;
-        String merchant = src != null ? src.getStringExtra(EXTRA_MERCHANT) : null;
+        amountDisplay = src != null ? src.getStringExtra(EXTRA_AMOUNT_DISPLAY) : null;
+        merchant = src != null ? src.getStringExtra(EXTRA_MERCHANT) : null;
         String category = src != null ? src.getStringExtra(EXTRA_CATEGORY) : null;
         String account = src != null ? src.getStringExtra(EXTRA_ACCOUNT) : null;
         boolean canAdd = src != null && src.getBooleanExtra(EXTRA_CAN_ADD, false);
+        selectedCategory = TextUtils.isEmpty(category) ? null : category;
+        selectedAccount = TextUtils.isEmpty(account) ? null : account;
 
         TextView amountView = findViewById(R.id.prompt_amount);
         if (!TextUtils.isEmpty(amountDisplay)) {
             amountView.setText(amountDisplay);
         }
-
         TextView merchantView = findViewById(R.id.prompt_merchant);
         if (!TextUtils.isEmpty(merchant)) {
             merchantView.setText(merchant);
@@ -66,12 +76,30 @@ public class SmsPromptActivity extends AppCompatActivity {
             merchantView.setVisibility(View.GONE);
         }
 
+        primaryBtn = findViewById(R.id.prompt_primary_btn);
+        TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
+        TextView openLink = findViewById(R.id.prompt_open_link);
+        categoryChips = findViewById(R.id.prompt_category_chips);
+        accountChips = findViewById(R.id.prompt_account_chips);
+        secondaryBtn.setOnClickListener(v -> onDismiss());
+        openLink.setOnClickListener(v -> onReview());
+
+        // Whatever is still unknown can be picked here, from the lists the app
+        // last synced. Without a list for a missing part, fall back to review.
+        org.json.JSONArray categories = SmsBackgroundReceiver.readArray(this, SmsBackgroundReceiver.KEY_CATEGORY_LIST);
+        org.json.JSONArray accounts = SmsBackgroundReceiver.readArray(this, SmsBackgroundReceiver.KEY_ACCOUNT_LIST);
+        boolean needCategory = selectedCategory == null;
+        boolean needAccount = selectedAccount == null;
+        boolean canPick = (!needCategory || categories.length() > 0) && (!needAccount || accounts.length() > 0);
+
         TextView metaView = findViewById(R.id.prompt_meta);
-        String meta = buildMeta(category, account);
-        if (!canAdd && !TextUtils.isEmpty(category) && TextUtils.isEmpty(account)) {
-            meta = category + " · pick the account in Artha";
-        } else if (!canAdd && TextUtils.isEmpty(category) && !TextUtils.isEmpty(account)) {
-            meta = account + " · pick the category in Artha";
+        String meta = buildMeta(selectedCategory, selectedAccount);
+        if (!canAdd && !canPick) {
+            if (needAccount && !needCategory) {
+                meta = selectedCategory + " · pick the account in Artha";
+            } else if (needCategory && !needAccount) {
+                meta = selectedAccount + " · pick the category in Artha";
+            }
         }
         if (!TextUtils.isEmpty(meta)) {
             metaView.setText(meta);
@@ -79,26 +107,147 @@ public class SmsPromptActivity extends AppCompatActivity {
             metaView.setVisibility(View.GONE);
         }
 
-        TextView primaryBtn = findViewById(R.id.prompt_primary_btn);
-        TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
-        TextView openLink = findViewById(R.id.prompt_open_link);
-
-        if (canAdd) {
-            // Category + account learned: one tap logs it without opening the app.
-            primaryBtn.setText(TextUtils.isEmpty(category)
-                ? getString(R.string.prompt_approve)
-                : "Add to " + category);
-            primaryBtn.setOnClickListener(v -> onApprove(amountDisplay, merchant, category, account));
-            openLink.setVisibility(View.VISIBLE);
-            openLink.setOnClickListener(v -> onReview());
+        if (canAdd || canPick) {
+            primaryBtn.setOnClickListener(v -> {
+                if (selectedCategory != null && selectedAccount != null) {
+                    onApprove(amountDisplay, merchant, selectedCategory, selectedAccount);
+                }
+            });
+            if (!canAdd) {
+                showPickers(needCategory ? categories : null, needAccount ? accounts : null);
+            }
+            refreshPrimary();
         } else {
-            // Mappings unknown: a silent Add could log it to the wrong bucket,
-            // so the main action opens Artha to pick them.
+            // A silent Add could log it to the wrong bucket; open Artha to pick.
             primaryBtn.setText(R.string.prompt_review);
             primaryBtn.setOnClickListener(v -> onReview());
             openLink.setVisibility(View.GONE);
         }
-        secondaryBtn.setOnClickListener(v -> onDismiss());
+    }
+
+    /** Show chip pickers for the missing category and/or account (null = known). */
+    private void showPickers(org.json.JSONArray categories, org.json.JSONArray accounts) {
+        View pickers = findViewById(R.id.prompt_pickers);
+        pickers.setVisibility(View.VISIBLE);
+        // The pickers take the spare height; the amount block moves up.
+        android.widget.LinearLayout.LayoutParams lp =
+            (android.widget.LinearLayout.LayoutParams) pickers.getLayoutParams();
+        lp.weight = 3;
+        pickers.setLayoutParams(lp);
+        findViewById(R.id.prompt_spacer_bottom).setVisibility(View.GONE);
+
+        if (categories != null) {
+            for (int i = 0; i < categories.length(); i++) {
+                org.json.JSONObject c = categories.optJSONObject(i);
+                if (c == null) continue;
+                String name = c.optString("name", "");
+                if (name.isEmpty()) continue;
+                categoryChips.addView(makeChip(name, parseColor(c.optString("color", "")), true));
+            }
+        } else {
+            findViewById(R.id.prompt_category_label).setVisibility(View.GONE);
+            categoryChips.setVisibility(View.GONE);
+        }
+        if (accounts != null) {
+            for (int i = 0; i < accounts.length(); i++) {
+                String name = accounts.optString(i, "");
+                if (name.isEmpty()) continue;
+                accountChips.addView(makeChip(name, null, false));
+            }
+            if (categories == null) {
+                ((android.widget.LinearLayout.LayoutParams) findViewById(R.id.prompt_account_label)
+                    .getLayoutParams()).topMargin = 0;
+            }
+        } else {
+            findViewById(R.id.prompt_account_label).setVisibility(View.GONE);
+            accountChips.setVisibility(View.GONE);
+        }
+    }
+
+    private TextView makeChip(String name, Integer dotColor, boolean isCategory) {
+        float d = getResources().getDisplayMetrics().density;
+        TextView chip = new TextView(this);
+        chip.setText(name);
+        chip.setTag(name);
+        chip.setTextColor(getColor(R.color.prompt_text));
+        chip.setTextSize(14);
+        chip.setMaxLines(1);
+        chip.setEllipsize(TextUtils.TruncateAt.END);
+        chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        chip.setMinHeight(Math.round(40 * d));
+        chip.setPadding(Math.round(14 * d), Math.round(8 * d), Math.round(16 * d), Math.round(8 * d));
+        chip.setClickable(true);
+        chip.setFocusable(true);
+        if (dotColor != null) {
+            android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+            dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dot.setColor(dotColor);
+            int size = Math.round(10 * d);
+            dot.setSize(size, size);
+            chip.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null);
+            chip.setCompoundDrawablePadding(Math.round(8 * d));
+        }
+        styleChip(chip, false);
+        chip.setOnClickListener(v -> {
+            if (isCategory) {
+                selectedCategory = name;
+                markSelected(categoryChips, name);
+            } else {
+                selectedAccount = name;
+                markSelected(accountChips, name);
+            }
+            refreshPrimary();
+        });
+        return chip;
+    }
+
+    private void markSelected(FlowLayout group, String name) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof TextView) {
+                styleChip((TextView) child, name.equals(child.getTag()));
+            }
+        }
+    }
+
+    private void styleChip(TextView chip, boolean selected) {
+        float d = getResources().getDisplayMetrics().density;
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setCornerRadius(999 * d);
+        if (selected) {
+            bg.setColor(getColor(R.color.prompt_approve));
+            bg.setStroke(Math.round(1 * d), getColor(R.color.prompt_approve));
+        } else {
+            bg.setColor(Color.argb(0x1F, 0xFF, 0xFF, 0xFF));
+            bg.setStroke(Math.round(1 * d), Color.argb(0x40, 0xFF, 0xFF, 0xFF));
+        }
+        chip.setBackground(new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.argb(0x40, 0xFF, 0xFF, 0xFF)), bg, null));
+        chip.setTypeface(android.graphics.Typeface.create("sans-serif-medium",
+            selected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+    }
+
+    /** Primary button reflects the choice: enabled "Add to X" once both are set. */
+    private void refreshPrimary() {
+        boolean ready = selectedCategory != null && selectedAccount != null;
+        primaryBtn.setEnabled(ready);
+        primaryBtn.setAlpha(ready ? 1f : 0.45f);
+        if (ready) {
+            primaryBtn.setText("Add to " + selectedCategory);
+        } else if (selectedCategory == null) {
+            primaryBtn.setText("Pick a category to add");
+        } else {
+            primaryBtn.setText("Pick an account to add");
+        }
+    }
+
+    private static Integer parseColor(String hex) {
+        if (hex == null || hex.isEmpty()) return null;
+        try {
+            return Color.parseColor(hex);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**
@@ -156,7 +305,8 @@ public class SmsPromptActivity extends AppCompatActivity {
 
         if (isTest()) {
             cancelNotification();
-            Toast.makeText(this, "Test alert works — nothing was added", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Test alert works — would add to " + category + ". Nothing was saved.",
+                Toast.LENGTH_LONG).show();
             finish();
             return;
         }
