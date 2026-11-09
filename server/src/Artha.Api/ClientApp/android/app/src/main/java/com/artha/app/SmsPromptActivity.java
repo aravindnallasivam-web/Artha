@@ -71,6 +71,11 @@ public class SmsPromptActivity extends AppCompatActivity {
 
         TextView metaView = findViewById(R.id.prompt_meta);
         String meta = buildMeta(category, account);
+        if (!canAdd && !TextUtils.isEmpty(category) && TextUtils.isEmpty(account)) {
+            meta = category + " · pick the account in Artha";
+        } else if (!canAdd && TextUtils.isEmpty(category) && !TextUtils.isEmpty(account)) {
+            meta = account + " · pick the category in Artha";
+        }
         if (!TextUtils.isEmpty(meta)) {
             metaView.setText(meta);
         } else {
@@ -112,7 +117,13 @@ public class SmsPromptActivity extends AppCompatActivity {
         // "Open Artha to edit" link always opens the app so the user can
         // tweak account / category / note before saving.
         TextView openLink = findViewById(R.id.prompt_open_link);
-        openLink.setOnClickListener(v -> onReview());
+        if (canAdd) {
+            openLink.setOnClickListener(v -> onReview());
+        } else {
+            // The big button already opens Artha; offer the way out instead.
+            openLink.setText(R.string.prompt_dismiss);
+            openLink.setOnClickListener(v -> onDismiss());
+        }
     }
 
     /**
