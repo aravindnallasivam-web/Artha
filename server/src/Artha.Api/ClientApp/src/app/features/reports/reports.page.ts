@@ -1,13 +1,14 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
 import { MONTH_LABELS, MonthSummary } from '../../core/models/report.model';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
-import { DonutChartComponent, DonutSegment } from './donut-chart.component';
+import { SectionSwitchComponent } from '../expenses/section-switch.component';
+import { compactMoney, countsAsSpend, merchantOf } from './report-utils';
 import { DailyBarsComponent } from './daily-bars.component';
 import { YearBarChartComponent } from './year-bar-chart.component';
 
@@ -34,11 +35,10 @@ interface CatRow {
   standalone: true,
   imports: [
     CurrencyPipe,
-    RouterLink,
     IonContent,
     IonIcon,
     IonSpinner,
-    DonutChartComponent,
+    SectionSwitchComponent,
     DailyBarsComponent,
     YearBarChartComponent,
   ],
@@ -46,25 +46,24 @@ interface CatRow {
     <ion-content>
       <div class="page">
         <header class="top">
-          <h1 class="title-switch">
-            <a class="ts" routerLink="/expenses" [replaceUrl]="true">Expenses</a>
-            <span class="ts on" aria-current="page">Reports</span>
-          </h1>
-          <div class="seg" role="tablist" aria-label="Period">
+          <artha-section-switch active="reports"></artha-section-switch>
+        </header>
+
+        <div class="period-row">
+          <div class="periods" role="tablist" aria-label="Period">
             <button type="button" role="tab" [attr.aria-selected]="view() === 'daily'" [class.on]="view() === 'daily'" (click)="setView('daily')">Day</button>
             <button type="button" role="tab" [attr.aria-selected]="view() === 'monthly'" [class.on]="view() === 'monthly'" (click)="setView('monthly')">Month</button>
             <button type="button" role="tab" [attr.aria-selected]="view() === 'yearly'" [class.on]="view() === 'yearly'" (click)="setView('yearly')">Year</button>
           </div>
-        </header>
-
-        <div class="stepper">
-          <button type="button" class="step" (click)="stepBack()" aria-label="Previous period">
-            <ion-icon name="chevron-back"></ion-icon>
-          </button>
-          <span class="range-label">{{ rangeLabel() }}</span>
-          <button type="button" class="step" (click)="stepForward()" [disabled]="!canStepForward()" aria-label="Next period">
-            <ion-icon name="chevron-forward"></ion-icon>
-          </button>
+          <div class="stepper">
+            <button type="button" class="step" (click)="stepBack()" aria-label="Previous period">
+              <ion-icon name="chevron-back"></ion-icon>
+            </button>
+            <span class="range-label">{{ shortRangeLabel() }}</span>
+            <button type="button" class="step" (click)="stepForward()" [disabled]="!canStepForward()" aria-label="Next period">
+              <ion-icon name="chevron-forward"></ion-icon>
+            </button>
+          </div>
         </div>
 
         @if (loading()) {
@@ -90,59 +89,41 @@ interface CatRow {
             </section>
           }
         } @else {
-          <!-- Donut + key stats -->
+          <!-- Total, change, category split, key numbers -->
           <section class="card hero">
-            <div class="donut-col">
-              <artha-donut-chart
-                class="donut"
-                [segments]="donutSegments()"
-                [currency]="currency()"
-                [interactive]="true"
-                (segmentSelect)="onDonutSelect($event)"
-              ></artha-donut-chart>
-              @if (donutRoot()) {
-                <button type="button" class="link back" (click)="clearDonutDrill()">‹ {{ donutRootName() }}</button>
-              }
-            </div>
-            <div class="stats">
-              @if (deltaInfo(); as d) {
-                <div class="stat">
-                  <span class="stat-label">{{ view() === 'daily' ? 'vs previous day' : 'vs previous month' }}</span>
-                  <span class="stat-value num" [class.up]="d.up" [class.down]="!d.up">
-                    {{ d.up ? '↑' : '↓' }} {{ d.amount | currency: currency() : 'symbol' : '1.0-0' }}
-                  </span>
-                </div>
-              } @else {
-                <div class="stat">
-                  <span class="stat-label">Total spent</span>
-                  <span class="stat-value num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                </div>
-              }
-              @if (view() === 'daily') {
-                <div class="stat">
-                  <span class="stat-label">{{ deltaInfo() ? 'Total spent' : 'Largest expense' }}</span>
-                  <span class="stat-value num">{{ (deltaInfo() ? total() : largest()) | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                </div>
-              } @else {
-                <div class="stat">
-                  <span class="stat-label">{{ view() === 'monthly' ? 'Daily average' : 'Monthly average' }}</span>
-                  <span class="stat-value num">{{ averageSpend() | currency: currency() : 'symbol' : '1.0-0' }}</span>
-                </div>
-              }
-              <div class="stat">
-                <span class="stat-label">Transactions</span>
-                <span class="stat-value num">{{ count() }}</span>
+            <div class="hero-top">
+              <div>
+                <p class="hero-label">Spent {{ heroPeriod() }}</p>
+                <p class="hero-value num">{{ total() | currency: currency() : 'symbol' : '1.0-0' }}</p>
               </div>
+              @if (deltaPill(); as d) {
+                <span class="pill" [class.up]="d.up">{{ d.up ? '↑' : '↓' }} {{ d.pct }}% vs {{ d.label }}</span>
+              }
             </div>
-            <ul class="legend">
-              @for (seg of donutSegments(); track seg.label) {
-                <li>
-                  <span class="dot" [style.background]="seg.color"></span>
-                  <span class="legend-name">{{ seg.label }}</span>
-                  <span class="legend-pct">{{ percent(seg.value) }}%</span>
-                </li>
+            <div class="stack" aria-hidden="true">
+              @for (seg of stackSegments(); track seg.label) {
+                <span [style.flex-grow]="seg.value" [style.background]="seg.color"></span>
+              }
+            </div>
+            <ul class="stack-legend">
+              @for (seg of stackSegments(); track seg.label) {
+                <li><span class="dot" [style.background]="seg.color"></span>{{ seg.label }} <b class="num">{{ percent(seg.value) }}%</b></li>
               }
             </ul>
+            <div class="tiles">
+              <div class="tile">
+                <span class="tile-k">{{ view() === 'daily' ? 'Largest' : view() === 'monthly' ? 'Daily avg' : 'Monthly avg' }}</span>
+                <span class="tile-v num">{{ (view() === 'daily' ? largest() : averageSpend()) | currency: currency() : 'symbol' : '1.0-0' }}</span>
+              </div>
+              <div class="tile">
+                <span class="tile-k">Transactions</span>
+                <span class="tile-v num">{{ count() }}</span>
+              </div>
+              <div class="tile">
+                <span class="tile-k">Received</span>
+                <span class="tile-v num pos">{{ received() > 0 ? compact(received()) : '—' }}</span>
+              </div>
+            </div>
           </section>
 
           <!-- Day: the day's transactions -->
@@ -169,7 +150,8 @@ interface CatRow {
             </section>
           }
 
-          <!-- Period bars -->
+          <!-- Period bars (Day / Year; the month's six-month bars sit lower down) -->
+          @if (view() !== 'monthly') {
           <section class="card">
             @if (view() === 'daily') {
               <h2>Last 7 days</h2>
@@ -183,22 +165,12 @@ interface CatRow {
                   </button>
                 }
               </div>
-            } @else if (view() === 'monthly') {
-              <h2>Last 6 months</h2>
-              <div class="mbars">
-                @for (m of lastSixMonths(); track m.key) {
-                  <div class="mbar">
-                    <span class="mbar-fill" [class.current]="m.current" [style.height.%]="m.pct"
-                      [attr.aria-label]="m.label + ' ' + (m.total | currency: currency() : 'symbol' : '1.0-0')"></span>
-                    <span class="mbar-label" [class.current]="m.current">{{ m.label }}</span>
-                  </div>
-                }
-              </div>
             } @else {
               <h2>Monthly spend · {{ rangeLabel() }}</h2>
               <artha-year-bar-chart [months]="monthSummaries()" [currency]="currency()"></artha-year-bar-chart>
             }
           </section>
+          }
 
           @if (view() === 'monthly') {
             <section class="card">
@@ -215,6 +187,23 @@ interface CatRow {
                 (openDay)="openDay($event)"
               ></artha-daily-bars>
             </section>
+
+            @if (insights().length > 0) {
+              <section class="card insights">
+                <h2>
+                  <ion-icon name="sparkles-outline" aria-hidden="true"></ion-icon>
+                  What changed
+                </h2>
+                <ul>
+                  @for (i of insights(); track i.key) {
+                    <li>
+                      <span class="ins-mark" [class.up]="i.kind === 'up'" [class.down]="i.kind === 'down'">{{ i.kind === 'up' ? '↑' : i.kind === 'down' ? '↓' : '●' }}</span>
+                      <span><b>{{ i.strong }}</b> {{ i.text }}</span>
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
 
             <section class="card list-card">
               <div class="card-head">
@@ -245,12 +234,12 @@ interface CatRow {
           <section class="card list-card">
             <div class="card-head">
               <h2>Categories</h2>
-              <span class="card-sub">Tap to see expenses</span>
+              <span class="card-sub">{{ view() === 'monthly' && hasPrevMonth() ? 'vs ' + prevLabel() : 'Tap for details' }}</span>
             </div>
             <ul class="cats">
               @for (row of byCategory(); track row.categoryId) {
                 <li class="cat" (click)="openCategory(row.categoryId)">
-                  <span class="dot lg" [style.background]="row.color"></span>
+                  <span class="share-badge num" [style.background]="row.color + '22'" [style.color]="row.color">{{ percent(row.total) }}%</span>
                   <div class="cat-body">
                     <div class="cat-top">
                       <span class="cat-name">
@@ -259,18 +248,24 @@ interface CatRow {
                           <button
                             type="button"
                             class="expand-btn"
-                            [attr.aria-label]="'Toggle subcategories of ' + row.name"
+                            [attr.aria-label]="'Show subcategories of ' + row.name"
                             [attr.aria-expanded]="expandedCategories().has(row.categoryId)"
                             (click)="toggleCategory($event, row.categoryId)"
                           >
-                            <ion-icon [name]="expandedCategories().has(row.categoryId) ? 'chevron-down' : 'chevron-forward'"></ion-icon>
+                            <ion-icon [name]="expandedCategories().has(row.categoryId) ? 'chevron-up' : 'chevron-down'"></ion-icon>
                           </button>
                         }
                       </span>
                       <span class="cat-amt num">{{ row.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                     </div>
-                    <div class="track"><div class="fill" [style.width.%]="share(row.total)" [style.background]="row.color"></div></div>
+                    <div class="cat-sub">
+                      <span>{{ row.count }} {{ row.count === 1 ? 'transaction' : 'transactions' }}</span>
+                      @if (categoryDelta(row.categoryId); as d) {
+                        <span class="num" [class.up]="d > 0" [class.down]="d < 0">{{ d > 0 ? '+' : '−' }}{{ abs(d) | currency: currency() : 'symbol' : '1.0-0' }}</span>
+                      }
+                    </div>
                   </div>
+                  <ion-icon class="cat-go" name="chevron-forward" aria-hidden="true"></ion-icon>
                 </li>
                 @if (row.children && expandedCategories().has(row.categoryId)) {
                   @for (child of row.children; track child.categoryId) {
@@ -281,14 +276,30 @@ interface CatRow {
                           <span class="cat-name">{{ child.name }}</span>
                           <span class="cat-amt num">{{ child.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                         </div>
-                        <div class="track"><div class="fill" [style.width.%]="share(child.total)" [style.background]="child.color"></div></div>
+                        <div class="cat-sub"><span>{{ child.count }} {{ child.count === 1 ? 'transaction' : 'transactions' }}</span></div>
                       </div>
+                      <ion-icon class="cat-go" name="chevron-forward" aria-hidden="true"></ion-icon>
                     </li>
                   }
                 }
               }
             </ul>
           </section>
+
+          @if (view() === 'monthly') {
+            <section class="card">
+              <h2>Last 6 months</h2>
+              <div class="mbars">
+                @for (m of lastSixMonths(); track m.key) {
+                  <div class="mbar">
+                    <span class="mbar-fill" [class.current]="m.current" [style.height.%]="m.pct"
+                      [attr.aria-label]="m.label + ' ' + (m.total | currency: currency() : 'symbol' : '1.0-0')"></span>
+                    <span class="mbar-label" [class.current]="m.current">{{ m.label }}</span>
+                  </div>
+                }
+              </div>
+            </section>
+          }
 
           <div class="two-col">
             <section class="card list-card">
@@ -299,7 +310,7 @@ interface CatRow {
                 <ul class="merchants">
                   @for (m of topMerchants(); track m.name) {
                     <li>
-                      <span class="m-name">{{ m.name }}</span>
+                      <span class="m-name">{{ m.name }} <span class="m-count">· {{ m.count }}×</span></span>
                       <span class="m-amt num">{{ m.total | currency: currency() : 'symbol' : '1.0-0' }}</span>
                     </li>
                   }
@@ -337,33 +348,23 @@ interface CatRow {
     }
     .top { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); }
-    /* Expenses | Reports switch in the page title */
-    .title-switch { display: flex; align-items: baseline; gap: 14px; margin: 0; flex: 1 0 auto; }
-    .title-switch .ts {
-      font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--artha-text-subtle);
-      text-decoration: none; cursor: pointer; white-space: nowrap;
+    .period-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .periods { display: flex; gap: 6px; }
+    .periods button {
+      height: 34px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--artha-border); background: var(--artha-surface);
+      color: var(--artha-text-muted); font: inherit; font-size: 13px; font-weight: 600;
     }
-    .title-switch .ts.on { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); cursor: default; }
-    .title-switch a.ts:hover { color: var(--artha-text-muted); }
-    .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--artha-surface-2); }
-    .seg button {
-      height: 32px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer;
-      background: transparent; color: var(--artha-text-muted); font: inherit; font-size: 12.5px; font-weight: 600;
-    }
-    .seg button.on { background: var(--artha-surface); color: var(--artha-text); font-weight: 700; box-shadow: var(--artha-shadow); }
-
-    .stepper {
-      align-self: center; display: inline-flex; align-items: center; gap: 4px; padding: 4px;
-      border-radius: 999px; background: var(--artha-surface); border: 1px solid var(--artha-border);
-    }
+    .periods button.on { background: var(--artha-text); border-color: var(--artha-text); color: var(--artha-bg); font-weight: 700; }
+    .stepper { display: inline-flex; align-items: center; gap: 2px; }
     .step {
       width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
       color: var(--artha-text-muted); display: inline-flex; align-items: center; justify-content: center;
     }
-    .step:hover { background: var(--artha-surface-2); color: var(--artha-text); }
-    .step:disabled { opacity: 0.35; cursor: default; }
+    .step:hover:not(:disabled) { background: var(--artha-surface-2); color: var(--artha-text); }
+    .step:disabled { opacity: 0.3; cursor: default; }
     .step ion-icon { font-size: 18px; }
-    .range-label { min-width: 110px; text-align: center; font-size: 14px; font-weight: 700; color: var(--artha-text); }
+    .range-label { text-align: center; font-size: 14px; font-weight: 800; color: var(--artha-text); white-space: nowrap; }
 
     .num { font-variant-numeric: tabular-nums; }
     .muted { color: var(--artha-text-muted); }
@@ -375,24 +376,47 @@ interface CatRow {
     .card-sub { font-size: 12px; color: var(--artha-text-subtle); }
     .list-card { padding-bottom: 8px; }
 
-    /* Donut hero */
-    .hero { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-    .donut-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
-    .donut { width: 150px; }
-    .link { border: 0; background: none; padding: 4px 6px; cursor: pointer; color: var(--artha-accent); font: inherit; font-size: 12.5px; font-weight: 700; }
-    .stats { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 12px; }
-    .stat { display: flex; flex-direction: column; gap: 2px; }
-    .stat-label { font-size: 12px; font-weight: 600; color: var(--artha-text-subtle); }
-    .stat-value { font-size: 17px; font-weight: 800; color: var(--artha-text); }
-    .stat-value.up { color: var(--artha-negative); }
-    .stat-value.down { color: var(--artha-positive); }
-    .legend {
-      flex-basis: 100%; list-style: none; margin: 0; padding: 0;
-      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px;
+    /* Hero */
+    .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .hero-label { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--artha-text-subtle); }
+    .hero-value { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); }
+    .pill {
+      flex: none; margin-top: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+      background: var(--artha-positive-tint, rgba(16, 185, 129, 0.14)); color: var(--artha-positive);
     }
-    .legend li { display: flex; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; }
-    .legend-name { flex: 1; min-width: 0; color: var(--artha-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .legend-pct { color: var(--artha-text-muted); font-weight: 700; }
+    .pill.up { background: var(--artha-negative-tint); color: var(--artha-negative); }
+    .stack { display: flex; gap: 2px; height: 12px; margin-top: 14px; border-radius: 999px; overflow: hidden; }
+    .stack span { flex-basis: 0; min-width: 3px; }
+    .stack-legend { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+    .stack-legend li { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--artha-text-muted); }
+    .stack-legend b { color: var(--artha-text); font-weight: 700; }
+    .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    .tile { padding: 10px; border-radius: 14px; background: var(--artha-surface-2); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .tile-k { font-size: 11.5px; font-weight: 600; color: var(--artha-text-subtle); }
+    .tile-v { font-size: 15px; font-weight: 800; color: var(--artha-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile-v.pos { color: var(--artha-positive); }
+
+    /* What changed */
+    .insights { background: #1e1b4b; color: #e0e7ff; }
+    .insights h2 { display: flex; align-items: center; gap: 8px; color: #ffffff; }
+    .insights h2 ion-icon { color: #fbbf24; font-size: 18px; }
+    .insights ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .insights li { display: flex; gap: 10px; font-size: 13.5px; line-height: 1.4; }
+    .insights b { color: #ffffff; }
+    .ins-mark { flex: none; width: 14px; font-weight: 800; color: #fbbf24; }
+    .ins-mark.up { color: #fda4af; }
+    .ins-mark.down { color: #6ee7b7; }
+
+    /* Category rows */
+    .share-badge {
+      flex: none; width: 40px; height: 40px; border-radius: 12px;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 800;
+    }
+    .cat-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 2px; font-size: 12px; color: var(--artha-text-subtle); }
+    .cat-sub .up { color: var(--artha-negative); font-weight: 700; }
+    .cat-sub .down { color: var(--artha-positive); font-weight: 700; }
+    .cat-go { flex: none; font-size: 16px; color: var(--artha-text-subtle); }
+    .m-count { font-weight: 500; color: var(--artha-text-subtle); }
     .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .dot.lg { width: 10px; height: 10px; }
 
@@ -523,7 +547,12 @@ export class ReportsPage implements OnInit {
   });
 
   /** Spending only — excluded items (refunds/transfers) are dropped. */
-  private readonly counted = computed(() => this.periodExpenses().filter((e) => !e.excluded));
+  private readonly counted = computed(() => this.periodExpenses().filter(countsAsSpend));
+
+  /** Money received in the period (income, not excluded). */
+  protected readonly received = computed(() =>
+    this.periodExpenses().filter((e) => !e.excluded && e.type === 'income').reduce((s, e) => s + e.amount, 0),
+  );
 
   protected readonly total = computed(() =>
     this.counted().reduce((s, e) => s + e.amount, 0),
@@ -562,7 +591,7 @@ export class ReportsPage implements OnInit {
       if (m === 1) { y -= 1; m = 12; } else { m -= 1; }
     }
     for (const e of this.recentExpenses()) {
-      if (e.excluded) continue;
+      if (!countsAsSpend(e)) continue;
       const bucket = months.find((b) => e.date.startsWith(b.key));
       if (bucket) bucket.total += e.amount;
     }
@@ -579,7 +608,7 @@ export class ReportsPage implements OnInit {
       return { iso: isoDate(d), label: WEEKDAYS[d.getDay()].slice(0, 2) + ' ' + d.getDate(), total: 0, current: i === 6, pct: 0 };
     });
     for (const e of this.recentExpenses()) {
-      if (e.excluded) continue;
+      if (!countsAsSpend(e)) continue;
       const bucket = days.find((b) => b.iso === e.date);
       if (bucket) bucket.total += e.amount;
     }
@@ -702,29 +731,136 @@ export class ReportsPage implements OnInit {
 
   protected readonly topCategory = computed(() => this.byCategory()[0] ?? null);
 
-  /** Drilled-into root category id (donut shows its subcategory split), or null. */
-  protected readonly donutRoot = signal<string | null>(null);
-  protected readonly donutRootName = computed(() => {
-    const r = this.donutRoot();
-    return r ? this.byCategory().find((c) => c.categoryId === r)?.name ?? '' : '';
-  });
-
-  protected readonly donutSegments = computed<DonutSegment[]>(() => {
+  /** Top five categories plus "Other", for the split bar. */
+  protected readonly stackSegments = computed(() => {
     const cats = this.byCategory();
-    const root = this.donutRoot();
-    if (root) {
-      const kids = cats.find((c) => c.categoryId === root)?.children ?? [];
-      if (kids.length) {
-        return kids.map((c) => ({ id: c.categoryId, label: c.name, value: c.total, color: c.color }));
-      }
-    }
-    const top: DonutSegment[] = cats
-      .slice(0, 5)
-      .map((c) => ({ id: c.categoryId, label: c.name, value: c.total, color: c.color }));
+    const top = cats.slice(0, 5).map((c) => ({ label: c.name, value: c.total, color: c.color }));
     const rest = cats.slice(5).reduce((s, c) => s + c.total, 0);
     if (rest > 0) top.push({ label: 'Other', value: rest, color: OTHER_COLOR });
     return top;
   });
+
+  /** "in October", "on Mon 10 Nov", "in 2026". */
+  protected readonly heroPeriod = computed(() => {
+    if (this.view() === 'daily') return 'on ' + this.rangeLabel().replace(/^(Today|Yesterday) · /, '$1, ');
+    if (this.view() === 'monthly') return 'in ' + MONTH_LABELS[this.month() - 1];
+    return 'in ' + this.year();
+  });
+
+  /** Compact label for the stepper next to the period chips. */
+  protected readonly shortRangeLabel = computed(() => {
+    if (this.view() === 'daily') {
+      const d = new Date(this.year(), this.month() - 1, this.day());
+      return `${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
+    }
+    return this.view() === 'monthly' ? `${MONTH_LABELS[this.month() - 1].slice(0, 3)} ${this.year()}` : String(this.year());
+  });
+
+  /** Change vs the previous day / month, as a percentage. */
+  protected readonly deltaPill = computed(() => {
+    if (this.view() === 'yearly') return null;
+    const prev = this.prevTotal();
+    if (prev <= 0) return null;
+    const diff = this.total() - prev;
+    return {
+      up: diff > 0,
+      pct: Math.round((Math.abs(diff) / prev) * 100),
+      label: this.view() === 'daily' ? 'day before' : this.prevLabel(),
+    };
+  });
+
+  protected readonly prevMonthShort = computed(() => MONTH_LABELS[(this.month() + 10) % 12].slice(0, 3));
+
+  /** For the current month, compare with the same days of last month (day of month cut-off). */
+  private readonly sameDaysCutoff = computed(() => {
+    const now = new Date();
+    return this.view() === 'monthly' && this.year() === now.getFullYear() && this.month() === now.getMonth() + 1
+      ? now.getDate()
+      : 99;
+  });
+
+  /** "Oct" or "Oct, same days". */
+  protected readonly prevLabel = computed(() => this.prevMonthShort() + (this.sameDaysCutoff() < 99 ? ', same days' : ''));
+
+  /** Previous month's spend per top-level category (Month view). */
+  private readonly prevByRoot = computed(() => {
+    const map = new Map<string, number>();
+    if (this.view() !== 'monthly') return map;
+    const byId = this.categoriesStore.byId();
+    const prev = prevMonthPrefix(this.year(), this.month());
+    for (const e of this.recentExpenses()) {
+      if (!e.date.startsWith(prev) || !countsAsSpend(e) || Number(e.date.slice(8, 10)) > this.sameDaysCutoff()) continue;
+      const root = byId[e.categoryId]?.parentId ?? e.categoryId;
+      map.set(root, (map.get(root) ?? 0) + e.amount);
+    }
+    return map;
+  });
+
+  protected readonly hasPrevMonth = computed(() => this.prevByRoot().size > 0);
+
+  /** Spend change for a top-level category vs last month (Month view), or null. */
+  protected categoryDelta(id: string): number | null {
+    if (this.view() !== 'monthly' || !this.hasPrevMonth()) return null;
+    const now = this.byCategory().find((c) => c.categoryId === id)?.total ?? 0;
+    const diff = now - (this.prevByRoot().get(id) ?? 0);
+    return Math.abs(diff) >= 1 ? diff : null;
+  }
+
+  /** "What changed": biggest rise and fall vs last month, and the weekend share. */
+  protected readonly insights = computed(() => {
+    if (this.view() !== 'monthly') return [] as { key: string; kind: 'up' | 'down' | 'info'; strong: string; text: string }[];
+    const out: { key: string; kind: 'up' | 'down' | 'info'; strong: string; text: string }[] = [];
+    const cur = this.currency();
+    const byId = this.categoriesStore.byId();
+    if (this.hasPrevMonth()) {
+      const prev = this.prevByRoot();
+      const ids = new Set([...this.byCategory().map((c) => c.categoryId), ...prev.keys()]);
+      let up: { id: string; d: number } | null = null;
+      let down: { id: string; d: number } | null = null;
+      for (const id of ids) {
+        const d = (this.byCategory().find((c) => c.categoryId === id)?.total ?? 0) - (prev.get(id) ?? 0);
+        if (d > 0 && (!up || d > up.d)) up = { id, d };
+        if (d < 0 && (!down || d < down.d)) down = { id, d };
+      }
+      if (up && up.d >= 1) {
+        // The merchant that drove most of the category this month.
+        const merchants = new Map<string, { total: number; count: number }>();
+        for (const e of this.counted()) {
+          if ((byId[e.categoryId]?.parentId ?? e.categoryId) !== up.id) continue;
+          const m = merchants.get(merchantOf(e.note)) ?? { total: 0, count: 0 };
+          m.total += e.amount;
+          m.count += 1;
+          merchants.set(merchantOf(e.note), m);
+        }
+        const top = [...merchants.entries()].filter(([n]) => n !== 'Unknown').sort((a, b) => b[1].total - a[1].total)[0];
+        out.push({
+          key: 'up',
+          kind: 'up',
+          strong: byId[up.id]?.name ?? 'Other',
+          text: `up ${compactMoney(up.d, cur)} vs ${this.prevLabel()}` + (top ? `, mostly ${top[0]} (${top[1].count}×)` : ''),
+        });
+      }
+      if (down && down.d <= -1) {
+        out.push({ key: 'down', kind: 'down', strong: byId[down.id]?.name ?? 'Other', text: `down ${compactMoney(-down.d, cur)} vs ${this.prevLabel()}` });
+      }
+    }
+    const total = this.total();
+    if (total > 0) {
+      const weekend = this.counted()
+        .filter((e) => [0, 6].includes(new Date(`${e.date}T00:00:00`).getDay()))
+        .reduce((s, e) => s + e.amount, 0);
+      out.push({ key: 'weekend', kind: 'info', strong: `${Math.round((weekend / total) * 100)}%`, text: 'of your spending was on weekends' });
+    }
+    return out;
+  });
+
+  protected abs(n: number): number {
+    return Math.abs(n);
+  }
+
+  protected compact(n: number): string {
+    return compactMoney(n, this.currency());
+  }
 
   protected readonly dailySeries = computed<number[]>(() => {
     const days = daysInMonth(this.year(), this.month());
@@ -755,29 +891,18 @@ export class ReportsPage implements OnInit {
     return arr;
   });
 
-  /** Click a root slice to drill into its subcategories (when it has >1). */
-  protected onDonutSelect(seg: DonutSegment): void {
-    if (this.donutRoot() || !seg.id) {
-      return;
-    }
-    const kids = this.byCategory().find((c) => c.categoryId === seg.id)?.children;
-    if (kids && kids.length > 1) {
-      this.donutRoot.set(seg.id);
-    }
-  }
-
-  protected clearDonutDrill(): void {
-    this.donutRoot.set(null);
-  }
 
   protected readonly topMerchants = computed(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { total: number; count: number }>();
     for (const e of this.counted()) {
       const key = merchantOf(e.note);
-      map.set(key, (map.get(key) ?? 0) + e.amount);
+      const m = map.get(key) ?? { total: 0, count: 0 };
+      m.total += e.amount;
+      m.count += 1;
+      map.set(key, m);
     }
     return [...map.entries()]
-      .map(([name, total]) => ({ name, total }))
+      .map(([name, v]) => ({ name, total: v.total, count: v.count }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
   });
@@ -881,18 +1006,14 @@ export class ReportsPage implements OnInit {
     return top > 0 ? Math.round((value / top) * 100) : 0;
   }
 
+  /** Category detail for the month on screen (the selected day's month in Day view). */
   protected openCategory(categoryId: string): void {
-    const queryParams: Record<string, string | number> = { category: categoryId };
-    if (this.view() !== 'yearly') {
-      queryParams['year'] = this.year();
-      queryParams['month'] = this.month();
-    }
-    void this.router.navigate(['/expenses'], { queryParams });
+    void this.router.navigate(['/reports/category', categoryId], {
+      queryParams: { year: this.year(), month: this.month() },
+    });
   }
 
   private async refresh(): Promise<void> {
-    // Changing period exits any donut drill-down.
-    this.donutRoot.set(null);
     this.loading.set(true);
     try {
       if (this.view() === 'daily') {
@@ -908,7 +1029,7 @@ export class ReportsPage implements OnInit {
         this.recentExpenses.set(res.items);
         this.periodExpenses.set(res.items.filter((e) => e.date === iso));
         this.prevTotal.set(
-          res.items.filter((e) => e.date === prevIso && !e.excluded).reduce((s, e) => s + e.amount, 0),
+          res.items.filter((e) => e.date === prevIso && countsAsSpend(e)).reduce((s, e) => s + e.amount, 0),
         );
       } else if (this.view() === 'monthly') {
         const cur = monthPrefix(this.year(), this.month());
@@ -917,8 +1038,11 @@ export class ReportsPage implements OnInit {
         this.currency.set(res.currency || 'USD');
         this.recentExpenses.set(res.items);
         this.periodExpenses.set(res.items.filter((e) => e.date.startsWith(cur)));
+        const cutoff = this.sameDaysCutoff();
         this.prevTotal.set(
-          res.items.filter((e) => e.date.startsWith(prev) && !e.excluded).reduce((s, e) => s + e.amount, 0),
+          res.items
+            .filter((e) => e.date.startsWith(prev) && countsAsSpend(e) && Number(e.date.slice(8, 10)) <= cutoff)
+            .reduce((s, e) => s + e.amount, 0),
         );
       } else {
         const res = await this.api.list(`${this.year()}-01`, `${this.year()}-12`);
@@ -962,15 +1086,3 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
 
-/** Derive a readable merchant/payee from a transaction note. */
-function merchantOf(note: string | null): string {
-  const n = (note ?? '').trim();
-  if (!n) return 'Unknown';
-  if (/^UPI-/i.test(n)) {
-    const parts = n.split('-');
-    return (parts[1] || n).trim().slice(0, 28);
-  }
-  // Strip trailing reference numbers / "Value Dt ..." tails.
-  const cleaned = n.replace(/\s+(value dt|ref).*$/i, '').replace(/\s+\d{6,}.*$/, '');
-  return (cleaned || n).slice(0, 28).trim();
-}
