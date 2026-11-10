@@ -25,6 +25,10 @@ concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
+# contents: write lets a branch build publish the APK to the "android-latest" release.
+permissions:
+  contents: write
+
 # The Capacitor project (web + native android/) lives under the API's ClientApp.
 defaults:
   run:
@@ -100,3 +104,23 @@ jobs:
           name: artha-android-v${{ steps.version.outputs.name }}-build${{ github.run_number }}
           path: server/src/Artha.Api/ClientApp/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Also publish the APK as a plain .apk on one rolling release, so the
+      # newest build is one tap away on a phone (GitHub's mobile pages don't
+      # show workflow artifacts, and artifacts download as a zip):
+      #   https://github.com/<owner>/<repo>/releases/tag/android-latest
+      - name: Publish to the android-latest release
+        if: github.event_name != 'pull_request'
+        working-directory: server/src/Artha.Api/ClientApp/android/app/build/outputs/apk/debug
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: android-latest
+        run: |
+          APK=$(ls *.apk)
+          cp "$APK" artha-latest.apk
+          NOTES="Build ${{ github.run_number }} (v${{ steps.version.outputs.name }}) from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}.
+          Download artha-latest.apk below and open it on the phone to install."
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$TAG" artha-latest.apk "$APK" --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Artha Android - build ${{ github.run_number }}" --notes "$NOTES"
