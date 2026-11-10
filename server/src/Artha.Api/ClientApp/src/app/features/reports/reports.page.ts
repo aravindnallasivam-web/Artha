@@ -1,6 +1,6 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
 import { MONTH_LABELS, MonthSummary } from '../../core/models/report.model';
@@ -34,6 +34,7 @@ interface CatRow {
   standalone: true,
   imports: [
     CurrencyPipe,
+    RouterLink,
     IonContent,
     IonIcon,
     IonSpinner,
@@ -45,7 +46,10 @@ interface CatRow {
     <ion-content>
       <div class="page">
         <header class="top">
-          <h1>Reports</h1>
+          <h1 class="title-switch">
+            <a class="ts" routerLink="/expenses" [replaceUrl]="true">Expenses</a>
+            <span class="ts on" aria-current="page">Reports</span>
+          </h1>
           <div class="seg" role="tablist" aria-label="Period">
             <button type="button" role="tab" [attr.aria-selected]="view() === 'daily'" [class.on]="view() === 'daily'" (click)="setView('daily')">Day</button>
             <button type="button" role="tab" [attr.aria-selected]="view() === 'monthly'" [class.on]="view() === 'monthly'" (click)="setView('monthly')">Month</button>
@@ -321,8 +325,16 @@ interface CatRow {
       padding: calc(16px + var(--ion-safe-area-top, 0px)) 20px 24px;
       max-width: 960px; margin: 0 auto;
     }
-    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); }
+    /* Expenses | Reports switch in the page title */
+    .title-switch { display: flex; align-items: baseline; gap: 14px; margin: 0; flex: 1 0 auto; }
+    .title-switch .ts {
+      font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--artha-text-subtle);
+      text-decoration: none; cursor: pointer; white-space: nowrap;
+    }
+    .title-switch .ts.on { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); cursor: default; }
+    .title-switch a.ts:hover { color: var(--artha-text-muted); }
     .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--artha-surface-2); }
     .seg button {
       height: 32px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer;

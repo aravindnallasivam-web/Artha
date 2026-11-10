@@ -1,6 +1,6 @@
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
@@ -36,6 +36,7 @@ const TODAY_ISO = toIsoDate(new Date());
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
+    RouterLink,
     IonContent,
     IonIcon,
     IonSpinner,
@@ -45,7 +46,10 @@ const TODAY_ISO = toIsoDate(new Date());
       <div class="page">
         <!-- Title + month pill + desktop add -->
         <header class="page-header">
-          <h1 class="page-title">Expenses</h1>
+          <h1 class="title-switch">
+            <span class="ts on" aria-current="page">Expenses</span>
+            <a class="ts" routerLink="/reports" [replaceUrl]="true">Reports</a>
+          </h1>
           <div class="month-picker">
             <button type="button" class="month-nav" (click)="shiftMonth(-1)" aria-label="Previous month">
               <ion-icon name="chevron-back"></ion-icon>
@@ -336,6 +340,15 @@ const TODAY_ISO = toIsoDate(new Date());
     }
 
     /* ====== Header ====== */
+    /* Expenses | Reports switch in the page title */
+    .title-switch { display: flex; align-items: baseline; gap: 14px; margin: 0; flex: 1 0 auto; }
+    .title-switch .ts {
+      font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--artha-text-subtle);
+      text-decoration: none; cursor: pointer; white-space: nowrap;
+    }
+    .title-switch .ts.on { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); cursor: default; }
+    .title-switch a.ts:hover { color: var(--artha-text-muted); }
+
     .page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .page-title {
       flex: 1; margin: 0;

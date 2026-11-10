@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map } from 'rxjs';
 import { SyncIndicatorComponent } from '../../core/sync/sync-indicator.component';
 import {
   IonApp,
@@ -18,6 +20,8 @@ interface NavItem {
   label: string;
   icon: string;
   iconActive?: string;
+  /** Other routes that also highlight this tab (Reports lives inside Expenses). */
+  alsoActive?: string[];
 }
 
 interface NavGroup {
@@ -53,12 +57,13 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 // Mobile tab bar destinations; the shell inserts the centre Add button between
-// the second and third. Planned, loans, categories and settings live under
+// the second and third. Reports is reached from the Expenses | Reports switch
+// at the top of Expenses. Planned, loans, categories and settings live under
 // "More", reached from the avatar on Home.
 const TABS: NavItem[] = [
   { path: '/dashboard', label: 'Home', icon: 'home-outline', iconActive: 'home' },
-  { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet' },
-  { path: '/reports', label: 'Reports', icon: 'stats-chart-outline', iconActive: 'stats-chart' },
+  { path: '/expenses', label: 'Expenses', icon: 'wallet-outline', iconActive: 'wallet', alsoActive: ['/reports'] },
+  { path: '/investments', label: 'Investments', icon: 'trending-up-outline', iconActive: 'trending-up' },
   { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
 ];
 
@@ -157,9 +162,10 @@ const TABS: NavItem[] = [
             [routerLinkActiveOptions]="{ exact: t.path === '/expenses' }"
             #rla="routerLinkActive"
             class="m-tab"
+            [class.active]="rla.isActive || onAlso(t)"
           >
             <ion-icon
-              [name]="rla.isActive ? (t.iconActive ?? t.icon) : t.icon"
+              [name]="rla.isActive || onAlso(t) ? (t.iconActive ?? t.icon) : t.icon"
               aria-hidden="true"
             ></ion-icon>
             <span>{{ t.label }}</span>
@@ -367,6 +373,20 @@ export class ShellComponent {
 
   protected readonly nav = NAV_GROUPS;
   protected readonly tabs = TABS;
+
+  /** Current path (no query), for tabs that cover more than one route. */
+  private readonly currentPath = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects.split(/[?#]/)[0]),
+    ),
+    { initialValue: this.router.url.split(/[?#]/)[0] },
+  );
+
+  protected onAlso(t: NavItem): boolean {
+    const path = this.currentPath();
+    return !!t.alsoActive?.some((p) => path === p || path.startsWith(p + '/'));
+  }
   protected readonly user = this.session.currentUser;
 
   protected initial(name: string): string {
