@@ -8,7 +8,7 @@ import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
 import { DonutChartComponent, DonutSegment } from './donut-chart.component';
-import { LineChartComponent } from './line-chart.component';
+import { DailyBarsComponent } from './daily-bars.component';
 import { YearBarChartComponent } from './year-bar-chart.component';
 
 type ViewMode = 'daily' | 'monthly' | 'yearly';
@@ -39,7 +39,7 @@ interface CatRow {
     IonIcon,
     IonSpinner,
     DonutChartComponent,
-    LineChartComponent,
+    DailyBarsComponent,
     YearBarChartComponent,
   ],
   template: `
@@ -202,8 +202,18 @@ interface CatRow {
 
           @if (view() === 'monthly') {
             <section class="card">
-              <h2>Daily spending</h2>
-              <artha-line-chart [series]="dailySeries()" [currency]="currency()"></artha-line-chart>
+              <div class="card-head">
+                <h2>Daily spending</h2>
+                <span class="card-sub">Tap a bar</span>
+              </div>
+              <artha-daily-bars
+                [series]="dailySeries()"
+                [counts]="dailyCounts()"
+                [year]="year()"
+                [month]="month()"
+                [currency]="currency()"
+                (openDay)="openDay($event)"
+              ></artha-daily-bars>
             </section>
 
             <section class="card list-card">
@@ -722,6 +732,16 @@ export class ReportsPage implements OnInit {
     for (const e of this.counted()) {
       const d = Number(e.date.slice(8, 10));
       if (d >= 1 && d <= days) arr[d - 1] += e.amount;
+    }
+    return arr;
+  });
+
+  /** Counted transactions per day of the month (for the daily chart). */
+  protected readonly dailyCounts = computed<number[]>(() => {
+    const arr = new Array(daysInMonth(this.year(), this.month())).fill(0);
+    for (const e of this.counted()) {
+      const d = Number(e.date.slice(8, 10));
+      if (d >= 1 && d <= arr.length) arr[d - 1] += 1;
     }
     return arr;
   });
