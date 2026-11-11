@@ -137,14 +137,19 @@ final class NearbyPlaces {
 
     /** Up to `max` named shops around `loc`, nearest first; empty when offline or nothing is near. */
     static List<Place> findAround(Context ctx, Location loc, int max) {
+        try {
+            return lookup(ctx, loc, max);
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    /** Like findAround, but throws when the map service can't be reached (offline, error). */
+    static List<Place> lookup(Context ctx, Location loc, int max) throws Exception {
         List<Place> out = new ArrayList<>();
         if (loc == null) return out;
         String googleKey = config(ctx).optString("googleKey", "").trim();
-        try {
-            out = googleKey.isEmpty() ? overpass(loc) : google(loc, googleKey);
-        } catch (Exception e) {
-            out = new ArrayList<>();
-        }
+        out = googleKey.isEmpty() ? overpass(loc) : google(loc, googleKey);
         out.sort((a, b) -> Integer.compare(a.distanceM, b.distanceM));
         // One chip per name (chains often have several entries).
         List<Place> unique = new ArrayList<>();
@@ -319,7 +324,8 @@ final class NearbyPlaces {
             try (OutputStream out = conn.getOutputStream()) {
                 out.write(body);
             }
-            if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) return null;
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) throw new java.io.IOException("Map service HTTP " + code);
             try (InputStream in = conn.getInputStream()) {
                 ByteArrayOutputStream buf = new ByteArrayOutputStream();
                 byte[] chunk = new byte[8192];

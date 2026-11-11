@@ -548,13 +548,26 @@ public class SmsPromptActivity extends AppCompatActivity {
             if (wantSave && loc != null) {
                 NearbyPlaces.rememberForSms(getApplicationContext(), smsAddress, smsBody, loc);
             }
-            List<NearbyPlaces.Place> places = wantNearby && loc != null
-                ? NearbyPlaces.findAround(getApplicationContext(), loc, 6)
-                : new ArrayList<>();
+            List<NearbyPlaces.Place> found = new ArrayList<>();
+            String why = null;
+            if (wantNearby) {
+                if (loc == null) {
+                    why = "\uD83D\uDCCD Location unavailable \u00b7 no nearby shops";
+                } else {
+                    try {
+                        found = NearbyPlaces.lookup(getApplicationContext(), loc, 6);
+                        if (found.isEmpty()) why = "\uD83D\uDCCD No shops found nearby";
+                    } catch (Exception e) {
+                        why = "\uD83D\uDCCD Couldn\u2019t look up shops \u00b7 check internet";
+                    }
+                }
+            }
+            final List<NearbyPlaces.Place> places = found;
+            final String reason = why;
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed() || seq != renderSeq) return;
                 fix = loc;
-                if (wantNearby) showNearby(seq, places, needCategory);
+                if (wantNearby) showNearby(seq, places, needCategory, reason);
             });
         }, "artha-location").start();
     }
@@ -564,10 +577,13 @@ public class SmsPromptActivity extends AppCompatActivity {
         return m == null || m.trim().isEmpty() || m.replaceAll("[^0-9]", "").length() >= 6;
     }
 
-    private void showNearby(int seq, List<NearbyPlaces.Place> places, boolean needCategory) {
+    private void showNearby(int seq, List<NearbyPlaces.Place> places, boolean needCategory, String reason) {
         if (isFinishing() || isDestroyed() || seq != renderSeq) return;
         if (places.isEmpty()) {
-            nearbyLabel.setVisibility(View.GONE);
+            // Say why there are no chips; the expense can still be added as usual.
+            nearbyLabel.setText(reason != null ? reason : "\uD83D\uDCCD No shops found nearby");
+            nearbyLabel.setVisibility(View.VISIBLE);
+            nearbyChips.setVisibility(View.GONE);
             return;
         }
         nearbyLabel.setText("\uD83D\uDCCD Nearby \u00b7 tap the shop you paid");
