@@ -380,10 +380,15 @@ const QUICK_CATEGORY_COUNT = 7;
 
     /* Sticky save */
     .save-bar {
-      position: sticky; bottom: 0;
+      position: sticky; bottom: 0; z-index: 5;
       background: var(--artha-surface);
       padding: 12px 20px 16px;
       max-width: 640px; margin: 0 auto;
+    }
+    /* Soft fade so content scrolling under the button doesn't end in a hard cut. */
+    .save-bar::before {
+      content: ''; position: absolute; left: 0; right: 0; top: -20px; height: 20px; pointer-events: none;
+      background: linear-gradient(to bottom, transparent, var(--artha-surface));
     }
     .save-btn {
       width: 100%; height: 56px; border: 0; border-radius: 18px; cursor: pointer;
@@ -394,7 +399,11 @@ const QUICK_CATEGORY_COUNT = 7;
     .save-btn:disabled { opacity: 0.45; box-shadow: none; cursor: default; }
     @media (max-width: 767.98px) {
       /* Sit above the floating tab bar (68px tall, 16px off the bottom). */
-      .save-bar { bottom: calc(88px + env(safe-area-inset-bottom)); padding-bottom: 12px; }
+      /* The bar sits on the screen's bottom edge and its own background fills
+         the space behind the tab bar, so nothing shows between the two. The
+         page's usual tab-bar padding is then already inside the bar. */
+      :host ion-content { --padding-bottom: 0px; }
+      .save-bar { bottom: 0; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     }
   `],
 })
