@@ -16,6 +16,7 @@ import { SessionService } from './core/auth/session.service';
 import { AppLockService } from './core/security/app-lock.service';
 import { NativeUiService } from './core/native/native-ui.service';
 import { ThemeService } from './core/theme/theme.service';
+import { BillsService } from './features/bills/bills.service';
 import { SmsCaptureService } from './features/sms/sms-capture.service';
 import { routes } from './app.routes';
 
@@ -42,6 +43,7 @@ export const appConfig: ApplicationConfig = {
       const nativeUi = inject(NativeUiService);
       const smsCapture = inject(SmsCaptureService);
       const appLock = inject(AppLockService);
+      const bills = inject(BillsService);
       // Construct the theme service early so the chosen Light/Dark/System
       // palette is applied to <html> as the app boots.
       inject(ThemeService);
@@ -54,6 +56,8 @@ export const appConfig: ApplicationConfig = {
       // Resume the SMS watcher if the user enabled capture previously.
       // No-op on web/iOS and when disabled.
       void smsCapture.init();
+      // Bill reminders found in SMS: load them and open /bills after a reminder tap.
+      void bills.init();
       // Cover the app with the biometric lock if the user enabled it.
       // No-op on web/desktop. Not awaited so boot isn't blocked by the prompt.
       void appLock.initialize();

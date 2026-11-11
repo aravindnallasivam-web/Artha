@@ -27,6 +27,7 @@ import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { environment } from '../../../environments/environment';
 import { SUPPORTED_CURRENCIES } from '../../core/models/settings.model';
+import { BillsService } from '../bills/bills.service';
 import { AiProviderService } from '../../core/ai/ai-provider.service';
 import { SmsCaptureService } from '../sms/sms-capture.service';
 import { SmsIgnoredSendersModal } from '../sms/sms-ignored-senders.modal';
@@ -186,6 +187,38 @@ import { SettingsStore } from './settings.store';
                   </ion-label>
                 </ion-toggle>
               </ion-item>
+              <!-- Bill reminders: statements / "due on" SMS → reminders before the due date. -->
+              <ion-item lines="none">
+                <span class="icon-chip chip-accent" slot="start">
+                  <ion-icon name="receipt-outline"></ion-icon>
+                </span>
+                <ion-toggle
+                  labelPlacement="start"
+                  justify="space-between"
+                  [checked]="bills.config().enabled"
+                  (ionChange)="onBillsToggle($event)"
+                >
+                  <ion-label class="ion-text-wrap">
+                    <h2>Bill reminders from SMS</h2>
+                    <p>Credit-card statements and "due on" messages become bills, with a reminder before each due
+                      date. A "payment received" SMS marks them paid.</p>
+                  </ion-label>
+                </ion-toggle>
+              </ion-item>
+              @if (bills.config().enabled) {
+                <ion-item lines="none">
+                  <ion-select
+                    label="First reminder"
+                    interface="popover"
+                    [value]="bills.config().daysBefore"
+                    (ionChange)="onBillsDays($event)"
+                  >
+                    @for (d of billDayOptions; track d) {
+                      <ion-select-option [value]="d">{{ d }} {{ d === 1 ? 'day' : 'days' }} before</ion-select-option>
+                    }
+                  </ion-select>
+                </ion-item>
+              }
               <!-- Nearby shops on the expense alert (location, while it is on screen). -->
               <ion-item lines="none">
                 <span class="icon-chip chip-accent" slot="start">
@@ -536,6 +569,19 @@ export class SettingsPage implements OnInit {
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
   protected readonly ai = inject(AiProviderService);
+  protected readonly bills = inject(BillsService);
+  protected readonly billDayOptions = [1, 2, 3, 5, 7];
+
+  protected async onBillsToggle(event: Event): Promise<void> {
+    const on = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false;
+    await this.bills.setConfig({ enabled: on });
+    if (on) void this.bills.scan(45).catch(() => undefined);
+  }
+
+  protected onBillsDays(event: Event): void {
+    const v = Number((event as CustomEvent<{ value: number }>).detail?.value);
+    if (Number.isFinite(v)) void this.bills.setConfig({ daysBefore: v });
+  }
 
   protected async onNearbyToggle(event: Event): Promise<void> {
     const toggle = event.target as HTMLIonToggleElement;

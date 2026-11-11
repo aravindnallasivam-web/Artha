@@ -503,6 +503,79 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    // ---- Bill reminders ----
+
+    @Override
+    public void load() {
+        super.load();
+        BillReminders.schedule(getContext());
+    }
+
+    /** Bills found in SMS: [{id,title,kind,last4,amount,minDue,dueDate,status,paidAt,...}]. */
+    @PluginMethod
+    public void getBills(PluginCall call) {
+        JSObject ret = new JSObject();
+        try {
+            ret.put("bills", new com.getcapacitor.JSArray(BillReminders.all(getContext()).toString()));
+        } catch (Exception e) {
+            ret.put("bills", new com.getcapacitor.JSArray());
+        }
+        call.resolve(ret);
+    }
+
+    /** status: "paid" | "due" | "dismissed". */
+    @PluginMethod
+    public void setBillStatus(PluginCall call) {
+        String id = call.getString("id");
+        String status = call.getString("status");
+        if (id == null || status == null) {
+            call.reject("id and status are required");
+            return;
+        }
+        BillReminders.setStatus(getContext(), id, status);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setBillConfig(PluginCall call) {
+        JSObject cfg = new JSObject();
+        cfg.put("enabled", call.getBoolean("enabled", true));
+        cfg.put("daysBefore", call.getInt("daysBefore", 3));
+        getContext().getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE)
+            .edit().putString(BillReminders.KEY_CONFIG, cfg.toString()).apply();
+        BillReminders.schedule(getContext());
+        call.resolve();
+    }
+
+    /** Pick up bills from the last `days` of the inbox (needs SMS permission). */
+    @PluginMethod
+    public void scanBills(PluginCall call) {
+        int days = Math.max(1, Math.min(120, call.getInt("days", 45)));
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(() -> {
+            int changed = BillReminders.scanInbox(ctx, System.currentTimeMillis() - days * 24L * 60 * 60 * 1000);
+            BillReminders.check(ctx);
+            JSObject ret = new JSObject();
+            ret.put("changed", changed);
+            call.resolve(ret);
+        }, "artha-bill-scan").start();
+    }
+
+    /** A route to open once, e.g. "/bills" from a bill reminder tap; { route: null } otherwise. */
+    @PluginMethod
+    public void consumeOpenRoute(PluginCall call) {
+        JSObject ret = new JSObject();
+        android.app.Activity activity = getActivity();
+        Intent intent = activity != null ? activity.getIntent() : null;
+        String route = intent != null ? intent.getStringExtra(BillReminders.EXTRA_OPEN_ROUTE) : null;
+        if (route != null) {
+            intent.removeExtra(BillReminders.EXTRA_OPEN_ROUTE);
+            activity.setIntent(intent);
+        }
+        ret.put("route", route);
+        call.resolve(ret);
+    }
+
     /** Teach the alert: at this spot the user paid `name` (picked on the expense screen). */
     @PluginMethod
     public void rememberPlace(PluginCall call) {

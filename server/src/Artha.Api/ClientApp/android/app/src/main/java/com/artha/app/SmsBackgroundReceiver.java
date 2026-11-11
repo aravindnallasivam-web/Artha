@@ -80,11 +80,6 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         if (!"android.provider.Telephony.SMS_RECEIVED".equals(intent.getAction())) {
             return;
         }
-        // Foreground: the in-app live listener shows the popup — don't also notify.
-        if (MainActivity.isForeground) {
-            return;
-        }
-
         SmsMessage[] parts = Telephony.Sms.Intents.getMessagesFromIntent(intent);
         if (parts == null || parts.length == 0) {
             return;
@@ -101,11 +96,21 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
                 address = from;
             }
         }
+        String body = sb.toString();
+        // Bill reminders: statements / "due on" SMS become bills, "payment received" settles them.
+        // Runs even while Artha is open (there's no in-app equivalent).
+        if (BillReminders.enabled(context) && BillReminders.onSms(context, address, body, System.currentTimeMillis())) {
+            BillReminders.schedule(context);
+            BillReminders.check(context);
+        }
+        // Foreground: the in-app live listener shows the popup — don't also notify.
+        if (MainActivity.isForeground) {
+            return;
+        }
         // Respect the user's ignored-sender list.
         if (isIgnored(context, address)) {
             return;
         }
-        String body = sb.toString();
         if (body.isEmpty() || NOISE.matcher(body).find()) {
             return;
         }

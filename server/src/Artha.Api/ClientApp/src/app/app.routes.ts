@@ -139,6 +139,10 @@ export const routes: Routes = [
           import('./features/settings/settings.page').then((m) => m.SettingsPage),
       },
       {
+        path: 'bills',
+        loadComponent: () => import('./features/bills/bills.page').then((m) => m.BillsPage),
+      },
+      {
         path: 'more',
         loadComponent: () =>
           import('./features/more/more.page').then((m) => m.MorePage),

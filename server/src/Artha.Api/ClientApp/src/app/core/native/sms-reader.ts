@@ -23,6 +23,24 @@ export interface SmsPermissionStatus {
  * (SmsPromptActivity) and the notification's Approve action (SmsActionReceiver);
  * drained by the web layer on next organic resume.
  */
+/** A bill found in SMS (credit-card statement, "due on" reminder). Kept on the phone. */
+export interface SmsBill {
+  id: string;
+  title: string;
+  kind: 'card' | 'emi' | 'bill';
+  last4: string;
+  amount: number;
+  minDue: number;
+  /** yyyy-MM-dd */
+  dueDate: string;
+  dueMs: number;
+  smsDate: number;
+  status: 'due' | 'paid' | 'dismissed';
+  paidAt?: number;
+  /** "sms" when a payment-received SMS settled it, "user" when marked by hand. */
+  paidBy?: 'sms' | 'user';
+}
+
 export interface NearbyPlace {
   name: string;
   kind: string;
@@ -130,6 +148,14 @@ export interface SmsReaderPlugin {
   openFullScreenIntentSettings(): Promise<void>;
   /** Whether Artha may "Display over other apps" (lets the prompt pop up while the phone is unlocked). */
   canDrawOverlays(): Promise<{ granted: boolean }>;
+  /** Bills found in SMS. */
+  getBills(): Promise<{ bills: SmsBill[] }>;
+  setBillStatus(options: { id: string; status: SmsBill['status'] }): Promise<void>;
+  setBillConfig(options: { enabled: boolean; daysBefore: number }): Promise<void>;
+  /** Read the last `days` of the inbox for bills; resolves with how many were added or changed. */
+  scanBills(options: { days: number }): Promise<{ changed: number }>;
+  /** A route to open once (e.g. "/bills" after tapping a bill reminder). */
+  consumeOpenRoute(): Promise<{ route: string | null }>;
   /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
   rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
   /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */

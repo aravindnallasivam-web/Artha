@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
 import { cardOwed, daysUntil, dueLabel, nextDueDate } from '../../core/models/card-cycle';
+import { BillsService } from '../bills/bills.service';
 import { AccountsStore } from '../accounts/accounts.store';
 import { InvestmentsStore } from '../investments/investments.store';
 import { CategoriesStore } from '../categories/categories.store';
@@ -176,6 +177,20 @@ interface CategorySlice {
               <span class="pending-text">
                 {{ bill.name }} bill due {{ bill.when }}
                 @if (bill.owed > 0) { · <span class="num">{{ bill.owed | currency: bill.currency : 'symbol' : '1.0-0' }}</span> owed }
+              </span>
+              <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
+            </a>
+          }
+
+          <!-- Bills found in SMS (statements, "due on" reminders) -->
+          @for (b of bills.upcoming(); track b.id) {
+            <a class="pending" [class.card-due]="b.daysLeft <= 2" routerLink="/bills">
+              <span class="pending-badge" [class.card-due-badge]="b.daysLeft <= 2">
+                <ion-icon [name]="b.kind === 'card' ? 'card' : 'receipt-outline'" aria-hidden="true"></ion-icon>
+              </span>
+              <span class="pending-text">
+                {{ b.title }} · <span class="num">{{ b.amount | currency: 'INR' : 'symbol' : '1.0-0' }}</span>
+                {{ b.daysLeft < 0 ? 'was due ' + b.when : 'due ' + b.when }}
               </span>
               <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
             </a>
@@ -477,6 +492,7 @@ export class DashboardComponent implements OnInit {
   private readonly plannedStore = inject(PlannedExpensesStore);
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly sms = inject(SmsCaptureService);
+  protected readonly bills = inject(BillsService);
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
   private readonly accountsStore = inject(AccountsStore);
@@ -495,7 +511,10 @@ export class DashboardComponent implements OnInit {
     this.accountsStore
       .active()
       .filter((a) => a.type === 'credit_card' && a.dueDay)
-      .map((a) => ({ acc: a, days: daysUntil(nextDueDate(a.dueDay!)) }))
+      .map((a) => ({ acc: a, due: nextDueDate(a.dueDay!) }))
+      // The same card's bill from SMS (same due date) is shown instead, with the real amount.
+      .filter((x) => !this.bills.upcoming().some((b) => b.kind === 'card' && b.dueDate === ymd(x.due)))
+      .map((x) => ({ acc: x.acc, days: daysUntil(x.due) }))
       .filter((x) => x.days <= 5)
       .sort((a, b) => a.days - b.days)
       .map(({ acc, days }) => ({
@@ -694,5 +713,10 @@ export class DashboardComponent implements OnInit {
 /** Local 'YYYY-MM-DD' for today (matches how expense.date is stored). */
 function isoToday(): string {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Local yyyy-MM-dd. */
+function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
