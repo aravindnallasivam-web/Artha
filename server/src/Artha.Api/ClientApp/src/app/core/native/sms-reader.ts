@@ -36,9 +36,23 @@ export interface SmsBill {
   dueMs: number;
   smsDate: number;
   status: 'due' | 'paid' | 'dismissed';
+  /** Read by the AI from an SMS the patterns didn't recognise. */
+  ai?: boolean;
   paidAt?: number;
   /** "sms" when a payment-received SMS settled it, "user" when marked by hand. */
   paidBy?: 'sms' | 'user';
+}
+
+/** An SMS no pattern recognised, which the AI read as an expense / income / refund. */
+export interface AiFoundEntry {
+  address: string;
+  body: string;
+  date: number;
+  type: 'expense' | 'income' | 'refund';
+  amount: number;
+  merchant: string;
+  last4: string;
+  confidence: 'high' | 'medium';
 }
 
 export interface NearbyPlace {
@@ -168,10 +182,14 @@ export interface SmsReaderPlugin {
   openOverlaySettings(): Promise<void>;
   /** Show the sample expense prompt (notification + full-screen alert), optionally after a delay. */
   testSmsPrompt(options: { delaySeconds: number }): Promise<void>;
+  /** AI-read expenses from unrecognised SMS (handed out once), plus today's AI checks used. */
+  consumeAiFound(): Promise<{ entries: AiFoundEntry[]; usedToday: number }>;
   addListener(
     eventName: 'smsReceived',
     listenerFunc: (message: SmsMessage) => void,
   ): Promise<PluginListenerHandle>;
+  /** The AI found an expense in an SMS while the app is open. */
+  addListener(eventName: 'aiSmsFound', listenerFunc: () => void): Promise<PluginListenerHandle>;
 }
 
 /**

@@ -90,6 +90,9 @@ import { ParsedExpense } from './sms-parser';
             }
           </p>
 
+          @if (parsed.source === 'ai') {
+            <p class="ai-guess">✨ Read by AI — this SMS didn't match a known bank format. Check the amount and type.</p>
+          }
           <!-- Original SMS, so you can see what's being logged. -->
           <ion-note class="raw">{{ parsed.raw }}</ion-note>
 
@@ -248,6 +251,11 @@ import { ParsedExpense } from './sms-parser';
     </ion-content>
   `,
   styles: [`
+    .ai-guess {
+      margin: 0 0 10px; padding: 8px 12px; border-radius: 12px;
+      background: var(--artha-accent-tint); color: var(--artha-accent);
+      font-size: 12.5px; font-weight: 600; line-height: 1.4;
+    }
     ion-content { --background: var(--artha-bg); }
     .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 16px; }
 

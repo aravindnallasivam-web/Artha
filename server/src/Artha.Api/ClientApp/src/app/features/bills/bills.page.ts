@@ -99,7 +99,10 @@ import { BillView, BillsService } from './bills.service';
                     </span>
                     <div class="bill-text">
                       <div class="bill-title">{{ b.title }}</div>
-                      <div class="bill-sub">Due {{ dateLabel(b.dueDate) }} · <b>{{ b.when }}</b></div>
+                      <div class="bill-sub">
+                        Due {{ dateLabel(b.dueDate) }} · <b>{{ b.when }}</b>
+                        @if (b.ai) { <span class="ai-tag">AI guess</span> }
+                      </div>
                     </div>
                     <div class="bill-amt">
                       <div class="num">{{ b.amount | currency: 'INR' : 'symbol' : amountFormat(b.amount) }}</div>
@@ -213,6 +216,10 @@ import { BillView, BillsService } from './bills.service';
     .bill-sub { margin-top: 2px; font-size: 12.5px; color: var(--artha-text-muted); }
     .bill--overdue .bill-sub b { color: var(--artha-negative); }
     .bill-amt { text-align: right; font-size: 16px; font-weight: 800; color: var(--artha-text); flex-shrink: 0; }
+    .ai-tag {
+      display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 999px;
+      background: var(--artha-accent-tint); color: var(--artha-accent); font-size: 10.5px; font-weight: 700;
+    }
     .bill-min { font-size: 11.5px; font-weight: 600; color: var(--artha-text-subtle); }
     .bill-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
     .pay {

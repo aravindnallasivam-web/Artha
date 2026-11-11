@@ -84,6 +84,11 @@ public class BillReminders extends BroadcastReceiver {
         long dueMs;
     }
 
+    /** True when the bill patterns handle this SMS (a bill, or a payment received). */
+    static boolean recognises(String address, String body, long smsMs) {
+        return body != null && (PAID.matcher(body).find() || parse(address, body, smsMs) != null);
+    }
+
     static Parsed parse(String address, String body, long smsMs) {
         if (body == null || body.isEmpty()) return null;
         if (!BILL.matcher(body).find() || NOT_BILL.matcher(body).find() || PAID.matcher(body).find()) return null;
@@ -308,6 +313,41 @@ public class BillReminders extends BroadcastReceiver {
         }
         Parsed p = parse(address, body, smsMs);
         if (p == null) return false;
+        return store(ctx, address, p, smsMs, false);
+    }
+
+    /** A bill the AI read from an SMS no pattern recognised (shown as "found by AI"). */
+    static synchronized boolean storeFromAi(Context ctx, String address, AiClient.MessageKind k, long smsMs) {
+        String[] ymd = k.dueDate.split("-");
+        if (ymd.length != 3) return false;
+        Calendar due;
+        try {
+            due = make(Integer.parseInt(ymd[0]), Integer.parseInt(ymd[1]), Integer.parseInt(ymd[2]));
+        } catch (Exception e) {
+            return false;
+        }
+        if (due == null) return false;
+        long dueMs = due.getTimeInMillis();
+        if (dueMs < startOfDay(smsMs) - DAY_MS || dueMs > smsMs + 75 * DAY_MS) return false;
+        double amount = k.amount > 0 ? k.amount : k.minDue;
+        if (amount <= 0) return false;
+        Parsed p = new Parsed();
+        p.last4 = k.last4.length() >= 4 ? k.last4.substring(k.last4.length() - 4) : "";
+        String biller = billerName(address);
+        // Unknown sender code: the AI's biller name reads better.
+        if (biller.equals(normSender(address)) && !k.merchant.isEmpty()) biller = k.merchant;
+        p.kind = p.last4.isEmpty() ? "bill" : "card";
+        p.title = (biller + (p.last4.isEmpty() ? " bill" : biller.endsWith("Card") ? "" : " card")).trim()
+            + (p.last4.isEmpty() ? "" : " \u2022\u2022" + p.last4);
+        p.amount = amount;
+        p.minDue = k.minDue;
+        p.dueMs = dueMs;
+        p.dueDate = String.format(Locale.ROOT, "%04d-%02d-%02d",
+            due.get(Calendar.YEAR), due.get(Calendar.MONTH) + 1, due.get(Calendar.DAY_OF_MONTH));
+        return store(ctx, address, p, smsMs, true);
+    }
+
+    private static boolean store(Context ctx, String address, Parsed p, long smsMs, boolean ai) {
         String sender = normSender(address);
         String id = sender + "|" + p.last4 + "|" + p.dueDate;
         JSONArray bills = all(ctx);
@@ -343,7 +383,8 @@ public class BillReminders extends BroadcastReceiver {
                 .put("dueMs", p.dueMs)
                 .put("smsDate", smsMs)
                 .put("status", p.dueMs < startOfDay(now) - 7 * DAY_MS ? "paid" : "due")
-                .put("notified", "");
+                .put("notified", "")
+                .put("ai", ai);
             kept.put(b);
             while (kept.length() > MAX_BILLS) kept.remove(0);
             save(ctx, kept);
@@ -356,7 +397,12 @@ public class BillReminders extends BroadcastReceiver {
     /** "Payment of Rs X received" for the same card (or the only open bill from that sender). */
     private static boolean markPaidFrom(Context ctx, String address, String body, long smsMs) {
         Matcher l4 = LAST4.matcher(body);
-        String last4 = l4.find() ? l4.group(1) : "";
+        return markPaid(ctx, address, l4.find() ? l4.group(1) : "", smsMs);
+    }
+
+    /** Settle the open bill for this card (or the only open one from this sender). */
+    static synchronized boolean markPaid(Context ctx, String address, String last4In, long smsMs) {
+        String last4 = last4In == null ? "" : last4In.length() > 4 ? last4In.substring(last4In.length() - 4) : last4In;
         String sender = normSender(address);
         JSONArray bills = all(ctx);
         JSONObject match = null;

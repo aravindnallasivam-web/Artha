@@ -25,6 +25,8 @@ export interface ParsedExpense {
   sender: string;
   /** Original message body, kept for the confirm dialog / note. */
   raw: string;
+  /** 'ai' when the AI read it from an SMS no pattern recognised (always confirmed by the user). */
+  source?: 'ai';
 }
 
 // Amount tokens: local INR forms (Rs/INR/₹) plus the foreign currencies an

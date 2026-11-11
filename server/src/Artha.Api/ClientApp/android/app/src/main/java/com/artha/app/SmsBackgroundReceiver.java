@@ -103,15 +103,25 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             BillReminders.schedule(context);
             BillReminders.check(context);
         }
-        // Foreground: the in-app live listener shows the popup — don't also notify.
-        if (MainActivity.isForeground) {
-            return;
-        }
         // Respect the user's ignored-sender list.
         if (isIgnored(context, address)) {
             return;
         }
-        if (body.isEmpty() || NOISE.matcher(body).find()) {
+        // Patterns first. Only when none recognises a money-looking SMS is the AI asked.
+        boolean noise = body.isEmpty() || NOISE.matcher(body).find();
+        boolean hasAmount = AMOUNT.matcher(body).find();
+        boolean knownExpense = !noise && hasAmount && DEBIT.matcher(body).find() && !CREDIT.matcher(body).find();
+        boolean knownCredit = !noise && hasAmount && CREDIT.matcher(body).find();
+        if (!knownExpense && !knownCredit && !BillReminders.recognises(address, body, System.currentTimeMillis())
+            && SmsAiFallback.candidate(context, address, body)) {
+            askAi(context, address, body);
+            return;
+        }
+        // Foreground: the in-app live listener shows the popup — don't also notify.
+        if (MainActivity.isForeground) {
+            return;
+        }
+        if (noise) {
             return;
         }
         if (!DEBIT.matcher(body).find() || CREDIT.matcher(body).find()) {
@@ -129,6 +139,36 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
 
     /** Set in onReceive so launchPrompt can finish the broadcast once it's done. */
     private PendingResult pendingResult;
+    /** Merchant the AI read, used on the alert instead of the pattern's guess. */
+    private String merchantOverride;
+
+    /**
+     * Ask the AI what an unrecognised SMS is, off the main thread. An expense
+     * pops the usual alert (the user still confirms it); bills and payments
+     * are stored by SmsAiFallback; anything else is left alone.
+     */
+    private void askAi(Context context, String address, String body) {
+        final PendingResult async = goAsync();
+        final Context app = context.getApplicationContext();
+        final long now = System.currentTimeMillis();
+        new Thread(() -> {
+            SmsAiFallback.Outcome o = SmsAiFallback.run(app, address, body, now);
+            boolean expense = "expense".equals(o.action);
+            if (expense || "income".equals(o.action)) {
+                // The app puts it in Pending (or shows it now, when it's open).
+                SmsReaderPlugin.notifyAiFound();
+            }
+            if (expense && !MainActivity.isForeground) {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    pendingResult = async;
+                    merchantOverride = o.kind.merchant.isEmpty() ? null : o.kind.merchant;
+                    postNotification(app, SmsAiFallback.amountText(o.kind.amount), address, body);
+                });
+            } else {
+                async.finish();
+            }
+        }, "artha-sms-ai").start();
+    }
 
     private boolean isIgnored(Context ctx, String sender) {
         if (sender == null || sender.isEmpty()) {
@@ -275,6 +315,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     }
 
     void postNotification(Context context, String amount, String address, String body, boolean test) {
+        final String merchant = merchantOverride != null ? merchantOverride : merchantHint(body);
         NotificationManager nm =
             (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
@@ -341,7 +382,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             | Intent.FLAG_ACTIVITY_CLEAR_TOP
             | Intent.FLAG_ACTIVITY_NO_HISTORY);
         prompt.putExtra(SmsPromptActivity.EXTRA_AMOUNT_DISPLAY, "₹" + amount);
-        prompt.putExtra(SmsPromptActivity.EXTRA_MERCHANT, merchantHint(body));
+        prompt.putExtra(SmsPromptActivity.EXTRA_MERCHANT, merchant);
         prompt.putExtra(SmsPromptActivity.EXTRA_CATEGORY, categoryName);
         prompt.putExtra(SmsPromptActivity.EXTRA_ACCOUNT, accountName);
         prompt.putExtra(SmsPromptActivity.EXTRA_BODY, body);
@@ -358,7 +399,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         try {
             org.json.JSONObject entry = new org.json.JSONObject();
             entry.put(PromptQueue.F_AMOUNT, "₹" + amount);
-            entry.put(PromptQueue.F_MERCHANT, merchantHint(body) != null ? merchantHint(body) : "");
+            entry.put(PromptQueue.F_MERCHANT, merchant != null ? merchant : "");
             entry.put(PromptQueue.F_CATEGORY, categoryName != null ? categoryName : "");
             entry.put(PromptQueue.F_ACCOUNT, accountName != null ? accountName : "");
             entry.put(PromptQueue.F_BODY, body);
@@ -383,7 +424,8 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             ? "₹" + amount + " · " + categoryName + " · " + accountName
             : "₹" + amount + " — tap to review and log it in Artha";
         String text = waiting > 1 ? "Latest: ₹" + amount + " · tap to go through them" : latest;
-        String title = waiting > 1 ? waiting + " expenses detected" : "Expense detected";
+        String title = waiting > 1 ? waiting + " expenses detected"
+            : merchantOverride != null ? "Expense detected \u00b7 read by AI" : "Expense detected";
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.getApplicationInfo().icon)
@@ -420,7 +462,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
                 .setAction(ACTION_APPROVE)
                 .putExtra(EXTRA_NOTIF_ID, NOTIF_ID)
                 .putExtra(SmsPromptActivity.EXTRA_AMOUNT_DISPLAY, "₹" + amount)
-                .putExtra(SmsPromptActivity.EXTRA_MERCHANT, merchantHint(body))
+                .putExtra(SmsPromptActivity.EXTRA_MERCHANT, merchant)
                 .putExtra(SmsPromptActivity.EXTRA_CATEGORY, categoryName)
                 .putExtra(SmsPromptActivity.EXTRA_ACCOUNT, accountName)
                 .putExtra(SmsPromptActivity.EXTRA_BODY, body)

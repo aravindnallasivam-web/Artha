@@ -4,7 +4,7 @@ import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense, ExpenseLocation } from '../../core/models/expense.model';
-import { NearbyPlace, PreApprovedEntry, SmsMessage, SmsReader } from '../../core/native/sms-reader';
+import { AiFoundEntry, NearbyPlace, PreApprovedEntry, SmsMessage, SmsReader } from '../../core/native/sms-reader';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
@@ -264,7 +264,11 @@ export class SmsCaptureService {
     // category / account itself; the config stays on this device.
     // Off in Settings → "Suggest on the full-screen alert": the alert gets no
     // provider at all, so it never calls the AI.
-    const ai = this.ai.isEnabled() && this.ai.alertSuggest() ? { ...this.ai.config() } : null;
+    // "Use AI for unrecognised SMS" needs the provider too; `alert` keeps the alert's own switch.
+    const ai =
+      this.ai.isEnabled() && (this.ai.alertSuggest() || this.ai.smsFallback())
+        ? { ...this.ai.config(), alert: this.ai.alertSuggest(), smsFallback: this.ai.smsFallback() }
+        : null;
     const nearby = { ...this._nearby() };
     await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai, nearby }).catch(
       () => undefined,
@@ -309,6 +313,44 @@ export class SmsCaptureService {
       return res?.places ?? [];
     }
     return overpassNearby(lat, lng);
+  }
+
+  /**
+   * Put the expenses the AI found in unrecognised SMS into Pending, marked as an
+   * AI guess. Ones a pattern can read after all are left to the normal path.
+   * Returns what was added.
+   */
+  private async drainAiFound(): Promise<ParsedExpense[]> {
+    if (!this.isSupported()) return [];
+    let entries: AiFoundEntry[] = [];
+    try {
+      entries = (await SmsReader.consumeAiFound()).entries ?? [];
+    } catch {
+      return [];
+    }
+    const added: ParsedExpense[] = [];
+    for (const e of entries) {
+      if (this.isIgnored(e.address) || !(e.amount > 0)) continue;
+      const msg = { address: e.address, body: e.body, date: e.date };
+      if (parseExpenseSms(msg)) continue;
+      const parsed: ParsedExpense = {
+        amount: e.amount,
+        type: e.type === 'expense' ? 'expense' : 'income',
+        merchant: e.merchant?.trim() || (e.type === 'refund' ? 'Refund' : null),
+        accountHint: e.last4 || null,
+        date: localDate(e.date),
+        suggestedCategory: null,
+        balance: null,
+        currency: 'INR',
+        sender: e.address,
+        raw: e.body,
+        source: 'ai',
+      };
+      const before = this.pending.length;
+      this.enqueue(parsed);
+      if (this.pending.length > before) added.push(parsed);
+    }
+    return added;
   }
 
   /** Teach the alert's place memory (phone only; ignored elsewhere). */
@@ -598,6 +640,8 @@ export class SmsCaptureService {
     for (const p of parsed) {
       this.enqueue(p);
     }
+    // SMS the AI read (patterns didn't recognise them) wait in Pending as "AI guess".
+    await this.drainAiFound();
     const added = await this.autoAddPending();
     if (added.length > 0) {
       await this.notifyAutoAdded(added);
@@ -657,11 +701,9 @@ export class SmsCaptureService {
     await this.ensureStores();
     const added: ParsedExpense[] = [];
     for (const entry of entries) {
-      const parsed = parseExpenseSms({
-        address: entry.address,
-        body: entry.body,
-        date: entry.date,
-      });
+      // An SMS the AI read has no pattern: rebuild it from what the alert showed.
+      const parsed =
+        parseExpenseSms({ address: entry.address, body: entry.body, date: entry.date }) ?? fromAlertEntry(entry);
       if (!parsed) {
         continue;
       }
@@ -980,6 +1022,16 @@ export class SmsCaptureService {
       this.listener = await SmsReader.addListener('smsReceived', (msg) =>
         this.handleIncoming(msg),
       );
+      // The AI read an SMS the patterns missed, while Artha is open: show it to confirm.
+      void SmsReader.addListener('aiSmsFound', () => {
+        void (async () => {
+          const found = await this.drainAiFound();
+          const expense = found.find((p) => p.type === 'expense');
+          if (found.length === 1 && expense) {
+            await this.openSingleConfirm(expense, /* skipDuplicateCheck */ true);
+          }
+        })();
+      }).catch(() => undefined);
     }
   }
 
@@ -1498,6 +1550,8 @@ export class SmsCaptureService {
     ]);
     const added: ParsedExpense[] = [];
     for (const item of items) {
+      // An AI guess is always confirmed by the user.
+      if (item.parsed.source === 'ai') continue;
       if (await this.tryAutoAdd(item.parsed, existing)) {
         added.push(item.parsed);
       }
@@ -1996,6 +2050,31 @@ function metres(lat1: number, lng1: number, lat2: number, lng2: number): number 
   const dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return Math.round(2 * r * Math.asin(Math.sqrt(a)));
+}
+
+/** Local yyyy-MM-dd for a timestamp. */
+function localDate(ms: number): string {
+  const d = new Date(ms || Date.now());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** An alert entry whose SMS no pattern reads (the AI found it): rebuild the expense from the alert's fields. */
+function fromAlertEntry(e: PreApprovedEntry): ParsedExpense | null {
+  const amount = Number(String(e.amountDisplay ?? '').replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return {
+    amount,
+    type: 'expense',
+    merchant: e.merchant?.trim() || null,
+    accountHint: null,
+    date: localDate(e.date),
+    suggestedCategory: null,
+    balance: null,
+    currency: 'INR',
+    sender: e.address,
+    raw: e.body,
+    source: 'ai',
+  };
 }
 
 /** Java's String.hashCode(), so keys match the native side's PromptQueue.smsKey. */

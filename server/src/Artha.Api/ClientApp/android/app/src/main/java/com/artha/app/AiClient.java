@@ -60,13 +60,91 @@ final class AiClient {
         String apiKey;
         String model;
         String baseUrl;
+        /** Suggest category / account on the full-screen alert. */
+        boolean alert;
+        /** Ask what kind of message an SMS is when no pattern recognises it. */
+        boolean smsFallback;
     }
 
     private AiClient() {}
 
-    /** True when the app has a usable AI provider set up. */
+    /** True when the full-screen alert may ask the AI for a category / account. */
     static boolean isConfigured(Context ctx) {
-        return load(ctx) != null;
+        Config c = load(ctx);
+        return c != null && c.alert;
+    }
+
+    /** True when SMS that no pattern recognises may be sent to the AI. */
+    static boolean smsFallbackEnabled(Context ctx) {
+        Config c = load(ctx);
+        return c != null && c.smsFallback;
+    }
+
+    // ---- What kind of message is this? (for SMS the patterns don't recognise) ----
+
+    private static final String MESSAGE_PROMPT =
+        "You read one SMS received on a phone in India and decide what kind of money message it is, for a personal "
+            + "finance app. Types: \"expense\" = money already spent or sent from the user's account or card "
+            + "(debit, purchase, UPI payment, ATM withdrawal); \"income\" = money received or credited (salary, transfer in); "
+            + "\"refund\" = a refund or reversal credited back; \"bill_due\" = a bill, credit-card statement, EMI or "
+            + "payment that the user still has to pay by a due date; \"payment_received\" = the bank or biller confirming "
+            + "it received the user's payment of a bill or card dues; \"other\" = anything else (OTP, offer, promotion, "
+            + "balance update, failed or declined transaction, future auto-debit notice, personal message). "
+            + "Only use a money type when the SMS clearly states it; otherwise answer \"other\". "
+            + "confidence: \"high\" when the type and amount are stated plainly, \"medium\" when likely, \"low\" when unsure. "
+            + "amount: the transaction amount, or the total amount due for bill_due (not the balance or credit limit), 0 if none. "
+            + "merchant: short clean payee, merchant or biller name, or \"\". last4: last 4 digits of the card or account, or \"\". "
+            + "dueDate: yyyy-mm-dd for bill_due, else \"\". minDue: minimum amount due for bill_due, else 0.";
+
+    /** The model's reading of one SMS. */
+    static final class MessageKind {
+        final String type;
+        final String confidence;
+        final double amount;
+        final String merchant;
+        final String last4;
+        final String dueDate;
+        final double minDue;
+
+        MessageKind(JSONObject o) {
+            type = o.optString("type", "other");
+            confidence = o.optString("confidence", "low");
+            amount = Math.max(0, o.optDouble("amount", 0));
+            merchant = o.optString("merchant", "").trim();
+            last4 = o.optString("last4", "").replaceAll("[^0-9]", "");
+            dueDate = o.optString("dueDate", "").trim();
+            minDue = Math.max(0, o.optDouble("minDue", 0));
+        }
+    }
+
+    /** Ask what kind of message `body` is. Null when AI is off, the call fails or the model declines. */
+    static MessageKind classifyMessage(Context ctx, String sender, String body, String today, int timeoutMs) {
+        Config config = load(ctx);
+        if (config == null || body == null || body.isEmpty()) return null;
+        try {
+            JSONObject schema = new JSONObject()
+                .put("type", "object")
+                .put("properties", new JSONObject()
+                    .put("type", new JSONObject().put("type", "string").put("enum", new JSONArray()
+                        .put("expense").put("income").put("refund").put("bill_due").put("payment_received").put("other")))
+                    .put("confidence", new JSONObject().put("type", "string").put("enum", new JSONArray()
+                        .put("high").put("medium").put("low")))
+                    .put("amount", new JSONObject().put("type", "number"))
+                    .put("merchant", new JSONObject().put("type", "string"))
+                    .put("last4", new JSONObject().put("type", "string"))
+                    .put("dueDate", new JSONObject().put("type", "string"))
+                    .put("minDue", new JSONObject().put("type", "number")))
+                .put("required", new JSONArray().put("type").put("confidence").put("amount").put("merchant")
+                    .put("last4").put("dueDate").put("minDue"))
+                .put("additionalProperties", false);
+            String prompt = "Today is " + today + ".\nSender: " + (sender == null ? "" : sender) + "\nSMS:\n" + body;
+            JSONObject raw = "anthropic".equals(config.kind)
+                ? callClaude(config, MESSAGE_PROMPT, prompt, schema, timeoutMs)
+                : callCompatible(config, MESSAGE_PROMPT, prompt, schema, timeoutMs);
+            return raw == null ? null : new MessageKind(raw);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static Config load(Context ctx) {
@@ -82,6 +160,9 @@ final class AiClient {
             c.apiKey = o.optString("apiKey", "").trim();
             c.model = o.optString("model", "").trim();
             c.baseUrl = o.optString("baseUrl", "").trim().replaceAll("/+$", "");
+            // Older app builds sent the config only when the alert used it.
+            c.alert = o.optBoolean("alert", true);
+            c.smsFallback = o.optBoolean("smsFallback", false);
             if ("anthropic".equals(c.kind)) {
                 if (c.apiKey.isEmpty()) return null;
                 if (c.model.isEmpty()) c.model = DEFAULT_CLAUDE_MODEL;
@@ -111,8 +192,8 @@ final class AiClient {
             JSONObject schema = schema(categories.size(), accounts.size());
             String prompt = userPrompt(sender, body, amount, date, categories, accounts);
             JSONObject raw = "anthropic".equals(config.kind)
-                ? callClaude(config, prompt, schema, timeoutMs)
-                : callCompatible(config, prompt, schema, timeoutMs);
+                ? callClaude(config, SYSTEM_PROMPT, prompt, schema, timeoutMs)
+                : callCompatible(config, SYSTEM_PROMPT, prompt, schema, timeoutMs);
             if (raw == null) {
                 return null;
             }
@@ -177,12 +258,12 @@ final class AiClient {
     }
 
     /** Messages API with structured output; returns the parsed JSON answer or null. */
-    private static JSONObject callClaude(Config config, String prompt, JSONObject schema, int timeoutMs)
+    private static JSONObject callClaude(Config config, String system, String prompt, JSONObject schema, int timeoutMs)
         throws Exception {
         JSONObject body = new JSONObject()
             .put("model", config.model)
             .put("max_tokens", 4000)
-            .put("system", SYSTEM_PROMPT)
+            .put("system", system)
             .put("output_config", new JSONObject()
                 .put("effort", "low")
                 .put("format", new JSONObject().put("type", "json_schema").put("schema", schema)))
@@ -222,14 +303,14 @@ final class AiClient {
     }
 
     /** OpenAI-compatible /chat/completions in JSON mode; returns the parsed answer or null. */
-    private static JSONObject callCompatible(Config config, String prompt, JSONObject schema, int timeoutMs)
+    private static JSONObject callCompatible(Config config, String system, String prompt, JSONObject schema, int timeoutMs)
         throws Exception {
         JSONObject body = new JSONObject()
             .put("model", config.model)
             .put("response_format", new JSONObject().put("type", "json_object"))
             .put("messages", new JSONArray()
                 .put(new JSONObject().put("role", "system").put("content",
-                    SYSTEM_PROMPT + " Reply with only a JSON object matching this JSON Schema: " + schema))
+                    system + " Reply with only a JSON object matching this JSON Schema: " + schema))
                 .put(new JSONObject().put("role", "user").put("content", prompt)));
         HttpURLConnection conn = open(config.baseUrl + "/chat/completions", timeoutMs);
         if (!config.apiKey.isEmpty()) {

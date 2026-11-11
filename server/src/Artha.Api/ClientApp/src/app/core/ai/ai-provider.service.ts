@@ -37,6 +37,7 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
 const CONFIG_KEY = 'artha.ai.provider';
 /** Whether the full-screen SMS alert may ask the AI (device-only, default on). */
 const ALERT_KEY = 'artha.ai.alertSuggest';
+const SMS_FALLBACK_KEY = 'artha.ai.smsFallback';
 const NONE = 'none';
 
 const SYSTEM_PROMPT = [
@@ -61,6 +62,19 @@ export class AiProviderService {
     this._alertSuggest.set(on);
     try {
       localStorage.setItem(ALERT_KEY, on ? '1' : '0');
+    } catch {
+      // Applies for this session only.
+    }
+  }
+
+  private readonly _smsFallback = signal<boolean>(loadFlag(SMS_FALLBACK_KEY, false));
+  /** Ask the AI what an SMS is when no pattern recognises it (expense, bill, payment…). */
+  readonly smsFallback = this._smsFallback.asReadonly();
+
+  setSmsFallback(on: boolean): void {
+    this._smsFallback.set(on);
+    try {
+      localStorage.setItem(SMS_FALLBACK_KEY, on ? '1' : '0');
     } catch {
       // Applies for this session only.
     }
@@ -316,6 +330,15 @@ function errorDetail(data: unknown): string {
   if (data == null || data === '') return '';
   const text = typeof data === 'string' ? data : JSON.stringify(data);
   return `: ${text.slice(0, 160)}`;
+}
+
+function loadFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v === '1';
+  } catch {
+    return fallback;
+  }
 }
 
 function loadAlertSuggest(): boolean {

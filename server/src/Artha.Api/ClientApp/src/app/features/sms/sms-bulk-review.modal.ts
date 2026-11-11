@@ -174,7 +174,10 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
 
                   <div class="main" (click)="editRow(i)">
                     <div class="top-line">
-                      <span class="merchant">{{ row.note || row.parsed.sender || (row.parsed.type === 'income' ? 'Income' : 'Expense') }}</span>
+                      <span class="merchant">
+                        @if (row.parsed.source === 'ai') { <span class="ai-tag" title="Read by AI">AI guess</span> }
+                        {{ row.note || row.parsed.sender || (row.parsed.type === 'income' ? 'Income' : 'Expense') }}
+                      </span>
                       <span class="amount num" [class.income]="row.parsed.type === 'income'">
                         {{ row.parsed.type === 'income' ? '+' : '' }}{{ row.amount | currency: currencyCode() : 'symbol' : '1.0-0' }}
                       </span>
@@ -236,6 +239,10 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
     }
   `,
   styles: [`
+    .ai-tag {
+      display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
+      background: var(--artha-accent-tint); color: var(--artha-accent); font-size: 10.5px; font-weight: 700;
+    }
     :host { --background: var(--artha-bg); }
     .bg { --background: var(--artha-bg); }
     .top { --background: var(--artha-bg); }

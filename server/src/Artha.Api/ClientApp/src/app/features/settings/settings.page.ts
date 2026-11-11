@@ -426,6 +426,24 @@ import { SettingsStore } from './settings.store';
                 </ion-label>
               </ion-toggle>
             </ion-item>
+            <ion-item lines="none">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="sparkles-outline"></ion-icon>
+              </span>
+              <ion-toggle
+                labelPlacement="start"
+                justify="space-between"
+                [checked]="ai.smsFallback()"
+                (ionChange)="onSmsFallbackToggle($event)"
+              >
+                <ion-label class="ion-text-wrap">
+                  <h2>Use AI for unrecognised SMS</h2>
+                  <p>When no known pattern matches a money SMS from a bank or biller, ask the AI whether it's an
+                    expense, a bill or a payment. Only those messages are sent (never OTPs, offers or personal
+                    numbers), each once, up to 30 a day. What it finds waits for you to confirm, marked "AI guess".</p>
+                </ion-label>
+              </ion-toggle>
+            </ion-item>
           }
         </ion-list>
 
@@ -599,6 +617,11 @@ export class SettingsPage implements OnInit {
 
   protected onNearbyKey(event: Event): void {
     this.sms.setNearbyGoogleKey((event.target as HTMLInputElement).value);
+  }
+
+  protected onSmsFallbackToggle(event: Event): void {
+    this.ai.setSmsFallback((event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false);
+    void this.sms.syncNativeAi();
   }
 
   protected onAlertAiToggle(event: Event): void {

@@ -505,10 +505,38 @@ public class SmsReaderPlugin extends Plugin {
 
     // ---- Bill reminders ----
 
+    private static volatile SmsReaderPlugin instance;
+
     @Override
     public void load() {
         super.load();
+        instance = this;
         BillReminders.schedule(getContext());
+    }
+
+    /** Tell the open app that the AI found an expense in an SMS ("aiSmsFound"). */
+    static void notifyAiFound() {
+        SmsReaderPlugin p = instance;
+        if (p != null) {
+            try {
+                p.notifyListeners("aiSmsFound", new JSObject());
+            } catch (Exception ignored) {
+                // App not running: it drains the list on the next open.
+            }
+        }
+    }
+
+    /** Expenses / income the AI found in unrecognised SMS (handed out once). */
+    @PluginMethod
+    public void consumeAiFound(PluginCall call) {
+        JSObject ret = new JSObject();
+        try {
+            ret.put("entries", new com.getcapacitor.JSArray(SmsAiFallback.consumeFound(getContext()).toString()));
+        } catch (Exception e) {
+            ret.put("entries", new com.getcapacitor.JSArray());
+        }
+        ret.put("usedToday", SmsAiFallback.usedToday(getContext()));
+        call.resolve(ret);
     }
 
     /** Bills found in SMS: [{id,title,kind,last4,amount,minDue,dueDate,status,paidAt,...}]. */
