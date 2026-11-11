@@ -536,6 +536,10 @@ public class SmsPromptActivity extends AppCompatActivity {
      * doesn't name the shop.
      */
     private void locate(boolean wantNearby, boolean wantSave, boolean needCategory) {
+        locate(wantNearby, wantSave, needCategory, false);
+    }
+
+    private void locate(boolean wantNearby, boolean wantSave, boolean needCategory, boolean skipMemory) {
         final int seq = renderSeq;
         final String smsBody = body;
         final String smsAddress = address;
@@ -547,6 +551,17 @@ public class SmsPromptActivity extends AppCompatActivity {
             android.location.Location loc = NearbyPlaces.currentLocation(getApplicationContext(), 6000);
             if (wantSave && loc != null) {
                 NearbyPlaces.rememberForSms(getApplicationContext(), smsAddress, smsBody, loc);
+            }
+            // Paid at this spot before: use that shop straight away, no lookup.
+            NearbyPlaces.Remembered known = wantNearby && !skipMemory
+                ? NearbyPlaces.recall(getApplicationContext(), loc) : null;
+            if (known != null) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed() || seq != renderSeq) return;
+                    fix = loc;
+                    applyRemembered(known, needCategory);
+                });
+                return;
             }
             List<NearbyPlaces.Place> found = new ArrayList<>();
             String why = null;
@@ -595,6 +610,48 @@ public class SmsPromptActivity extends AppCompatActivity {
             nearbyChips.addView(chip);
         }
         nearbyChips.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * A shop the user picked at this spot before: name and category are filled
+     * in. "Other shops" still runs the normal lookup if it's wrong this time.
+     */
+    private void applyRemembered(NearbyPlaces.Remembered r, boolean needCategory) {
+        final String smsMerchant = merchant;
+        placeName = r.name;
+        merchant = r.name;
+        merchantView.setText(r.name);
+        merchantView.setVisibility(View.VISIBLE);
+        if (needCategory && !r.categoryId.isEmpty()) {
+            Cat c = catById.get(r.categoryId);
+            if (c != null) {
+                userPicked = true;
+                selectCategory(c);
+            }
+        }
+        nearbyLabel.setText("\uD83D\uDCCD You paid here before");
+        nearbyLabel.setVisibility(View.VISIBLE);
+        nearbyChips.removeAllViews();
+        TextView chip = makeChip(r.name, null, false);
+        chip.setTag(r.name);
+        styleChip(chip, true);
+        nearbyChips.addView(chip);
+        TextView other = makeChip("Other shops\u2026", null, false);
+        other.setTag("__other__");
+        other.setOnClickListener(v -> {
+            placeName = null;
+            merchant = smsMerchant;
+            if (TextUtils.isEmpty(smsMerchant)) {
+                merchantView.setVisibility(View.GONE);
+            } else {
+                merchantView.setText(smsMerchant);
+            }
+            other.setEnabled(false);
+            locate(true, false, needCategory, true);
+        });
+        nearbyChips.addView(other);
+        nearbyChips.setVisibility(View.VISIBLE);
+        refreshPrimary();
     }
 
     /** Use a nearby shop: its name becomes the note, its type picks a matching category. */
@@ -882,6 +939,11 @@ public class SmsPromptActivity extends AppCompatActivity {
             entry.put("placeName", placeName != null ? placeName : "");
             if (fix != null) {
                 entry.put("location", NearbyPlaces.locationJson(fix));
+                // Learn this spot → shop (and category) for next time.
+                if (placeName != null && !test) {
+                    NearbyPlaces.rememberPlace(this, fix.getLatitude(), fix.getLongitude(), placeName,
+                        categoryId != null && catById.containsKey(categoryId) ? categoryId : null);
+                }
             }
             // Exact id when picked here, so same-named subcategories can't be confused.
             entry.put("categoryId", categoryId != null && catById.containsKey(categoryId) ? categoryId : "");

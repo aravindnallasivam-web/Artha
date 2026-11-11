@@ -130,6 +130,8 @@ export interface SmsReaderPlugin {
   openFullScreenIntentSettings(): Promise<void>;
   /** Whether Artha may "Display over other apps" (lets the prompt pop up while the phone is unlocked). */
   canDrawOverlays(): Promise<{ granted: boolean }>;
+  /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
+  rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
   /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */
   findNearbyPlaces(options: { lat: number; lng: number }): Promise<{ places: NearbyPlace[] }>;
   /** Location fixes the full-screen alert took, keyed `address|javaHash(body)|body.length`. */

@@ -112,6 +112,81 @@ final class NearbyPlaces {
         prefs.edit().putString(KEY_SMS_LOCATIONS, kept.toString()).apply();
     }
 
+    // ---- Shops learned by place: "at this spot I paid Blue Tokai Coffee (Food › Café)" ----
+
+    static final String KEY_PLACE_MEMORY = "place_memory";
+    private static final int PLACE_MEMORY_MAX = 500;
+    /** How close a new fix must be to a remembered spot to count as the same shop. */
+    private static final int PLACE_MATCH_M = 40;
+
+    static final class Remembered {
+        final String name;
+        final String categoryId;
+        final int distanceM;
+
+        Remembered(String name, String categoryId, int distanceM) {
+            this.name = name;
+            this.categoryId = categoryId;
+            this.distanceM = distanceM;
+        }
+    }
+
+    private static JSONArray placeMemory(Context ctx) {
+        try {
+            return new JSONArray(ctx.getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_PLACE_MEMORY, "[]"));
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    /** Remember the shop (and category) the user chose at this spot. */
+    static synchronized void rememberPlace(Context ctx, double lat, double lng, String name, String categoryId) {
+        if (name == null || name.trim().isEmpty()) return;
+        JSONArray old = placeMemory(ctx);
+        JSONArray kept = new JSONArray();
+        float[] r = new float[1];
+        for (int i = 0; i < old.length(); i++) {
+            JSONObject o = old.optJSONObject(i);
+            if (o == null) continue;
+            Location.distanceBetween(lat, lng, o.optDouble("lat"), o.optDouble("lng"), r);
+            // The same spot picked again replaces the old answer.
+            if (r[0] <= PLACE_MATCH_M / 2f) continue;
+            kept.put(o);
+        }
+        try {
+            kept.put(new JSONObject()
+                .put("lat", Math.round(lat * 1e5) / 1e5)
+                .put("lng", Math.round(lng * 1e5) / 1e5)
+                .put("name", name.trim())
+                .put("categoryId", categoryId != null ? categoryId : "")
+                .put("at", System.currentTimeMillis()));
+        } catch (Exception ignored) {
+            return;
+        }
+        while (kept.length() > PLACE_MEMORY_MAX) kept.remove(0);
+        ctx.getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_PLACE_MEMORY, kept.toString()).apply();
+    }
+
+    /** The shop remembered closest to `loc` (within ~40 m, more when the fix is rough), or null. */
+    static Remembered recall(Context ctx, Location loc) {
+        if (loc == null) return null;
+        int limit = PLACE_MATCH_M;
+        if (loc.hasAccuracy()) limit = Math.max(PLACE_MATCH_M, Math.min(Math.round(loc.getAccuracy()), 80));
+        JSONArray mem = placeMemory(ctx);
+        Remembered best = null;
+        for (int i = 0; i < mem.length(); i++) {
+            JSONObject o = mem.optJSONObject(i);
+            if (o == null) continue;
+            int d = distance(loc, o.optDouble("lat"), o.optDouble("lng"));
+            if (d <= limit && (best == null || d < best.distanceM)) {
+                best = new Remembered(o.optString("name"), o.optString("categoryId", ""), d);
+            }
+        }
+        return best;
+    }
+
     static JSONObject locationJson(Location loc) throws org.json.JSONException {
         return new JSONObject()
             .put("lat", loc.getLatitude())

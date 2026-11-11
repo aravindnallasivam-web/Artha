@@ -455,7 +455,11 @@ export class ExpenseEditPage implements OnInit {
     }
   }
 
+  /** Shop tapped from "Find nearby shops"; learned for the alert when saved. */
+  private pickedPlace: string | null = null;
+
   protected usePlace(p: NearbyPlace): void {
+    this.pickedPlace = p.name;
     this.form.patchValue({ note: p.name });
     this.form.controls.note.markAsDirty();
   }
@@ -709,6 +713,10 @@ export class ExpenseEditPage implements OnInit {
     try {
       if (this.editingId) {
         await this.expensesStore.update(this.editingId, payload);
+        const loc = this.location();
+        if (loc && this.pickedPlace && payload.note === this.pickedPlace) {
+          void this.sms.rememberPlaceAt(loc, this.pickedPlace, payload.categoryId);
+        }
       } else {
         await this.expensesStore.add(payload);
       }

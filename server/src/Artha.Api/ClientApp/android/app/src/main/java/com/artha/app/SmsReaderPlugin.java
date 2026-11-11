@@ -503,6 +503,20 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /** Teach the alert: at this spot the user paid `name` (picked on the expense screen). */
+    @PluginMethod
+    public void rememberPlace(PluginCall call) {
+        Double lat = call.getDouble("lat");
+        Double lng = call.getDouble("lng");
+        String name = call.getString("name");
+        if (lat == null || lng == null || name == null) {
+            call.reject("lat, lng and name are required");
+            return;
+        }
+        NearbyPlaces.rememberPlace(getContext(), lat, lng, name, call.getString("categoryId"));
+        call.resolve();
+    }
+
     /** Named shops around a saved location (OpenStreetMap, or Google Places with the saved key). */
     @PluginMethod
     public void findNearbyPlaces(PluginCall call) {

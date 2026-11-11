@@ -311,6 +311,12 @@ export class SmsCaptureService {
     return overpassNearby(lat, lng);
   }
 
+  /** Teach the alert's place memory (phone only; ignored elsewhere). */
+  async rememberPlaceAt(loc: ExpenseLocation, name: string, categoryId: string | null): Promise<void> {
+    if (!this.isSupported() || !name.trim()) return;
+    await SmsReader.rememberPlace({ lat: loc.lat, lng: loc.lng, name: name.trim(), categoryId }).catch(() => undefined);
+  }
+
   /** Where the phone was when this SMS arrived (from the alert), or null. */
   locationFor(p: ParsedExpense): ExpenseLocation | null {
     if (!this.saveLocation()) return null;
