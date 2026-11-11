@@ -662,8 +662,13 @@ public class SmsPromptActivity extends AppCompatActivity {
         if (m.replaceAll("[^0-9]", "").length() >= 10) return true;
         if (m.isEmpty()) return upi;
         if (BUSINESS.matcher(m).find()) return false;
+        // A UPI id that isn't a merchant code ("ravi.k@okaxis", masked "*16-5@okicici").
+        if (m.matches("(?i).*@[a-z]{2,}.*")) return true;
+        // "Sent Rs.500 From HDFC Bank A/C x1234 To RAVI KUMAR": a transfer, not a card spend.
+        boolean transfer = upi || raw.matches(
+            "(?is).*\\b(sent|transferred|transfer|imps|neft|received from)\\b.*");
         String[] words = m.split("\\s+");
-        if (!upi || words.length > 3) return false;
+        if (!transfer || words.length > 3) return false;
         for (String w : words) {
             if (!w.matches("[A-Za-z.]+")) return false;
         }

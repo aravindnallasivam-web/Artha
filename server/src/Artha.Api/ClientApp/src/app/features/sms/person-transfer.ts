@@ -26,6 +26,8 @@ export function looksLikePersonTransfer(p: ParsedExpense): boolean {
   const merchant = (p.merchant ?? '').trim();
   const raw = p.raw ?? '';
   const isUpi = /\bupi\b|\bvpa\b|@[a-z]{2,}/i.test(raw);
+  // "Sent Rs.500 From HDFC Bank A/C x1234 To RAVI KUMAR" - a transfer, not a card spend.
+  const isTransfer = isUpi || /\b(sent|transferred|transfer|imps|neft|received from|credited.{0,40}\bfrom)\b/i.test(raw);
   // Merchant QR / gateway ids ("paytmqr2810…") are shops, digits or not.
   if (MERCHANT_VPA.test(merchant)) return false;
   // A phone number as the payee ("to 98765 43210" / "9876543210@ybl").
@@ -38,9 +40,11 @@ export function looksLikePersonTransfer(p: ParsedExpense): boolean {
   }
   if (!merchant) return isUpi;
   if (BUSINESS.test(merchant)) return false;
+  // A UPI id that isn't a merchant code ("ravi.k@okaxis", masked "*16-5@okicici").
+  if (/@[a-z]{2,}/i.test(merchant)) return true;
   // "Ravi Kumar", "PRIYA S": 1–3 plain words on a UPI transfer.
   const words = merchant.split(/\s+/).filter(Boolean);
-  return isUpi && words.length <= 3 && words.every((w) => /^[a-z.]+$/i.test(w));
+  return isTransfer && words.length <= 3 && words.every((w) => /^[a-z.]+$/i.test(w));
 }
 
 /** Default for "Remember category for next time": on for shops, off for people. */

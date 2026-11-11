@@ -54,6 +54,24 @@ const BALANCE_RE = /bal(?:ance)?\s*(?:is|:|-)?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:
 const MERCHANT_CARD_RE = /\bon\s+\d{1,2}[-/ ][A-Za-z]{3,}[-/ ]\d{2,4}\s+(?:at|on)\s+([A-Za-z0-9][A-Za-z0-9 ._@&'\-]{1,39})/i;
 // Merchant after a connective keyword.
 const MERCHANT_RE = /(?:\bat\s+|\bto\s+|\bvpa\s+|\binfo[:\-]\s*|\btowards\s+|\bfor\s+)([A-Za-z0-9][A-Za-z0-9 ._@&'\-*]{1,39})/i;
+// Global copy, to look past a first match that is the user's own account.
+const MERCHANT_ALL_RE = new RegExp(MERCHANT_RE.source, 'gi');
+// The other party of a credit: "from VPA x@okicici", "from RAVI KUMAR".
+const FROM_ALL_RE = /\bfrom\s+(?:vpa\s+)?([A-Za-z0-9*][A-Za-z0-9 ._@&'\-*]{1,39})/gi;
+// "HDFC Bank A/c XX4503", "your a/c", "A/C x1234", "card ending 1234": the user's own account, not a payee.
+const OWN_ACCOUNT_RE = /(?:\b(?:a\/c|acct|account|card|your)\b|\bbank\s+a\b|^(?:a\/?c|ac)\s*[x*\d])/i;
+
+/** First connective match that names someone other than the user's own account. */
+function counterparty(body: string, re: RegExp): string | null {
+  re.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    const name = cleanMerchant(m[1]);
+    if (name && !OWN_ACCOUNT_RE.test(name)) return name;
+  }
+  return null;
+}
+
 // Messages we never want to treat as a transaction.
 const NOISE_RE = /\b(otp|one[\s-]?time\s?password|do not share|verification code|will be (?:debited|deducted|charged)|has been blocked|requested|e-?mandate|emi due|payment due|bill of|statement|is due|reward points|offer)\b/i;
 
@@ -135,7 +153,8 @@ function guessCategory(merchant: string | null, body: string): string | null {
 function cleanMerchant(raw: string): string | null {
   let m = raw.trim();
   // Stop at common trailing clauses ("... on 03-06", "... Avl Bal", "... Ref no").
-  m = m.split(/\s+(?:on|avl|ref|bal|info|txn|upi|not you|call|dial|towards)\b/i)[0];
+  m = m.split(/\s+(?:on|avl|ref|bal|info|txn|upi|via|not you|call|dial|towards)\b/i)[0];
+  m = m.replace(/^vpa\s+/i, '');
   m = m.replace(/[*_.\-\s]+$/, '').replace(/\s{2,}/g, ' ').trim();
   // Drop pure-numeric or too-short leftovers.
   if (m.length < 2 || /^\d+$/.test(m)) {
@@ -182,8 +201,14 @@ export function parseExpenseSms(msg: SmsMessage): ParsedExpense | null {
     return null;
   }
 
-  const merchantMatch = body.match(MERCHANT_CARD_RE) ?? body.match(MERCHANT_RE);
-  const merchant = merchantMatch ? cleanMerchant(merchantMatch[1]) : null;
+  // Card spends first; then, for money in, who it came from; then the payee -
+  // skipping the user's own account ("credited to HDFC Bank A/c XX4503").
+  const cardMatch = body.match(MERCHANT_CARD_RE);
+  const merchant =
+    (cardMatch ? cleanMerchant(cardMatch[1]) : null) ??
+    (type === 'income' ? counterparty(body, FROM_ALL_RE) : null) ??
+    counterparty(body, MERCHANT_ALL_RE) ??
+    (type === 'expense' ? null : counterparty(body, FROM_ALL_RE));
   const accountMatch = body.match(ACCOUNT_RE);
   const balanceMatch = body.match(BALANCE_RE);
   const balance = balanceMatch
