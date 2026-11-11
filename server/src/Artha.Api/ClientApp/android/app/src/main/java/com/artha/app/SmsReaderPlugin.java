@@ -52,6 +52,10 @@ import java.util.List;
         @Permission(
             alias = "phone",
             strings = { Manifest.permission.READ_PHONE_STATE }
+        ),
+        @Permission(
+            alias = "location",
+            strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }
         )
     }
 )
@@ -91,6 +95,21 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve(permStatus());
     }
 
+    /** Request location for "Nearby shops" on the expense prompt (only when the user turns it on). */
+    @PluginMethod
+    public void requestLocationPermission(PluginCall call) {
+        if (getPermissionState("location") == PermissionState.GRANTED) {
+            call.resolve(permStatus());
+            return;
+        }
+        requestPermissionForAlias("location", call, "locationPermsCallback");
+    }
+
+    @PermissionCallback
+    private void locationPermsCallback(PluginCall call) {
+        call.resolve(permStatus());
+    }
+
     /** Current state of every permission alias, as the JS layer expects. */
     private JSObject permStatus() {
         JSObject r = new JSObject();
@@ -98,6 +117,7 @@ public class SmsReaderPlugin extends Plugin {
         r.put("notifications", getPermissionState("notifications").toString());
         r.put("send", getPermissionState("send").toString());
         r.put("phone", getPermissionState("phone").toString());
+        r.put("location", getPermissionState("location").toString());
         return r;
     }
 
@@ -314,6 +334,11 @@ public class SmsReaderPlugin extends Plugin {
         }
         if (accounts != null) {
             editor.putString(SmsBackgroundReceiver.KEY_ACCOUNT_LIST, accounts.toString());
+        }
+        // "Nearby shops" on the prompt: {enabled, googleKey}; absent leaves it as is.
+        if (call.getData().has("nearby")) {
+            JSObject nearby = call.getObject("nearby");
+            editor.putString(NearbyPlaces.KEY_NEARBY, nearby != null ? nearby.toString() : "{}");
         }
         // AI provider for the full-screen prompt: an object to store, null to clear.
         // Absent (older web builds) leaves whatever is stored.

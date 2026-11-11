@@ -78,6 +78,10 @@ public class SmsPromptActivity extends AppCompatActivity {
     private FlowLayout categoryChips;
     private FlowLayout accountChips;
     private TextView aiStatus;
+    private TextView nearbyLabel;
+    private FlowLayout nearbyChips;
+    /** Shop the user picked from "Nearby"; saved as the expense's note. */
+    private String placeName;
     private TextView subLabel;
     private FlowLayout subChips;
     /** The group whose subcategories the chips show in place of the groups; null = groups. */
@@ -133,6 +137,8 @@ public class SmsPromptActivity extends AppCompatActivity {
         categoryChips = findViewById(R.id.prompt_category_chips);
         accountChips = findViewById(R.id.prompt_account_chips);
         aiStatus = findViewById(R.id.prompt_ai_status);
+        nearbyLabel = findViewById(R.id.prompt_nearby_label);
+        nearbyChips = findViewById(R.id.prompt_nearby_chips);
         subLabel = findViewById(R.id.prompt_sub_label);
         subChips = findViewById(R.id.prompt_sub_chips);
 
@@ -223,7 +229,11 @@ public class SmsPromptActivity extends AppCompatActivity {
         selectedAccount = account;
         renderSeq++;
         userPicked = false;
+        placeName = null;
         aiStatus.setVisibility(View.GONE);
+        nearbyLabel.setVisibility(View.GONE);
+        nearbyChips.removeAllViews();
+        nearbyChips.setVisibility(View.GONE);
 
         amountView.setText(TextUtils.isEmpty(amountDisplay) ? "₹0" : amountDisplay);
         amountView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 64);
@@ -271,6 +281,9 @@ public class SmsPromptActivity extends AppCompatActivity {
             openLink.setVisibility(View.VISIBLE);
             if (!canAdd) {
                 showPickers(needCategory ? categories : null, needAccount ? accounts : null);
+                if ((test || unknownShop(merchant)) && NearbyPlaces.isEnabled(this)) {
+                    askNearby(needCategory);
+                }
                 if (AiClient.isConfigured(this)) {
                     askAi(categoryPaths(), names(accounts, false), needCategory, needAccount);
                 }
@@ -508,6 +521,71 @@ public class SmsPromptActivity extends AppCompatActivity {
             refreshPrimary();
         });
         return chip;
+    }
+
+    /** No shop name in the SMS: none found, or a phone number / UPI id instead of a name. */
+    private static boolean unknownShop(String m) {
+        return m == null || m.trim().isEmpty() || m.replaceAll("[^0-9]", "").length() >= 6;
+    }
+
+    /** Look up named shops around the user and offer them as chips. */
+    private void askNearby(boolean needCategory) {
+        final int seq = renderSeq;
+        nearbyLabel.setText("\uD83D\uDCCD Finding shops near you\u2026");
+        nearbyLabel.setVisibility(View.VISIBLE);
+        new Thread(() -> {
+            List<NearbyPlaces.Place> places = NearbyPlaces.find(getApplicationContext(), 6);
+            runOnUiThread(() -> showNearby(seq, places, needCategory));
+        }, "artha-nearby").start();
+    }
+
+    private void showNearby(int seq, List<NearbyPlaces.Place> places, boolean needCategory) {
+        if (isFinishing() || isDestroyed() || seq != renderSeq) return;
+        if (places.isEmpty()) {
+            nearbyLabel.setVisibility(View.GONE);
+            return;
+        }
+        nearbyLabel.setText("\uD83D\uDCCD Nearby \u00b7 tap the shop you paid");
+        nearbyChips.removeAllViews();
+        for (NearbyPlaces.Place p : places) {
+            TextView chip = makeChip(p.name + "  \u00b7 " + p.distanceM + " m", null, false);
+            chip.setTag(p.name);
+            chip.setOnClickListener(v -> pickPlace(p, needCategory));
+            nearbyChips.addView(chip);
+        }
+        nearbyChips.setVisibility(View.VISIBLE);
+    }
+
+    /** Use a nearby shop: its name becomes the note, its type picks a matching category. */
+    private void pickPlace(NearbyPlaces.Place p, boolean needCategory) {
+        placeName = p.name;
+        merchant = p.name;
+        merchantView.setText(p.name);
+        merchantView.setVisibility(View.VISIBLE);
+        markSelected(nearbyChips, p.name);
+        if (needCategory) {
+            Cat c = catByHint(p.hint);
+            if (c != null) {
+                userPicked = true;
+                selectCategory(c);
+            }
+        }
+        refreshPrimary();
+    }
+
+    /** The first category (subcategories first) whose name contains a hint word. */
+    private Cat catByHint(String[] hints) {
+        for (String h : hints) {
+            String w = h.toLowerCase(java.util.Locale.ROOT);
+            Cat top = null;
+            for (Cat c : catById.values()) {
+                if (!c.name.toLowerCase(java.util.Locale.ROOT).contains(w)) continue;
+                if (c.parentId != null) return c;
+                if (top == null) top = c;
+            }
+            if (top != null) return top;
+        }
+        return null;
     }
 
     /**
@@ -759,6 +837,8 @@ public class SmsPromptActivity extends AppCompatActivity {
             entry.put("amountDisplay", amountDisplay != null ? amountDisplay : "");
             entry.put("merchant", merchant != null ? merchant : "");
             entry.put("category", category != null ? category : "");
+            // Shop picked from "Nearby": the app uses it as the note and remembers it.
+            entry.put("placeName", placeName != null ? placeName : "");
             // Exact id when picked here, so same-named subcategories can't be confused.
             entry.put("categoryId", categoryId != null && catById.containsKey(categoryId) ? categoryId : "");
             entry.put("account", account != null ? account : "");

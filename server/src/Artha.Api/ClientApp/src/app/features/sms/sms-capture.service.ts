@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { App } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
@@ -265,9 +265,70 @@ export class SmsCaptureService {
     // Off in Settings → "Suggest on the full-screen alert": the alert gets no
     // provider at all, so it never calls the AI.
     const ai = this.ai.isEnabled() && this.ai.alertSuggest() ? { ...this.ai.config() } : null;
-    await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai }).catch(
+    const nearby = { enabled: this.nearbyEnabled(), googleKey: this.nearbyGoogleKey() };
+    await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai, nearby }).catch(
       () => undefined,
     );
+  }
+
+  // ----- Nearby shops on the full-screen prompt (device-only settings) -----
+  private readonly _nearby = signal<{ enabled: boolean; googleKey: string }>(loadNearby());
+  readonly nearbyEnabled = computed(() => this._nearby().enabled);
+  readonly nearbyGoogleKey = computed(() => this._nearby().googleKey);
+
+  /**
+   * Turn "Nearby shops" on or off. Turning it on asks for location; false when
+   * permission is refused (and the setting stays off).
+   */
+  async setNearbyEnabled(on: boolean): Promise<boolean> {
+    if (on && this.isSupported()) {
+      const res = await SmsReader.requestLocationPermission().catch(() => null);
+      if (res?.location !== 'granted') {
+        this.saveNearby({ ...this._nearby(), enabled: false });
+        return false;
+      }
+    }
+    this.saveNearby({ ...this._nearby(), enabled: on });
+    return true;
+  }
+
+  setNearbyGoogleKey(key: string): void {
+    this.saveNearby({ ...this._nearby(), googleKey: key.trim() });
+  }
+
+  private saveNearby(v: { enabled: boolean; googleKey: string }): void {
+    this._nearby.set(v);
+    try {
+      localStorage.setItem(NEARBY_KEY, JSON.stringify(v));
+    } catch {
+      // This session only.
+    }
+    void this.syncNotificationMappings();
+  }
+
+  // ----- Shop names learned from "Nearby" (e.g. a shopkeeper's UPI id → shop) -----
+  private readonly placeNames: Record<string, string> = loadPlaceNames();
+
+  private placeKey(p: ParsedExpense): string | null {
+    const k = categoryKey(p.merchant);
+    return k ? `${normalizeSender(p.sender)}|${k}` : null;
+  }
+
+  /** The note for an SMS expense: a learned shop name first, then the parsed merchant. */
+  private noteFor(p: ParsedExpense, aiMerchant?: string | null): string | null {
+    const key = this.placeKey(p);
+    return (key && this.placeNames[key]) || p.merchant || aiMerchant || p.sender || null;
+  }
+
+  private rememberPlace(p: ParsedExpense, name: string): void {
+    const key = this.placeKey(p);
+    if (!key || !name.trim()) return;
+    this.placeNames[key] = name.trim();
+    try {
+      localStorage.setItem(PLACE_NAMES_KEY, JSON.stringify(this.placeNames));
+    } catch {
+      // Remembered for this session only.
+    }
   }
 
   /** Push the current AI provider (and lists) to the full-screen prompt, e.g. after it changes. */
@@ -580,13 +641,14 @@ export class SmsCaptureService {
           amount: parsed.amount,
           categoryId,
           accountId,
-          note: parsed.merchant ?? parsed.sender ?? null,
+          note: entry.placeName?.trim() || this.noteFor(parsed),
           excluded: false,
           type: parsed.type,
         });
       } catch {
         continue;
       }
+      if (entry.placeName?.trim()) this.rememberPlace(parsed, entry.placeName);
       this.rememberAccount(parsed, accountId);
       this.rememberCategory(parsed, categoryId);
       if (parsed.balance != null) {
@@ -1155,7 +1217,7 @@ export class SmsCaptureService {
         date: p.date,
         categoryId,
         accountId,
-        note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
+        note: this.noteFor(p, ai?.merchant),
         excluded: false,
         aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
       };
@@ -1234,7 +1296,7 @@ export class SmsCaptureService {
         date: p.date,
         categoryId,
         accountId,
-        note: p.merchant ?? ai?.merchant ?? p.sender ?? null,
+        note: this.noteFor(p, ai?.merchant),
         excluded: false,
         aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
         sample: this.isSample(p, i.key),
@@ -1414,7 +1476,7 @@ export class SmsCaptureService {
         amount: parsed.amount,
         categoryId,
         accountId,
-        note: parsed.merchant ?? parsed.sender ?? null,
+        note: this.noteFor(parsed),
         excluded: false,
         type: parsed.type,
       });
@@ -1801,6 +1863,27 @@ export interface AiMessageTest {
 
 /** Most inbox messages one scan reads (newest first within the range). */
 const SCAN_LIMIT = 5000;
+
+const NEARBY_KEY = 'artha.sms.nearby';
+const PLACE_NAMES_KEY = 'artha.sms.placeNames';
+
+function loadNearby(): { enabled: boolean; googleKey: string } {
+  try {
+    const v = JSON.parse(localStorage.getItem(NEARBY_KEY) ?? '{}');
+    return { enabled: v.enabled === true, googleKey: typeof v.googleKey === 'string' ? v.googleKey : '' };
+  } catch {
+    return { enabled: false, googleKey: '' };
+  }
+}
+
+function loadPlaceNames(): Record<string, string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(PLACE_NAMES_KEY) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
 
 const SAMPLE_KEYS_KEY = 'artha.sms.sampleKeys';
 

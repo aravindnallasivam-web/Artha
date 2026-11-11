@@ -141,6 +141,27 @@
             android:paddingStart="20dp"
             android:paddingEnd="20dp">
 
+            <!-- Nearby shops (location), when the SMS doesn't name the shop. -->
+            <TextView
+                android:id="@+id/prompt_nearby_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="10dp"
+                android:textColor="@color/prompt_text_muted"
+                android:textSize="12sp"
+                android:letterSpacing="0.08"
+                android:textAllCaps="true"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+
+            <com.artha.app.FlowLayout
+                android:id="@+id/prompt_nearby_chips"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="18dp"
+                android:visibility="gone" />
+
             <!-- "Asking AI…" / "AI picked" while the provider suggests a category / account. -->
             <TextView
                 android:id="@+id/prompt_ai_status"

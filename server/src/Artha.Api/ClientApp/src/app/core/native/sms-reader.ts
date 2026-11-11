@@ -32,6 +32,8 @@ export interface PreApprovedEntry {
   category: string;
   /** Exact category id when picked on the full-screen prompt (absent from older builds). */
   categoryId?: string;
+  /** Shop picked from "Nearby" on the prompt (absent / empty when none). */
+  placeName?: string;
   account: string;
   approvedAt: number;
 }
@@ -52,6 +54,8 @@ export interface SmsReaderPlugin {
   requestPermissions(): Promise<SmsPermissionStatus>;
   /** Request READ_PHONE_STATE so the SIM picker can list active SIMs. */
   requestPhonePermission(): Promise<SmsPermissionStatus>;
+  /** Ask for location, for "Nearby shops" on the expense prompt. */
+  requestLocationPermission(): Promise<SmsPermissionStatus & { location?: PermissionState }>;
   /** List active SIM cards. `permissionGranted` is false if READ_PHONE_STATE is missing. */
   getSimCards(): Promise<{ permissionGranted: boolean; sims: SimCard[] }>;
   /** Read recent inbox messages, newest first. `since` = epoch ms lower bound. */
@@ -85,6 +89,8 @@ export interface SmsReaderPlugin {
      * only; null turns them off.
      */
     ai?: { kind: string; apiKey: string; model: string; baseUrl: string } | null;
+    /** "Nearby shops" on the prompt; googleKey empty = OpenStreetMap. */
+    nearby?: { enabled: boolean; googleKey: string };
   }): Promise<void>;
   /**
    * If the app was opened by tapping a background "expense detected"

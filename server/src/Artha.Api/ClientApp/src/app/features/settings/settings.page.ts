@@ -186,6 +186,41 @@ import { SettingsStore } from './settings.store';
                   </ion-label>
                 </ion-toggle>
               </ion-item>
+              <!-- Nearby shops on the expense alert (location, while it is on screen). -->
+              <ion-item lines="none">
+                <span class="icon-chip chip-accent" slot="start">
+                  <ion-icon name="location-outline"></ion-icon>
+                </span>
+                <ion-toggle
+                  labelPlacement="start"
+                  justify="space-between"
+                  [checked]="sms.nearbyEnabled()"
+                  (ionChange)="onNearbyToggle($event)"
+                >
+                  <ion-label class="ion-text-wrap">
+                    <h2>Nearby shops on the alert</h2>
+                    <p>When an SMS doesn't name the shop (UPI to a person or number), the alert lists shops near you
+                      to tap. Only your location is looked up, while the alert is on screen.</p>
+                  </ion-label>
+                </ion-toggle>
+              </ion-item>
+              @if (sms.nearbyEnabled()) {
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    <p class="key-hint">Shops come from OpenStreetMap (free). For better coverage of small shops,
+                      paste a Google Places API key (optional, uses your Google Cloud billing):</p>
+                    <input
+                      class="key-input"
+                      type="password"
+                      autocomplete="off"
+                      placeholder="Google Places API key (optional)"
+                      aria-label="Google Places API key"
+                      [value]="sms.nearbyGoogleKey()"
+                      (change)="onNearbyKey($event)"
+                    />
+                  </ion-label>
+                </ion-item>
+              }
               <!-- Full-screen lock-screen takeover (USE_FULL_SCREEN_INTENT).
                    On Android <=13 the manifest permission is auto-granted and
                    fullScreenGranted() is true at startup — the toggle shows
@@ -446,6 +481,14 @@ import { SettingsStore } from './settings.store';
       color: var(--artha-text-subtle, var(--ion-color-step-500));
     }
 
+    /* Nearby shops: optional Google key */
+    .key-hint { margin: 0 0 8px; }
+    .key-input {
+      box-sizing: border-box; width: 100%; height: 44px; padding: 0 12px; border-radius: 12px;
+      border: 1px solid var(--artha-border); background: var(--artha-bg); color: var(--artha-text); font: inherit; font-size: 14px;
+    }
+    .key-input:focus { outline: 2px solid var(--artha-accent); outline-offset: 1px; }
+
     /* Test expense alert buttons */
     .test-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .test-btn {
@@ -479,6 +522,20 @@ export class SettingsPage implements OnInit {
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
   protected readonly ai = inject(AiProviderService);
+
+  protected async onNearbyToggle(event: Event): Promise<void> {
+    const toggle = event.target as HTMLIonToggleElement;
+    const on = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false;
+    const ok = await this.sms.setNearbyEnabled(on);
+    if (on && !ok) {
+      toggle.checked = false;
+      await this.notifier.notifyError('Location permission is needed for nearby shops.');
+    }
+  }
+
+  protected onNearbyKey(event: Event): void {
+    this.sms.setNearbyGoogleKey((event.target as HTMLInputElement).value);
+  }
 
   protected onAlertAiToggle(event: Event): void {
     const on = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? true;
