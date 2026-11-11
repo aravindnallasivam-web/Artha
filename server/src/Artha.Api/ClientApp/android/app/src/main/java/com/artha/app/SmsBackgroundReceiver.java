@@ -360,7 +360,15 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             entry.put(PromptQueue.F_ADDRESS, address);
             entry.put(PromptQueue.F_DATE, System.currentTimeMillis());
             entry.put(PromptQueue.F_TEST, test);
-            PromptQueue.add(context, entry);
+            if (!PromptQueue.add(context, entry)) {
+                // Already waiting, or handled moments ago (Android can deliver the
+                // same SMS twice): no second notification or prompt.
+                if (pendingResult != null) {
+                    pendingResult.finish();
+                    pendingResult = null;
+                }
+                return;
+            }
         } catch (org.json.JSONException ignored) {
             // The prompt falls back to the intent extras.
         }
@@ -455,7 +463,17 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         boolean canOverlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
             || android.provider.Settings.canDrawOverlays(ctx);
         WindowManager wm = (WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE);
-        if (locked || !screenOn || !canOverlay || wm == null) {
+        if (locked || !screenOn) {
+            // The notification's full-screen intent takes over a locked / dark
+            // screen. Starting it ourselves as well launched the prompt twice,
+            // so only do that when full-screen intents aren't allowed.
+            if (!canUseFullScreenIntent(ctx)) {
+                startQuietly(ctx, prompt);
+            }
+            if (pending != null) pending.finish();
+            return;
+        }
+        if (!canOverlay || wm == null) {
             startQuietly(ctx, prompt);
             if (pending != null) pending.finish();
             return;
@@ -493,6 +511,12 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
                 if (pending != null) pending.finish();
             }, 1500);
         }, 400);
+    }
+
+    private static boolean canUseFullScreenIntent(Context ctx) {
+        if (Build.VERSION.SDK_INT < 34) return true;
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        return nm != null && nm.canUseFullScreenIntent();
     }
 
     private static void startQuietly(Context ctx, Intent prompt) {

@@ -156,6 +156,14 @@ public class SmsPromptActivity extends AppCompatActivity {
 
     /** Show the oldest waiting SMS. False when there's nothing to show. */
     private boolean showNext() {
+        return showNext(true);
+    }
+
+    /**
+     * @param fromIntent fall back to the launching intent's SMS when nothing is
+     *     queued; false after Add / Dismiss, so the SMS just handled never reappears.
+     */
+    private boolean showNext(boolean fromIntent) {
         JSONObject entry = PromptQueue.first(this);
         String category;
         String account;
@@ -171,7 +179,13 @@ public class SmsPromptActivity extends AppCompatActivity {
             test = entry.optBoolean(PromptQueue.F_TEST, false);
         } else {
             Intent src = getIntent();
-            if (src == null || !src.hasExtra(EXTRA_AMOUNT_DISPLAY)) {
+            if (!fromIntent || src == null || !src.hasExtra(EXTRA_AMOUNT_DISPLAY)) {
+                return false;
+            }
+            // Nothing waiting: a second launch for an SMS that was already added
+            // or dismissed (late full-screen intent, duplicate broadcast) shows nothing.
+            if (!src.getBooleanExtra(EXTRA_TEST, false)
+                && PromptQueue.isResolved(this, src.getStringExtra(EXTRA_BODY), src.getStringExtra(EXTRA_ADDRESS))) {
                 return false;
             }
             fromQueue = false;
@@ -591,9 +605,12 @@ public class SmsPromptActivity extends AppCompatActivity {
 
     /** Done with the SMS on screen: show the next waiting one, or close. */
     private void advance() {
+        if (!fromQueue && !test) {
+            PromptQueue.markResolved(this, body, address);
+        }
         if (fromQueue) {
             PromptQueue.removeFirst(this);
-            if (showNext()) {
+            if (showNext(false)) {
                 return;
             }
         }
