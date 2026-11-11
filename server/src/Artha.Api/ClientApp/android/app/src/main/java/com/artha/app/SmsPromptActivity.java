@@ -80,6 +80,10 @@ public class SmsPromptActivity extends AppCompatActivity {
     private TextView aiStatus;
     private TextView subLabel;
     private FlowLayout subChips;
+    /** The group whose subcategories the chips show in place of the groups; null = groups. */
+    private Cat drilledGroup;
+    /** A group the AI picked, listed first among the groups. */
+    private String frontGroupId;
     /** Id of the picked category (a subcategory when one was chosen); null when known by name only. */
     private String selectedCategoryId;
     /** Categories synced from the app, by id; subcategories carry their parent's id. */
@@ -222,6 +226,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         aiStatus.setVisibility(View.GONE);
 
         amountView.setText(TextUtils.isEmpty(amountDisplay) ? "₹0" : amountDisplay);
+        amountView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 64);
         if (!TextUtils.isEmpty(merchant)) {
             merchantView.setText(merchant);
             merchantView.setVisibility(View.VISIBLE);
@@ -299,15 +304,14 @@ public class SmsPromptActivity extends AppCompatActivity {
         categoryLabel.setVisibility(showCategories ? View.VISIBLE : View.GONE);
         categoryChips.setVisibility(showCategories ? View.VISIBLE : View.GONE);
         catById.clear();
+        drilledGroup = null;
+        frontGroupId = null;
         if (showCategories) {
             loadCategories(categories);
-            // Top-level categories as chips; one with subcategories opens them when tapped.
-            for (Cat c : catById.values()) {
-                if (c.parentId == null) {
-                    categoryChips.addView(makeCategoryChip(c, false));
-                }
-            }
+            renderCategoryChips();
         }
+        // A smaller amount leaves the pickers room to fit without scrolling.
+        amountView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 48);
 
         boolean showAccounts = accounts != null;
         accountLabel.setVisibility(showAccounts ? View.VISIBLE : View.GONE);
@@ -375,8 +379,9 @@ public class SmsPromptActivity extends AppCompatActivity {
     }
 
     private TextView makeCategoryChip(Cat c, boolean isSub) {
-        String label = !isSub && !c.children.isEmpty() ? c.name + "  \u25be" : c.name;
-        TextView chip = makeChip(label, c.color, true);
+        // "›" marks a group that opens its subcategories in place.
+        String label = !isSub && !c.children.isEmpty() ? c.name + "  \u203a" : c.name;
+        TextView chip = makeChip(label, isSub ? null : c.color, true);
         chip.setTag(c.id);
         chip.setOnClickListener(v -> {
             userPicked = true;
@@ -385,36 +390,81 @@ public class SmsPromptActivity extends AppCompatActivity {
         return chip;
     }
 
-    /** Pick a category; a group shows its subcategories, a subcategory keeps its group highlighted. */
+    /**
+     * The category chips: the groups, or (drilled into a group) a back chip,
+     * "Just <group>" and the group's subcategories, in the same spot, so a
+     * subcategory is one tap away without scrolling.
+     */
+    private void renderCategoryChips() {
+        categoryChips.removeAllViews();
+        hideSubs();
+        Cat group = drilledGroup;
+        if (group == null) {
+            categoryLabel.setText("Pick a category");
+            List<Cat> tops = new ArrayList<>();
+            for (Cat c : catById.values()) {
+                if (c.parentId == null) tops.add(c);
+            }
+            if (frontGroupId != null) {
+                for (int i = 0; i < tops.size(); i++) {
+                    if (tops.get(i).id.equals(frontGroupId)) {
+                        tops.add(0, tops.remove(i));
+                        break;
+                    }
+                }
+            }
+            for (Cat c : tops) {
+                categoryChips.addView(makeCategoryChip(c, false));
+            }
+            Cat sel = selectedCategoryId != null ? catById.get(selectedCategoryId) : null;
+            String topId = sel == null ? null : (sel.parentId != null ? sel.parentId : sel.id);
+            markSelected(categoryChips, topId);
+        } else {
+            categoryLabel.setText(group.name + " \u00b7 subcategory (optional)");
+            TextView back = makeChip("\u2039  All categories", null, true);
+            back.setTag("__back");
+            back.setOnClickListener(v -> {
+                drilledGroup = null;
+                renderCategoryChips();
+            });
+            categoryChips.addView(back);
+            TextView just = makeChip("Just " + group.name, group.color, true);
+            just.setTag(group.id);
+            just.setOnClickListener(v -> {
+                userPicked = true;
+                selectCategory(group);
+            });
+            categoryChips.addView(just);
+            for (Cat child : group.children) {
+                categoryChips.addView(makeCategoryChip(child, true));
+            }
+            markSelected(categoryChips, selectedCategoryId);
+        }
+        if (pickers instanceof android.widget.ScrollView) {
+            pickers.post(() -> ((android.widget.ScrollView) pickers).smoothScrollTo(0, 0));
+        }
+    }
+
+    /** Pick a category; a group with subcategories opens them in place, keeping the group selected. */
     private void selectCategory(Cat c) {
         selectedCategoryId = c.id;
         selectedCategory = c.name;
         Cat parent = c.parentId != null ? catById.get(c.parentId) : null;
-        if (parent != null) {
-            markSelected(categoryChips, parent.id);
-            if (subChips.getTag() != parent) showSubs(parent);
-            markSelected(subChips, c.id);
+        Cat group = parent != null ? parent : (!c.children.isEmpty() ? c : null);
+        if (group != drilledGroup) {
+            drilledGroup = group;
+            renderCategoryChips();
         } else {
             markSelected(categoryChips, c.id);
-            if (c.children.isEmpty()) {
-                hideSubs();
-            } else {
-                showSubs(c);
-                markSelected(subChips, null);
-            }
         }
         refreshPrimary();
     }
 
-    private void showSubs(Cat parent) {
-        subChips.removeAllViews();
-        subChips.setTag(parent);
-        for (Cat child : parent.children) {
-            subChips.addView(makeCategoryChip(child, true));
-        }
-        subLabel.setText(parent.name + " \u00b7 subcategory (optional)");
-        subLabel.setVisibility(View.VISIBLE);
-        subChips.setVisibility(View.VISIBLE);
+    /** "Food › Café" for a subcategory, else the name. */
+    private String selectedLabel() {
+        Cat c = selectedCategoryId != null ? catById.get(selectedCategoryId) : null;
+        Cat parent = c != null && c.parentId != null ? catById.get(c.parentId) : null;
+        return parent != null ? parent.name + " \u203a " + c.name : selectedCategory;
     }
 
     private void hideSubs() {
@@ -491,8 +541,9 @@ public class SmsPromptActivity extends AppCompatActivity {
             Cat picked = needCategory && selectedCategory == null ? catByPath(s.category) : null;
             if (picked != null) {
                 Cat top = picked.parentId != null ? catById.get(picked.parentId) : picked;
-                if (top != null) moveToFront(categoryChips, top.id);
+                if (top != null) frontGroupId = top.id;
                 selectCategory(picked);
+                if (drilledGroup == null) renderCategoryChips(); // show the AI's group first
                 applied = true;
             }
             if (needAccount && s.account != null && selectedAccount == null) {
@@ -578,7 +629,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         primaryBtn.setEnabled(ready);
         primaryBtn.setAlpha(ready ? 1f : 0.45f);
         if (ready) {
-            primaryBtn.setText("Add to " + selectedCategory);
+            primaryBtn.setText("Add to " + selectedLabel());
         } else if (selectedCategory == null) {
             primaryBtn.setText("Pick a category to add");
         } else {
