@@ -31,6 +31,7 @@ import {
 import {
   Expense,
   ExpenseCreateRequest,
+  ExpenseLocation,
   ExpenseListResponse,
   ExpenseUpdateRequest,
 } from '../../core/models/expense.model';
@@ -101,6 +102,7 @@ export class ExpensesDriveService {
       note: request.note?.trim() ? request.note.trim() : null,
       excluded: request.excluded,
       type: request.type === 'income' ? 'income' : 'expense',
+      ...(request.location ? { location: cleanLocation(request.location) } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -135,6 +137,13 @@ export class ExpensesDriveService {
       excluded: request.excluded,
       type: request.type ?? expense.type ?? 'expense',
     };
+    if (request.location !== undefined) {
+      if (request.location) {
+        updated.location = cleanLocation(request.location);
+      } else {
+        delete updated.location;
+      }
+    }
 
     if (ymCompare(oldMonth, newMonth) === 0) {
       const items = shardDoc.document.items.map((e) => (e.id === id ? updated : e));
@@ -248,6 +257,17 @@ function currentYearMonth(): YearMonth {
 function parseYearMonth(raw: string): YearMonth | null {
   const m = /^(\d{4})-(\d{2})/.exec(raw);
   return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+}
+
+/** Keep only the location fields we store, rounded to ~1 m. */
+function cleanLocation(l: ExpenseLocation): ExpenseLocation {
+  const round = (n: number) => Math.round(n * 1e5) / 1e5;
+  return {
+    lat: round(l.lat),
+    lng: round(l.lng),
+    accuracy: l.accuracy != null ? Math.round(l.accuracy) : null,
+    at: l.at,
+  };
 }
 
 /** Legacy rows may lack accountId/excluded/type — surface sane defaults. */

@@ -486,6 +486,51 @@ public class SmsReaderPlugin extends Plugin {
      * startActivity() is exempt from Background Activity Launch limits, so the
      * expense prompt pops up on an unlocked phone instead of only a banner.
      */
+    /**
+     * Location fixes taken when expense SMS reached the alert:
+     * { "<address>|<body.hashCode()>|<body.length()>": {lat,lng,accuracy,at,saved} }.
+     */
+    @PluginMethod
+    public void getSmsLocations(PluginCall call) {
+        String raw = getContext().getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE)
+            .getString(NearbyPlaces.KEY_SMS_LOCATIONS, "{}");
+        JSObject ret = new JSObject();
+        try {
+            ret.put("locations", new JSObject(raw));
+        } catch (Exception e) {
+            ret.put("locations", new JSObject());
+        }
+        call.resolve(ret);
+    }
+
+    /** Named shops around a saved location (OpenStreetMap, or Google Places with the saved key). */
+    @PluginMethod
+    public void findNearbyPlaces(PluginCall call) {
+        Double lat = call.getDouble("lat");
+        Double lng = call.getDouble("lng");
+        if (lat == null || lng == null) {
+            call.reject("lat and lng are required");
+            return;
+        }
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(() -> {
+            android.location.Location loc = new android.location.Location("artha");
+            loc.setLatitude(lat);
+            loc.setLongitude(lng);
+            com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
+            for (NearbyPlaces.Place p : NearbyPlaces.findAround(ctx, loc, 10)) {
+                JSObject o = new JSObject();
+                o.put("name", p.name);
+                o.put("kind", p.kind);
+                o.put("distanceM", p.distanceM);
+                arr.put(o);
+            }
+            JSObject ret = new JSObject();
+            ret.put("places", arr);
+            call.resolve(ret);
+        }, "artha-nearby-lookup").start();
+    }
+
     @PluginMethod
     public void canDrawOverlays(PluginCall call) {
         JSObject ret = new JSObject();

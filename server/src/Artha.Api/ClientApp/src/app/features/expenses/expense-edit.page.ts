@@ -21,7 +21,9 @@ import { AiProviderService } from '../../core/ai/ai-provider.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { DEFAULT_ACCOUNT_ID } from '../../core/models/account.model';
 import { Category } from '../../core/models/category.model';
-import { TransactionType } from '../../core/models/expense.model';
+import { ExpenseLocation, TransactionType } from '../../core/models/expense.model';
+import { NearbyPlace } from '../../core/native/sms-reader';
+import { SmsCaptureService } from '../sms/sms-capture.service';
 import { AccountsStore } from '../accounts/accounts.store';
 import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { CategoriesStore } from '../categories/categories.store';
@@ -162,6 +164,42 @@ const QUICK_CATEGORY_COUNT = 7;
               <button type="button" class="qd" [class.sel]="isYesterday()" (click)="setDate(1)">Yesterday</button>
             </div>
 
+            <!-- Where the SMS arrived (saved by the full-screen alert) -->
+            @if (location(); as loc) {
+              <section class="loc" aria-label="Location">
+                <div class="loc-head">
+                  <span class="loc-pin"><ion-icon name="location-outline" aria-hidden="true"></ion-icon></span>
+                  <div class="loc-text">
+                    <div class="loc-title">Where you were</div>
+                    <div class="loc-sub">{{ locationLabel(loc) }}</div>
+                  </div>
+                  <a class="loc-map" [href]="mapsUrl(loc)" target="_blank" rel="noopener">Open in Maps</a>
+                </div>
+                @if (places() === null) {
+                  <button type="button" class="loc-find" [disabled]="placesBusy()" (click)="findPlaces(loc)">
+                    @if (placesBusy()) {
+                      <ion-spinner name="dots" aria-label="Looking up shops"></ion-spinner>
+                    } @else {
+                      <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>Find nearby shops
+                    }
+                  </button>
+                } @else if (places()!.length === 0) {
+                  <p class="loc-msg">{{ placesError() || 'No named shops found within 150 m.' }}</p>
+                } @else {
+                  <p class="loc-msg">Tap the shop you paid — it becomes the note.</p>
+                  <div class="loc-chips">
+                    @for (p of places(); track p.name) {
+                      <button type="button" class="loc-chip" [class.sel]="form.controls.note.value === p.name"
+                              (click)="usePlace(p)">
+                        {{ p.name }}<span class="loc-dist">{{ p.distanceM }} m</span>
+                      </button>
+                    }
+                  </div>
+                }
+                <button type="button" class="loc-remove" (click)="removeLocation()">Remove location</button>
+              </section>
+            }
+
             <!-- More options -->
             <details class="more">
               <summary>More options</summary>
@@ -290,6 +328,42 @@ const QUICK_CATEGORY_COUNT = 7;
     .qd.sel { background: var(--artha-accent-tint); border-color: transparent; color: var(--artha-accent); }
     .date-modal { --width: 320px; --height: auto; --border-radius: 20px; }
 
+    /* Location */
+    .loc { margin-top: 18px; padding: 14px 16px; border-radius: 16px; background: var(--artha-surface-2); }
+    .loc-head { display: flex; align-items: center; gap: 12px; }
+    .loc-pin {
+      width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0;
+      background: var(--artha-accent-tint); color: var(--artha-accent); font-size: 18px;
+    }
+    .loc-text { flex: 1; min-width: 0; }
+    .loc-title { font-size: 14px; font-weight: 700; color: var(--artha-text); }
+    .loc-sub { font-size: 12px; color: var(--artha-text-muted); margin-top: 2px; }
+    .loc-map { font-size: 13px; font-weight: 700; color: var(--artha-accent); text-decoration: none; white-space: nowrap; }
+    .loc-find {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; height: 44px; margin-top: 12px; border: 1px solid var(--artha-border); border-radius: 999px;
+      background: var(--artha-surface); color: var(--artha-text); cursor: pointer;
+      font-family: inherit; font-size: 14px; font-weight: 700;
+    }
+    .loc-find[disabled] { opacity: 0.7; cursor: default; }
+    .loc-find ion-icon { font-size: 17px; color: var(--artha-accent); }
+    .loc-find ion-spinner { width: 22px; height: 22px; }
+    .loc-msg { margin: 12px 2px 8px; font-size: 12.5px; color: var(--artha-text-muted); }
+    .loc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .loc-chip {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+      height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--artha-border); background: var(--artha-surface); color: var(--artha-text);
+      font-family: inherit; font-size: 13px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .loc-chip.sel { background: var(--artha-accent); border-color: var(--artha-accent); color: #fff; }
+    .loc-dist { font-size: 11.5px; font-weight: 500; opacity: 0.7; }
+    .loc-remove {
+      display: block; margin: 10px auto 0; padding: 6px 10px; border: 0; background: transparent; cursor: pointer;
+      font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--artha-text-subtle);
+    }
+
     /* More options */
     .more { margin-top: 18px; border-radius: 16px; background: var(--artha-surface-2); }
     .more summary {
@@ -335,6 +409,53 @@ export class ExpenseEditPage implements OnInit {
   private readonly modalCtrl = inject(ModalController);
   private readonly actionSheetCtrl = inject(ActionSheetController);
   protected readonly ai = inject(AiProviderService);
+  private readonly sms = inject(SmsCaptureService);
+
+  /** Where the phone was when the SMS came in (expenses from SMS only). */
+  protected readonly location = signal<ExpenseLocation | null>(null);
+  /** Set when the user removed it, so the save clears it in Drive. */
+  private locationRemoved = false;
+  /** null = not looked up yet. */
+  protected readonly places = signal<NearbyPlace[] | null>(null);
+  protected readonly placesBusy = signal(false);
+  protected readonly placesError = signal<string | null>(null);
+
+  protected locationLabel(loc: ExpenseLocation): string {
+    const d = new Date(loc.at);
+    const when = Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    const acc = loc.accuracy != null ? `±${Math.round(loc.accuracy)} m` : '';
+    return [when, acc].filter(Boolean).join(' · ') || `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`;
+  }
+
+  protected mapsUrl(loc: ExpenseLocation): string {
+    return `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+  }
+
+  protected async findPlaces(loc: ExpenseLocation): Promise<void> {
+    this.placesBusy.set(true);
+    this.placesError.set(null);
+    try {
+      this.places.set(await this.sms.findNearbyPlaces(loc.lat, loc.lng));
+    } catch {
+      this.placesError.set("Couldn't reach the map service. Check the connection and try again.");
+      this.places.set([]);
+    } finally {
+      this.placesBusy.set(false);
+    }
+  }
+
+  protected usePlace(p: NearbyPlace): void {
+    this.form.patchValue({ note: p.name });
+    this.form.controls.note.markAsDirty();
+  }
+
+  protected removeLocation(): void {
+    this.location.set(null);
+    this.places.set(null);
+    this.locationRemoved = true;
+  }
 
   protected readonly aiBusy = signal(false);
   protected readonly aiMessage = signal<{ text: string; ok: boolean } | null>(null);
@@ -526,6 +647,7 @@ export class ExpenseEditPage implements OnInit {
             excluded: expense.excluded ?? false,
             type: expense.type ?? 'expense',
           });
+          this.location.set(expense.location ?? null);
         }
       } else {
         const firstCat = this.categories()[0];
@@ -572,6 +694,8 @@ export class ExpenseEditPage implements OnInit {
       note: raw.note?.trim() || null,
       excluded: raw.excluded,
       type: raw.type,
+      // Omitted keeps the saved location; null clears it.
+      ...(this.locationRemoved ? { location: null } : {}),
     };
     try {
       if (this.editingId) {

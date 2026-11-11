@@ -23,6 +23,12 @@ export interface SmsPermissionStatus {
  * (SmsPromptActivity) and the notification's Approve action (SmsActionReceiver);
  * drained by the web layer on next organic resume.
  */
+export interface NearbyPlace {
+  name: string;
+  kind: string;
+  distanceM: number;
+}
+
 export interface PreApprovedEntry {
   address: string;
   body: string;
@@ -34,6 +40,8 @@ export interface PreApprovedEntry {
   categoryId?: string;
   /** Shop picked from "Nearby" on the prompt (absent / empty when none). */
   placeName?: string;
+  /** Where the phone was when the SMS was shown (when "Save location" is on). */
+  location?: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
   account: string;
   approvedAt: number;
 }
@@ -122,6 +130,12 @@ export interface SmsReaderPlugin {
   openFullScreenIntentSettings(): Promise<void>;
   /** Whether Artha may "Display over other apps" (lets the prompt pop up while the phone is unlocked). */
   canDrawOverlays(): Promise<{ granted: boolean }>;
+  /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */
+  findNearbyPlaces(options: { lat: number; lng: number }): Promise<{ places: NearbyPlace[] }>;
+  /** Location fixes the full-screen alert took, keyed `address|javaHash(body)|body.length`. */
+  getSmsLocations(): Promise<{
+    locations: Record<string, { lat: number; lng: number; accuracy?: number | null; at?: number; saved?: number }>;
+  }>;
   /** Open the system "Display over other apps" page for Artha. */
   openOverlaySettings(): Promise<void>;
   /** Show the sample expense prompt (notification + full-screen alert), optionally after a delay. */

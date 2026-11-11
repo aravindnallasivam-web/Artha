@@ -82,6 +82,8 @@ public class SmsPromptActivity extends AppCompatActivity {
     private FlowLayout nearbyChips;
     /** Shop the user picked from "Nearby"; saved as the expense's note. */
     private String placeName;
+    /** Where the phone was when this SMS was shown (saved with the expense when on). */
+    private android.location.Location fix;
     private TextView subLabel;
     private FlowLayout subChips;
     /** The group whose subcategories the chips show in place of the groups; null = groups. */
@@ -230,6 +232,7 @@ public class SmsPromptActivity extends AppCompatActivity {
         renderSeq++;
         userPicked = false;
         placeName = null;
+        fix = null;
         aiStatus.setVisibility(View.GONE);
         nearbyLabel.setVisibility(View.GONE);
         nearbyChips.removeAllViews();
@@ -281,9 +284,6 @@ public class SmsPromptActivity extends AppCompatActivity {
             openLink.setVisibility(View.VISIBLE);
             if (!canAdd) {
                 showPickers(needCategory ? categories : null, needAccount ? accounts : null);
-                if ((test || unknownShop(merchant)) && NearbyPlaces.isEnabled(this)) {
-                    askNearby(needCategory);
-                }
                 if (AiClient.isConfigured(this)) {
                     askAi(categoryPaths(), names(accounts, false), needCategory, needAccount);
                 }
@@ -295,6 +295,13 @@ public class SmsPromptActivity extends AppCompatActivity {
             primaryBtn.setAlpha(1f);
             primaryBtn.setText(R.string.prompt_review);
             openLink.setVisibility(View.GONE);
+        }
+
+        boolean wantNearby = (canAdd || canPick) && !canAdd
+            && (test || unknownShop(merchant)) && NearbyPlaces.isEnabled(this);
+        boolean wantSave = !test && NearbyPlaces.saveLocationEnabled(this);
+        if (wantNearby || wantSave) {
+            locate(wantNearby, wantSave, needCategory);
         }
     }
 
@@ -523,20 +530,38 @@ public class SmsPromptActivity extends AppCompatActivity {
         return chip;
     }
 
+    /**
+     * One location fix for this SMS: saved with it (for "Find nearby shops"
+     * later) when that is on, and used for the "Nearby" chips when the SMS
+     * doesn't name the shop.
+     */
+    private void locate(boolean wantNearby, boolean wantSave, boolean needCategory) {
+        final int seq = renderSeq;
+        final String smsBody = body;
+        final String smsAddress = address;
+        if (wantNearby) {
+            nearbyLabel.setText("\uD83D\uDCCD Finding shops near you\u2026");
+            nearbyLabel.setVisibility(View.VISIBLE);
+        }
+        new Thread(() -> {
+            android.location.Location loc = NearbyPlaces.currentLocation(getApplicationContext(), 6000);
+            if (wantSave && loc != null) {
+                NearbyPlaces.rememberForSms(getApplicationContext(), smsAddress, smsBody, loc);
+            }
+            List<NearbyPlaces.Place> places = wantNearby && loc != null
+                ? NearbyPlaces.findAround(getApplicationContext(), loc, 6)
+                : new ArrayList<>();
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || seq != renderSeq) return;
+                fix = loc;
+                if (wantNearby) showNearby(seq, places, needCategory);
+            });
+        }, "artha-location").start();
+    }
+
     /** No shop name in the SMS: none found, or a phone number / UPI id instead of a name. */
     private static boolean unknownShop(String m) {
         return m == null || m.trim().isEmpty() || m.replaceAll("[^0-9]", "").length() >= 6;
-    }
-
-    /** Look up named shops around the user and offer them as chips. */
-    private void askNearby(boolean needCategory) {
-        final int seq = renderSeq;
-        nearbyLabel.setText("\uD83D\uDCCD Finding shops near you\u2026");
-        nearbyLabel.setVisibility(View.VISIBLE);
-        new Thread(() -> {
-            List<NearbyPlaces.Place> places = NearbyPlaces.find(getApplicationContext(), 6);
-            runOnUiThread(() -> showNearby(seq, places, needCategory));
-        }, "artha-nearby").start();
     }
 
     private void showNearby(int seq, List<NearbyPlaces.Place> places, boolean needCategory) {
@@ -839,6 +864,9 @@ public class SmsPromptActivity extends AppCompatActivity {
             entry.put("category", category != null ? category : "");
             // Shop picked from "Nearby": the app uses it as the note and remembers it.
             entry.put("placeName", placeName != null ? placeName : "");
+            if (fix != null) {
+                entry.put("location", NearbyPlaces.locationJson(fix));
+            }
             // Exact id when picked here, so same-named subcategories can't be confused.
             entry.put("categoryId", categoryId != null && catById.containsKey(categoryId) ? categoryId : "");
             entry.put("account", account != null ? account : "");

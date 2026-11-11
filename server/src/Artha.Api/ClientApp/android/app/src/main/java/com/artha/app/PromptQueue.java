@@ -121,6 +121,11 @@ final class PromptQueue {
         }
     }
 
+    /** Stable key for one SMS (also used by NearbyPlaces and the app's JS). */
+    static String smsKey(String body, String address) {
+        return key(body == null ? "" : body, address);
+    }
+
     private static String key(String body, String address) {
         return (address == null ? "" : address) + "|" + body.hashCode() + "|" + body.length();
     }

@@ -206,6 +206,20 @@ import { SettingsStore } from './settings.store';
               </ion-item>
               @if (sms.nearbyEnabled()) {
                 <ion-item lines="none">
+                  <ion-toggle
+                    labelPlacement="start"
+                    justify="space-between"
+                    [checked]="sms.saveLocation()"
+                    (ionChange)="onSaveLocationToggle($event)"
+                  >
+                    <ion-label class="ion-text-wrap">
+                      <h2>Save location with SMS expenses</h2>
+                      <p>Keeps where you were when the SMS came in (in your Drive, with the expense), so you can
+                        open it in Maps or find the shop later from the expense.</p>
+                    </ion-label>
+                  </ion-toggle>
+                </ion-item>
+                <ion-item lines="none">
                   <ion-label class="ion-text-wrap">
                     <p class="key-hint">Shops come from OpenStreetMap (free). For better coverage of small shops,
                       paste a Google Places API key (optional, uses your Google Cloud billing):</p>
@@ -531,6 +545,10 @@ export class SettingsPage implements OnInit {
       toggle.checked = false;
       await this.notifier.notifyError('Location permission is needed for nearby shops.');
     }
+  }
+
+  protected onSaveLocationToggle(event: Event): void {
+    this.sms.setSaveLocation((event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false);
   }
 
   protected onNearbyKey(event: Event): void {

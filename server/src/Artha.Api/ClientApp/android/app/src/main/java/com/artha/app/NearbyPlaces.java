@@ -41,6 +41,10 @@ import java.util.concurrent.TimeUnit;
 final class NearbyPlaces {
 
     static final String KEY_NEARBY = "nearby_config";
+    /** Location fixes per SMS (PromptQueue.smsKey → {lat,lng,acc,at}), picked up by the app. */
+    static final String KEY_SMS_LOCATIONS = "sms_locations";
+    private static final long LOCATION_TTL_MS = 7L * 24 * 60 * 60 * 1000;
+    private static final int LOCATION_MAX = 300;
 
     private static final int RADIUS_M = 150;
     private static final String OVERPASS_URL = "https://overpass-api.de/api/interpreter";
@@ -70,6 +74,52 @@ final class NearbyPlaces {
         return config(ctx).optBoolean("enabled", false) && hasPermission(ctx);
     }
 
+    /** Save the location with each expense SMS (on with "Nearby shops" unless turned off). */
+    static boolean saveLocationEnabled(Context ctx) {
+        JSONObject c = config(ctx);
+        return c.optBoolean("enabled", false) && c.optBoolean("saveLocation", true) && hasPermission(ctx);
+    }
+
+    /** Remember where the phone was for this SMS, so the app can store it with the expense. */
+    static synchronized void rememberForSms(Context ctx, String address, String body, Location loc) {
+        if (loc == null || body == null || body.isEmpty()) return;
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences(SmsBackgroundReceiver.PREFS, Context.MODE_PRIVATE);
+        JSONObject map;
+        try {
+            map = new JSONObject(prefs.getString(KEY_SMS_LOCATIONS, "{}"));
+        } catch (Exception e) {
+            map = new JSONObject();
+        }
+        long cutoff = System.currentTimeMillis() - LOCATION_TTL_MS;
+        JSONObject kept = new JSONObject();
+        java.util.Iterator<String> keys = map.keys();
+        List<String> order = new ArrayList<>();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            JSONObject v = map.optJSONObject(k);
+            if (v != null && v.optLong("saved", 0) >= cutoff) order.add(k);
+        }
+        // Drop the oldest beyond the cap.
+        int skip = Math.max(0, order.size() - (LOCATION_MAX - 1));
+        for (int i = skip; i < order.size(); i++) {
+            try { kept.put(order.get(i), map.optJSONObject(order.get(i))); } catch (Exception ignored) { }
+        }
+        try {
+            kept.put(PromptQueue.smsKey(body, address), locationJson(loc).put("saved", System.currentTimeMillis()));
+        } catch (Exception ignored) {
+            return;
+        }
+        prefs.edit().putString(KEY_SMS_LOCATIONS, kept.toString()).apply();
+    }
+
+    static JSONObject locationJson(Location loc) throws org.json.JSONException {
+        return new JSONObject()
+            .put("lat", loc.getLatitude())
+            .put("lng", loc.getLongitude())
+            .put("accuracy", loc.hasAccuracy() ? Math.round(loc.getAccuracy()) : JSONObject.NULL)
+            .put("at", loc.getTime());
+    }
+
     static boolean hasPermission(Context ctx) {
         if (Build.VERSION.SDK_INT < 23) return true;
         return ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -85,11 +135,9 @@ final class NearbyPlaces {
         }
     }
 
-    /** Up to `max` named shops nearest first, or an empty list (no fix, offline, nothing near). */
-    static List<Place> find(Context ctx, int max) {
+    /** Up to `max` named shops around `loc`, nearest first; empty when offline or nothing is near. */
+    static List<Place> findAround(Context ctx, Location loc, int max) {
         List<Place> out = new ArrayList<>();
-        if (!isEnabled(ctx)) return out;
-        Location loc = currentLocation(ctx, 6000);
         if (loc == null) return out;
         String googleKey = config(ctx).optString("googleKey", "").trim();
         try {
@@ -111,7 +159,7 @@ final class NearbyPlaces {
     // ---- Location ----
 
     @SuppressWarnings({"MissingPermission", "deprecation"})
-    private static Location currentLocation(Context ctx, int timeoutMs) {
+    static Location currentLocation(Context ctx, int timeoutMs) {
         LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null || !hasPermission(ctx)) return null;
         List<String> providers = new ArrayList<>();

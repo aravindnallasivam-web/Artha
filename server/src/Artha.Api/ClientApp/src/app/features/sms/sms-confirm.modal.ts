@@ -22,7 +22,7 @@ import {
   ModalController,
 } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { Expense } from '../../core/models/expense.model';
+import { Expense, ExpenseLocation } from '../../core/models/expense.model';
 import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
@@ -373,6 +373,8 @@ export class SmsConfirmModal implements OnInit {
 
   /** Parsed SMS — required input. */
   @Input({ required: true }) parsed!: ParsedExpense;
+  /** Where the phone was when the SMS arrived; saved with the expense. */
+  @Input() location: ExpenseLocation | null = null;
   /** An already-logged expense this SMS likely duplicates, if any. */
   @Input() duplicate: Expense | null = null;
   /** Pre-resolved best-guess category id (may be empty). */
@@ -451,6 +453,7 @@ export class SmsConfirmModal implements OnInit {
         note: this.composeNote(),
         excluded: this.excluded,
         type: this.parsed.type,
+        location: this.location,
       });
       // Return the chosen account + category so the capture service can learn
       // the SMS→account and merchant→category mappings for next time.

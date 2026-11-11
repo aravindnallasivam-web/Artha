@@ -3,8 +3,8 @@ import { App } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
-import { Expense } from '../../core/models/expense.model';
-import { PreApprovedEntry, SmsMessage, SmsReader } from '../../core/native/sms-reader';
+import { Expense, ExpenseLocation } from '../../core/models/expense.model';
+import { NearbyPlace, PreApprovedEntry, SmsMessage, SmsReader } from '../../core/native/sms-reader';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
@@ -265,16 +265,64 @@ export class SmsCaptureService {
     // Off in Settings → "Suggest on the full-screen alert": the alert gets no
     // provider at all, so it never calls the AI.
     const ai = this.ai.isEnabled() && this.ai.alertSuggest() ? { ...this.ai.config() } : null;
-    const nearby = { enabled: this.nearbyEnabled(), googleKey: this.nearbyGoogleKey() };
+    const nearby = { ...this._nearby() };
     await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai, nearby }).catch(
       () => undefined,
     );
   }
 
   // ----- Nearby shops on the full-screen prompt (device-only settings) -----
-  private readonly _nearby = signal<{ enabled: boolean; googleKey: string }>(loadNearby());
+  private readonly _nearby = signal<NearbyConfig>(loadNearby());
   readonly nearbyEnabled = computed(() => this._nearby().enabled);
   readonly nearbyGoogleKey = computed(() => this._nearby().googleKey);
+  /** Save where the phone was with each SMS expense (needs "Nearby shops" on). */
+  readonly saveLocation = computed(() => this._nearby().enabled && this._nearby().saveLocation);
+
+  setSaveLocation(on: boolean): void {
+    this.saveNearby({ ...this._nearby(), saveLocation: on });
+  }
+
+  // ----- Location fixes the alert took per SMS (native prefs, keyed like PromptQueue) -----
+  private smsLocations: Record<string, { lat: number; lng: number; accuracy?: number | null; at?: number }> = {};
+
+  private async loadSmsLocations(): Promise<void> {
+    if (!this.isSupported() || !this.saveLocation()) {
+      this.smsLocations = {};
+      return;
+    }
+    try {
+      const res = await SmsReader.getSmsLocations();
+      this.smsLocations = res?.locations ?? {};
+    } catch {
+      // Older build: no fixes.
+    }
+  }
+
+  /**
+   * Named shops around a saved location, nearest first. On the phone this uses
+   * the same lookup as the alert (OpenStreetMap, or Google with the saved key);
+   * in the browser it asks OpenStreetMap directly.
+   */
+  async findNearbyPlaces(lat: number, lng: number): Promise<NearbyPlace[]> {
+    if (this.isSupported()) {
+      const res = await SmsReader.findNearbyPlaces({ lat, lng });
+      return res?.places ?? [];
+    }
+    return overpassNearby(lat, lng);
+  }
+
+  /** Where the phone was when this SMS arrived (from the alert), or null. */
+  locationFor(p: ParsedExpense): ExpenseLocation | null {
+    if (!this.saveLocation()) return null;
+    const v = this.smsLocations[smsKey(p.sender, p.raw)];
+    if (!v || typeof v.lat !== 'number' || typeof v.lng !== 'number') return null;
+    return {
+      lat: v.lat,
+      lng: v.lng,
+      accuracy: typeof v.accuracy === 'number' ? v.accuracy : null,
+      at: new Date(typeof v.at === 'number' ? v.at : Date.now()).toISOString(),
+    };
+  }
 
   /**
    * Turn "Nearby shops" on or off. Turning it on asks for location; false when
@@ -296,7 +344,7 @@ export class SmsCaptureService {
     this.saveNearby({ ...this._nearby(), googleKey: key.trim() });
   }
 
-  private saveNearby(v: { enabled: boolean; googleKey: string }): void {
+  private saveNearby(v: NearbyConfig): void {
     this._nearby.set(v);
     try {
       localStorage.setItem(NEARBY_KEY, JSON.stringify(v));
@@ -644,6 +692,7 @@ export class SmsCaptureService {
           note: entry.placeName?.trim() || this.noteFor(parsed),
           excluded: false,
           type: parsed.type,
+          location: this.saveLocation() ? (entryLocation(entry) ?? this.locationFor(parsed)) : null,
         });
       } catch {
         continue;
@@ -756,6 +805,7 @@ export class SmsCaptureService {
             accountId: r.accountId,
             note: r.note?.trim() || null,
             excluded: r.excluded,
+            location: this.locationFor(r.parsed),
           });
           this.rememberAccount(r.parsed, r.accountId);
           this.rememberCategory(r.parsed, r.categoryId);
@@ -868,6 +918,7 @@ export class SmsCaptureService {
         note: fields.note?.trim() || null,
         excluded: fields.excluded,
         type: parsed.type,
+        location: this.locationFor(parsed),
       });
     } catch {
       return false;
@@ -983,7 +1034,7 @@ export class SmsCaptureService {
   }
 
   private async ensureStores(): Promise<void> {
-    const tasks: Promise<unknown>[] = [];
+    const tasks: Promise<unknown>[] = [this.loadSmsLocations()];
     if (this.categoriesStore.items().length === 0) {
       tasks.push(this.categoriesStore.load(/* includeArchived */ false));
     }
@@ -1019,6 +1070,7 @@ export class SmsCaptureService {
           duplicate: skipDuplicateCheck ? null : this.findDuplicate(parsed, existing),
           categoryId: this.resolveCategoryId(parsed, ai),
           accountId: this.resolveAccountId(parsed, ai),
+          location: this.locationFor(parsed),
           canDismiss: true,
         },
       });
@@ -1160,6 +1212,7 @@ export class SmsCaptureService {
               note: r.note?.trim() || null,
               excluded: r.excluded,
               type: r.parsed.type,
+              location: this.locationFor(r.parsed),
             });
             this.rememberAccount(r.parsed, r.accountId);
             this.rememberCategory(r.parsed, r.categoryId);
@@ -1479,6 +1532,7 @@ export class SmsCaptureService {
         note: this.noteFor(parsed),
         excluded: false,
         type: parsed.type,
+        location: this.locationFor(parsed),
       });
     } catch {
       return false;
@@ -1867,13 +1921,99 @@ const SCAN_LIMIT = 5000;
 const NEARBY_KEY = 'artha.sms.nearby';
 const PLACE_NAMES_KEY = 'artha.sms.placeNames';
 
-function loadNearby(): { enabled: boolean; googleKey: string } {
+interface NearbyConfig {
+  enabled: boolean;
+  googleKey: string;
+  /** Save the phone's location with SMS expenses (default on). */
+  saveLocation: boolean;
+}
+
+function loadNearby(): NearbyConfig {
   try {
     const v = JSON.parse(localStorage.getItem(NEARBY_KEY) ?? '{}');
-    return { enabled: v.enabled === true, googleKey: typeof v.googleKey === 'string' ? v.googleKey : '' };
+    return {
+      enabled: v.enabled === true,
+      googleKey: typeof v.googleKey === 'string' ? v.googleKey : '',
+      saveLocation: v.saveLocation !== false,
+    };
   } catch {
-    return { enabled: false, googleKey: '' };
+    return { enabled: false, googleKey: '', saveLocation: true };
   }
+}
+
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_AMENITIES = 'restaurant|cafe|fast_food|bar|pub|food_court|ice_cream|pharmacy|fuel|cinema|hospital|clinic|doctors|dentist|bank|marketplace';
+
+/** Browser fallback for "Find nearby shops": OpenStreetMap's Overpass API. */
+async function overpassNearby(lat: number, lng: number, radius = 150): Promise<NearbyPlace[]> {
+  const around = `(around:${radius},${lat},${lng})`;
+  const q =
+    `[out:json][timeout:8];(` +
+    `node${around}["name"]["shop"];way${around}["name"]["shop"];` +
+    `node${around}["name"]["amenity"~"^(${OVERPASS_AMENITIES})$"];` +
+    `way${around}["name"]["amenity"~"^(${OVERPASS_AMENITIES})$"];` +
+    `);out center 60;`;
+  const res = await fetch(OVERPASS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `data=${encodeURIComponent(q)}`,
+  });
+  if (!res.ok) throw new Error(`Map lookup failed (${res.status})`);
+  const json = (await res.json()) as {
+    elements?: { lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }[];
+  };
+  const out: NearbyPlace[] = [];
+  const seen = new Set<string>();
+  const rows = (json.elements ?? [])
+    .map((el) => {
+      const name = (el.tags?.['name:en'] || el.tags?.['name'] || '').trim();
+      const plat = el.lat ?? el.center?.lat;
+      const plon = el.lon ?? el.center?.lon;
+      if (!name || plat == null || plon == null) return null;
+      return { name, kind: el.tags?.['shop'] || el.tags?.['amenity'] || '', distanceM: metres(lat, lng, plat, plon) };
+    })
+    .filter((p): p is NearbyPlace => !!p)
+    .sort((a, b) => a.distanceM - b.distanceM);
+  for (const p of rows) {
+    if (seen.has(p.name.toLowerCase())) continue;
+    seen.add(p.name.toLowerCase());
+    out.push(p);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+function metres(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const r = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * r * Math.asin(Math.sqrt(a)));
+}
+
+/** Java's String.hashCode(), so keys match the native side's PromptQueue.smsKey. */
+function javaHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+function smsKey(address: string, body: string): string {
+  return `${address ?? ''}|${javaHash(body ?? '')}|${(body ?? '').length}`;
+}
+
+function entryLocation(e: PreApprovedEntry): ExpenseLocation | null {
+  const l = e.location;
+  if (!l || typeof l.lat !== 'number' || typeof l.lng !== 'number') return null;
+  return {
+    lat: l.lat,
+    lng: l.lng,
+    accuracy: typeof l.accuracy === 'number' ? l.accuracy : null,
+    at: new Date(typeof l.at === 'number' ? l.at : Date.now()).toISOString(),
+  };
 }
 
 function loadPlaceNames(): Record<string, string> {
