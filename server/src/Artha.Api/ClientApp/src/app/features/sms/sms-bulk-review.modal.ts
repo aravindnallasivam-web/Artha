@@ -41,6 +41,8 @@ export interface SmsCandidateRow {
   key?: string;
   /** The category or account shown was filled in by the AI provider. */
   aiPicked?: boolean;
+  /** Learn "this payee → this category" when saved (off by default for transfers to people). */
+  remember: boolean;
   /** One of the AI provider's sample SMS: shown for review, never saved. */
   sample?: boolean;
 }
@@ -201,6 +203,14 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
                         <ion-icon name="wallet-outline"></ion-icon>
                         <span>{{ accountName(row.accountId) || 'Account' }}</span>
                       </button>
+                      @if (row.parsed.merchant) {
+                        <button type="button" class="chip" [class.chip--off]="!row.remember"
+                                [attr.aria-pressed]="row.remember" (click)="toggleRemember($event, i)"
+                                [title]="row.remember ? 'The category will be remembered for this payee' : 'Only this expense; nothing is learned'">
+                          <ion-icon [name]="row.remember ? 'bookmark' : 'bookmark-outline'"></ion-icon>
+                          <span>{{ row.remember ? 'Remember' : 'Just this once' }}</span>
+                        </button>
+                      }
                     </div>
                   </div>
                 </div>
@@ -239,6 +249,7 @@ const SWIPE_HINT_KEY = 'artha.sms.swipeHintSeen';
     }
   `,
   styles: [`
+    .chip--off { opacity: 0.6; border-style: dashed; }
     .ai-tag {
       display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
       background: var(--artha-accent-tint); color: var(--artha-accent); font-size: 10.5px; font-weight: 700;
@@ -576,6 +587,7 @@ export class SmsBulkReviewModal implements OnInit {
         initialDate: row.date,
         initialNote: row.note ?? '',
         initialExcluded: row.excluded,
+        initialRemember: row.remember,
         canDismiss: this.queueMode,
       },
     });
@@ -591,6 +603,12 @@ export class SmsBulkReviewModal implements OnInit {
     } else if (role === 'ignore') {
       this.ignoreSenderAt(i);
     }
+  }
+
+  /** Flip "remember this payee's category" for one row. */
+  protected toggleRemember(event: Event, i: number): void {
+    event.stopPropagation();
+    this.patch(i, { remember: !this.rows()[i].remember });
   }
 
   /** Ignore this sender from now on and drop its rows from the list. */

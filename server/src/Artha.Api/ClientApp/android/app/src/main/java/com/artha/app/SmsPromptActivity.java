@@ -84,6 +84,12 @@ public class SmsPromptActivity extends AppCompatActivity {
     private String placeName;
     /** Where the phone was when this SMS was shown (saved with the expense when on). */
     private android.location.Location fix;
+    /** "Remember category for this payee" (learned by the app on Add). */
+    private boolean remember = true;
+    private TextView rememberView;
+    /** The payee as the SMS names it (what the app learns the category by). */
+    private String smsPayee;
+
     /** A location reading for the current SMS is still in flight. */
     private boolean locating;
     /** Add was tapped while locating: give the reading a moment before saving. */
@@ -147,6 +153,11 @@ public class SmsPromptActivity extends AppCompatActivity {
         nearbyChips = findViewById(R.id.prompt_nearby_chips);
         subLabel = findViewById(R.id.prompt_sub_label);
         subChips = findViewById(R.id.prompt_sub_chips);
+        rememberView = findViewById(R.id.prompt_remember);
+        rememberView.setOnClickListener(v -> {
+            remember = !remember;
+            renderRemember();
+        });
 
         TextView secondaryBtn = findViewById(R.id.prompt_secondary_btn);
         secondaryBtn.setOnClickListener(v -> onDismiss());
@@ -238,6 +249,9 @@ public class SmsPromptActivity extends AppCompatActivity {
         placeName = null;
         fix = null;
         locating = false;
+        smsPayee = merchant;
+        remember = !personLike(merchant, body);
+        rememberView.setVisibility(View.GONE);
         approveWaiting = false;
         aiStatus.setVisibility(View.GONE);
         nearbyLabel.setVisibility(View.GONE);
@@ -290,6 +304,7 @@ public class SmsPromptActivity extends AppCompatActivity {
             openLink.setVisibility(View.VISIBLE);
             if (!canAdd) {
                 showPickers(needCategory ? categories : null, needAccount ? accounts : null);
+                if (needCategory && !TextUtils.isEmpty(smsPayee)) renderRemember();
                 if (AiClient.isConfigured(this)) {
                     askAi(categoryPaths(), names(accounts, false), needCategory, needAccount);
                 }
@@ -620,6 +635,41 @@ public class SmsPromptActivity extends AppCompatActivity {
         }, "artha-location").start();
     }
 
+    private void renderRemember() {
+        String who = smsPayee == null ? "" : smsPayee.trim();
+        if (who.length() > 22) who = who.substring(0, 21) + "\u2026";
+        rememberView.setText(remember
+            ? "\u2713  Remember category for " + who
+            : "\u25CB  Just this once \u00b7 tap to remember " + who);
+        rememberView.setAlpha(remember ? 1f : 0.75f);
+        rememberView.setVisibility(View.VISIBLE);
+    }
+
+    private static final java.util.regex.Pattern BUSINESS = java.util.regex.Pattern.compile(
+        "(?i)\\b(store|stores|mart|supermarket|market|enterprises?|traders?|foods?|cafe|coffee|restaurant|hotel|bakery|"
+            + "sweets|kitchen|ltd|limited|pvt|private|services?|solutions?|medicals?|pharmacy|pharma|chemists?|clinic|"
+            + "hospital|petrol|fuel|motors?|garage|agency|centre|center|shop|textiles?|fashions?|electronics?|mobiles?|"
+            + "bharatpe|paytm|phonepe|razorpay|swiggy|zomato|amazon|flipkart|uber|ola|irctc|india|company|travels?|salon|gym)\\b");
+    private static final java.util.regex.Pattern MERCHANT_VPA = java.util.regex.Pattern.compile(
+        "(?i)^(paytmqr|bharatpe|q\\d|mab\\.|gpay-|merchant|pos|razorpay|cf\\.|payu|ezetap|pinelabs|mswipe)");
+
+    /** Money sent to a person (phone number, personal UPI id, plain name on UPI): don't learn by default. */
+    static boolean personLike(String merchant, String body) {
+        String m = merchant == null ? "" : merchant.trim();
+        String raw = body == null ? "" : body;
+        boolean upi = raw.matches("(?is).*(\\bupi\\b|\\bvpa\\b|@[a-z]{2,}).*");
+        if (MERCHANT_VPA.matcher(m).find()) return false;
+        if (m.replaceAll("[^0-9]", "").length() >= 10) return true;
+        if (m.isEmpty()) return upi;
+        if (BUSINESS.matcher(m).find()) return false;
+        String[] words = m.split("\\s+");
+        if (!upi || words.length > 3) return false;
+        for (String w : words) {
+            if (!w.matches("[A-Za-z.]+")) return false;
+        }
+        return true;
+    }
+
     /** No shop name in the SMS: none found, or a phone number / UPI id instead of a name. */
     private static boolean unknownShop(String m) {
         return m == null || m.trim().isEmpty() || m.replaceAll("[^0-9]", "").length() >= 6;
@@ -652,6 +702,9 @@ public class SmsPromptActivity extends AppCompatActivity {
     private void applyRemembered(NearbyPlaces.Remembered r, boolean needCategory) {
         final String smsMerchant = merchant;
         placeName = r.name;
+        // Paid at a shop: the payee (often the shopkeeper's UPI id) is worth remembering.
+        remember = true;
+        if (rememberView.getVisibility() == View.VISIBLE) renderRemember();
         merchant = r.name;
         merchantView.setText(r.name);
         merchantView.setVisibility(View.VISIBLE);
@@ -690,6 +743,9 @@ public class SmsPromptActivity extends AppCompatActivity {
     /** Use a nearby shop: its name becomes the note, its type picks a matching category. */
     private void pickPlace(NearbyPlaces.Place p, boolean needCategory) {
         placeName = p.name;
+        // Paid at a shop: the payee (often the shopkeeper's UPI id) is worth remembering.
+        remember = true;
+        if (rememberView.getVisibility() == View.VISIBLE) renderRemember();
         merchant = p.name;
         merchantView.setText(p.name);
         merchantView.setVisibility(View.VISIBLE);
@@ -970,6 +1026,7 @@ public class SmsPromptActivity extends AppCompatActivity {
             entry.put("category", category != null ? category : "");
             // Shop picked from "Nearby": the app uses it as the note and remembers it.
             entry.put("placeName", placeName != null ? placeName : "");
+            entry.put("remember", remember);
             if (fix != null) {
                 entry.put("location", NearbyPlaces.locationJson(fix));
                 // Learn this spot → shop (and category) for next time.

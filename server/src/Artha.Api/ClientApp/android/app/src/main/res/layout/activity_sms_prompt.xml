@@ -218,6 +218,27 @@
                 android:layout_height="wrap_content"
                 android:visibility="gone" />
 
+            <!-- "Remember category for <payee>": off by default for transfers to people. -->
+            <TextView
+                android:id="@+id/prompt_remember"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="14dp"
+                android:minHeight="40dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:background="@drawable/prompt_btn_outline"
+                android:clickable="true"
+                android:focusable="true"
+                android:textColor="@color/prompt_text"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/prompt_account_label"
                 android:layout_width="wrap_content"

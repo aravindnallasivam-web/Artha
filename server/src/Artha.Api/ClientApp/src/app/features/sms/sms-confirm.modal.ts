@@ -28,6 +28,7 @@ import { AccountsStore } from '../accounts/accounts.store';
 import { CategoryPickerComponent } from '../categories/category-picker.component';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesStore } from '../expenses/expenses.store';
+import { looksLikePersonTransfer } from './person-transfer';
 import { ParsedExpense } from './sms-parser';
 
 /**
@@ -200,6 +201,20 @@ import { ParsedExpense } from './sms-parser';
                 <div class="excl-sub">Refunds, transfers, settlements</div>
               </ion-toggle>
             </ion-item>
+            @if (learnKey()) {
+              <ion-item lines="none">
+                <ion-toggle [(ngModel)]="remember" [ngModelOptions]="{ standalone: true }">
+                  <div class="excl-title">Remember category for “{{ parsed.merchant }}”</div>
+                  <div class="excl-sub">
+                    @if (personLike) {
+                      Looks like a transfer to a person — off, so this one-off reason isn't reused.
+                    } @else {
+                      Next SMS from this payee gets the same category.
+                    }
+                  </div>
+                </ion-toggle>
+              </ion-item>
+            }
           </div>
 
           @if (categories().length === 0 || accounts().length === 0) {
@@ -401,6 +416,8 @@ export class SmsConfirmModal implements OnInit {
   @Input() initialDate?: string;
   @Input() initialNote?: string;
   @Input() initialExcluded?: boolean;
+  /** "Remember category for next time"; defaults to on for shops, off for transfers to people. */
+  @Input() initialRemember?: boolean;
   /** When true (opened from the pending queue), show a Dismiss action that
       drops the item without logging it (dismisses with role 'dismiss'). */
   @Input() canDismiss = false;
@@ -409,6 +426,8 @@ export class SmsConfirmModal implements OnInit {
   protected date = '';
   protected note = '';
   protected excluded = false;
+  protected remember = true;
+  protected personLike = false;
   /** User-entered FX rate (1 SMS-currency = rate account-currency), or null. */
   protected rate: number | null = null;
   protected readonly saving = signal(false);
@@ -423,6 +442,8 @@ export class SmsConfirmModal implements OnInit {
     this.date = this.initialDate ?? this.parsed.date;
     this.note = this.initialNote ?? (this.parsed.merchant ?? this.parsed.sender ?? '');
     this.excluded = this.initialExcluded ?? false;
+    this.personLike = looksLikePersonTransfer(this.parsed);
+    this.remember = this.initialRemember ?? !this.personLike;
   }
 
   protected canSave(): boolean {
@@ -448,6 +469,7 @@ export class SmsConfirmModal implements OnInit {
           accountId: this.accountId,
           note: this.composeNote(),
           excluded: this.excluded,
+          remember: this.remember,
         },
         'edited',
       );
@@ -468,7 +490,7 @@ export class SmsConfirmModal implements OnInit {
       // Return the chosen account + category so the capture service can learn
       // the SMS→account and merchant→category mappings for next time.
       await this.modalCtrl.dismiss(
-        { accountId: this.accountId, categoryId: this.categoryId },
+        { accountId: this.accountId, categoryId: this.categoryId, remember: this.remember },
         'saved',
       );
     } catch {
@@ -507,6 +529,11 @@ export class SmsConfirmModal implements OnInit {
       this.locationReady.catch(() => null),
       new Promise<null>((r) => setTimeout(() => r(null), 3000)),
     ]);
+  }
+
+    /** The payee has a name to learn by (no name: nothing would be remembered). */
+  protected learnKey(): boolean {
+    return !!(this.parsed.merchant ?? '').replace(/[^a-z0-9]/gi, '');
   }
 
     protected foreignCurrency(): string | null {

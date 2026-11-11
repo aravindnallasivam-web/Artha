@@ -72,6 +72,8 @@ export interface PreApprovedEntry {
   categoryId?: string;
   /** Shop picked from "Nearby" on the prompt (absent / empty when none). */
   placeName?: string;
+  /** The alert's "Remember category" switch (absent from older builds). */
+  remember?: boolean;
   /** Where the phone was when the SMS was shown (when "Save location" is on). */
   location?: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
   account: string;

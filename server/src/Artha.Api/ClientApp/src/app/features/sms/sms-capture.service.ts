@@ -13,6 +13,7 @@ import { SettingsStore } from '../settings/settings.store';
 import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { SmsScanRangeModal } from './sms-scan-range.modal';
+import { rememberByDefault } from './person-transfer';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 import { SAMPLE_BANK_SMS } from './sms-samples';
 import { AiProviderConfig, AiProviderService, AiSuggestion } from '../../core/ai/ai-provider.service';
@@ -760,7 +761,8 @@ export class SmsCaptureService {
       }
       if (entry.placeName?.trim()) this.rememberPlace(parsed, entry.placeName);
       this.rememberAccount(parsed, accountId);
-      this.rememberCategory(parsed, categoryId);
+      // The alert's "Remember category" switch (older builds: shops yes, people no).
+      if (entry.remember ?? this.rememberDefault(parsed)) this.rememberCategory(parsed, categoryId);
       if (parsed.balance != null) {
         await this.syncBalance(accountId, parsed.balance);
       }
@@ -869,7 +871,7 @@ export class SmsCaptureService {
             location: this.locationFor(r.parsed),
           });
           this.rememberAccount(r.parsed, r.accountId);
-          this.rememberCategory(r.parsed, r.categoryId);
+          if (r.remember) this.rememberCategory(r.parsed, r.categoryId);
           if (r.parsed.balance != null && !balanced.has(r.accountId)) {
             await this.syncBalance(r.accountId, r.parsed.balance);
             balanced.add(r.accountId);
@@ -1149,18 +1151,20 @@ export class SmsCaptureService {
           duplicate: skipDuplicateCheck ? null : this.findDuplicate(parsed, existing),
           categoryId: this.resolveCategoryId(parsed, ai),
           accountId: this.resolveAccountId(parsed, ai),
+          initialRemember: this.rememberDefault(parsed),
           location: this.locationFor(parsed),
           locationReady: this.saveLocation() ? locationReady ?? null : null,
           canDismiss: true,
         },
       });
       await modal.present();
-      const { role, data } = await modal.onWillDismiss<{ accountId?: string; categoryId?: string }>();
+      const { role, data } = await modal.onWillDismiss<{ accountId?: string; categoryId?: string; remember?: boolean }>();
       // Learn the account + category the user chose, so future SMS from the same
       // account/merchant map automatically; sync the account balance from the SMS.
       if (role === 'saved' && data?.accountId) {
         this.rememberAccount(parsed, data.accountId);
-        if (data.categoryId) {
+        // "Remember category" off (e.g. a transfer to a friend): only this expense gets it.
+        if (data.categoryId && data.remember !== false) {
           this.rememberCategory(parsed, data.categoryId);
         }
         if (parsed.balance != null) {
@@ -1295,7 +1299,7 @@ export class SmsCaptureService {
               location: this.locationFor(r.parsed),
             });
             this.rememberAccount(r.parsed, r.accountId);
-            this.rememberCategory(r.parsed, r.categoryId);
+            if (r.remember) this.rememberCategory(r.parsed, r.categoryId);
             if (r.parsed.balance != null && !balanced.has(r.accountId)) {
               await this.syncBalance(r.accountId, r.parsed.balance);
               balanced.add(r.accountId);
@@ -1352,6 +1356,7 @@ export class SmsCaptureService {
         accountId,
         note: this.noteFor(p, ai?.merchant),
         excluded: false,
+        remember: this.rememberDefault(p),
         aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
       };
     });
@@ -1431,6 +1436,7 @@ export class SmsCaptureService {
         accountId,
         note: this.noteFor(p, ai?.merchant),
         excluded: false,
+        remember: this.rememberDefault(p),
         aiPicked: this.isAiPicked(p, ai, categoryId, accountId),
         sample: this.isSample(p, i.key),
       };
@@ -1792,7 +1798,18 @@ export class SmsCaptureService {
     }
   }
 
-  private rememberCategory(parsed: ParsedExpense, categoryId: string): void {
+  /**
+   * Default for "Remember category": on for shops, off for transfers to
+   * people - unless this payee already has a learned category (the user chose
+   * to remember it before).
+   */
+  rememberDefault(p: ParsedExpense): boolean {
+    const key = categoryKey(p.merchant);
+    if (key && this.categoryMap()[key]) return true;
+    return rememberByDefault(p);
+  }
+
+    private rememberCategory(parsed: ParsedExpense, categoryId: string): void {
     const key = categoryKey(parsed.merchant);
     if (!key) {
       return;
