@@ -35,6 +35,8 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
 
 // Device-only on purpose: this key is never written to the Drive-synced settings.
 const CONFIG_KEY = 'artha.ai.provider';
+/** Whether the full-screen SMS alert may ask the AI (device-only, default on). */
+const ALERT_KEY = 'artha.ai.alertSuggest';
 const NONE = 'none';
 
 const SYSTEM_PROMPT = [
@@ -50,6 +52,19 @@ const SYSTEM_PROMPT = [
 export class AiProviderService {
   private readonly _config = signal<AiProviderConfig>(loadConfig());
   readonly config = this._config.asReadonly();
+
+  private readonly _alertSuggest = signal<boolean>(loadAlertSuggest());
+  /** Let the full-screen SMS alert ask the AI for a missing category / account. */
+  readonly alertSuggest = this._alertSuggest.asReadonly();
+
+  setAlertSuggest(on: boolean): void {
+    this._alertSuggest.set(on);
+    try {
+      localStorage.setItem(ALERT_KEY, on ? '1' : '0');
+    } catch {
+      // Applies for this session only.
+    }
+  }
 
   readonly isEnabled = computed(() => {
     const c = this._config();
@@ -301,6 +316,14 @@ function errorDetail(data: unknown): string {
   if (data == null || data === '') return '';
   const text = typeof data === 'string' ? data : JSON.stringify(data);
   return `: ${text.slice(0, 160)}`;
+}
+
+function loadAlertSuggest(): boolean {
+  try {
+    return localStorage.getItem(ALERT_KEY) !== '0';
+  } catch {
+    return true;
+  }
 }
 
 function loadConfig(): AiProviderConfig {

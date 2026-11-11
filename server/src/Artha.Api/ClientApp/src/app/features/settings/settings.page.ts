@@ -320,6 +320,31 @@ import { SettingsStore } from './settings.store';
             </ion-label>
             <ion-note slot="end" class="pill" [class.pill-muted]="!ai.isEnabled()">{{ ai.label() }}</ion-note>
           </ion-item>
+          @if (sms.isSupported() && ai.isEnabled()) {
+            <ion-item lines="none">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="notifications-outline"></ion-icon>
+              </span>
+              <ion-toggle
+                labelPlacement="start"
+                justify="space-between"
+                [checked]="ai.alertSuggest()"
+                (ionChange)="onAlertAiToggle($event)"
+              >
+                <ion-label class="ion-text-wrap">
+                  <h2>Suggest on the full-screen alert</h2>
+                  <p>
+                    @if (ai.alertSuggest()) {
+                      When a bank SMS has an unknown shop, the alert asks the AI and pre-selects its pick. The SMS
+                      text is sent to your provider as it arrives.
+                    } @else {
+                      The alert never uses AI: you pick from the chips. AI still helps inside the app.
+                    }
+                  </p>
+                </ion-label>
+              </ion-toggle>
+            </ion-item>
+          }
         </ion-list>
 
         <p class="section-title">Account</p>
@@ -454,6 +479,12 @@ export class SettingsPage implements OnInit {
   private readonly notifier = inject(ConflictNotifierService);
   private readonly modalCtrl = inject(ModalController);
   protected readonly ai = inject(AiProviderService);
+
+  protected onAlertAiToggle(event: Event): void {
+    const on = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? true;
+    this.ai.setAlertSuggest(on);
+    void this.sms.syncNativeAi();
+  }
 
   protected async openAiProvider(): Promise<void> {
     const modal = await this.modalCtrl.create({ component: AiProviderModal });

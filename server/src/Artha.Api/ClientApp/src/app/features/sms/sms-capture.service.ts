@@ -262,7 +262,9 @@ export class SmsCaptureService {
 
     // The full-screen prompt asks the same AI provider when it can't tell the
     // category / account itself; the config stays on this device.
-    const ai = this.ai.isEnabled() ? { ...this.ai.config() } : null;
+    // Off in Settings → "Suggest on the full-screen alert": the alert gets no
+    // provider at all, so it never calls the AI.
+    const ai = this.ai.isEnabled() && this.ai.alertSuggest() ? { ...this.ai.config() } : null;
     await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai }).catch(
       () => undefined,
     );
