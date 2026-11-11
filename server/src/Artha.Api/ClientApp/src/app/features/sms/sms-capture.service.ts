@@ -359,6 +359,19 @@ export class SmsCaptureService {
     await SmsReader.rememberPlace({ lat: loc.lat, lng: loc.lng, name: name.trim(), categoryId }).catch(() => undefined);
   }
 
+  /** Read the location now for an SMS that arrived while the app is open; kept like the alert's. */
+  private async captureLocation(p: ParsedExpense): Promise<ExpenseLocation | null> {
+    if (!this.isSupported() || !this.saveLocation()) return null;
+    try {
+      const { location: l } = await SmsReader.captureSmsLocation({ address: p.sender, body: p.raw });
+      if (!l || typeof l.lat !== 'number' || typeof l.lng !== 'number') return null;
+      this.smsLocations[smsKey(p.sender, p.raw)] = l;
+      return this.locationFor(p);
+    } catch {
+      return null;
+    }
+  }
+
   /** Where the phone was when this SMS arrived (from the alert), or null. */
   locationFor(p: ParsedExpense): ExpenseLocation | null {
     if (!this.saveLocation()) return null;
@@ -1051,13 +1064,17 @@ export class SmsCaptureService {
     // it automatically and just notify; otherwise pop the single confirm since
     // the app is open and the user is here.
     this.enqueue(parsed);
+    // The app is open, so no alert took a location: read it now, while the user is still at the shop.
+    const located = this.captureLocation(parsed);
     void (async () => {
       await this.ensureStores();
+      // Auto-add has no dialog to wait in, so give the reading a few seconds first.
+      await Promise.race([located, new Promise((r) => setTimeout(r, 7000))]);
       if (await this.tryAutoAdd(parsed)) {
         await this.notifyAutoAdded([parsed]);
         return;
       }
-      await this.openSingleConfirm(parsed);
+      await this.openSingleConfirm(parsed, false, located);
     })();
   }
 
@@ -1107,7 +1124,11 @@ export class SmsCaptureService {
    * the live path and notification taps). Saving logs it and clears it from the
    * queue; closing leaves it queued so it can be handled later from the backlog.
    */
-  private async openSingleConfirm(parsed: ParsedExpense, skipDuplicateCheck = false): Promise<void> {
+  private async openSingleConfirm(
+    parsed: ParsedExpense,
+    skipDuplicateCheck = false,
+    locationReady?: Promise<ExpenseLocation | null>,
+  ): Promise<void> {
     // If a dialog is already up, leave this one queued — it'll surface later.
     if (this.confirming || this.reviewing) {
       return;
@@ -1129,6 +1150,7 @@ export class SmsCaptureService {
           categoryId: this.resolveCategoryId(parsed, ai),
           accountId: this.resolveAccountId(parsed, ai),
           location: this.locationFor(parsed),
+          locationReady: this.saveLocation() ? locationReady ?? null : null,
           canDismiss: true,
         },
       });

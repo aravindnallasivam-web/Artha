@@ -604,6 +604,33 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /**
+     * Read the phone's location now and keep it for this SMS (the app is open,
+     * so the alert didn't take one). Resolves { location: {lat,lng,accuracy,at} | null }.
+     */
+    @PluginMethod
+    public void captureSmsLocation(PluginCall call) {
+        final String address = call.getString("address", "");
+        final String body = call.getString("body", "");
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(() -> {
+            JSObject ret = new JSObject();
+            android.location.Location loc = NearbyPlaces.saveLocationEnabled(ctx)
+                ? NearbyPlaces.currentLocation(ctx, 6000) : null;
+            if (loc != null) {
+                NearbyPlaces.rememberForSms(ctx, address, body, loc);
+                try {
+                    ret.put("location", JSObject.fromJSONObject(NearbyPlaces.locationJson(loc)));
+                } catch (Exception e) {
+                    ret.put("location", null);
+                }
+            } else {
+                ret.put("location", null);
+            }
+            call.resolve(ret);
+        }, "artha-sms-location").start();
+    }
+
     /** Teach the alert: at this spot the user paid `name` (picked on the expense screen). */
     @PluginMethod
     public void rememberPlace(PluginCall call) {

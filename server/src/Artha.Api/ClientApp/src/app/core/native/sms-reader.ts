@@ -170,6 +170,10 @@ export interface SmsReaderPlugin {
   scanBills(options: { days: number }): Promise<{ changed: number }>;
   /** A route to open once (e.g. "/bills" after tapping a bill reminder). */
   consumeOpenRoute(): Promise<{ route: string | null }>;
+  /** Read the location now and keep it for this SMS (used when the app is open). */
+  captureSmsLocation(options: { address: string; body: string }): Promise<{
+    location: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
+  }>;
   /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
   rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
   /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */

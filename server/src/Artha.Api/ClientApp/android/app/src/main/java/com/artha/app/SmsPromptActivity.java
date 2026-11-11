@@ -84,6 +84,10 @@ public class SmsPromptActivity extends AppCompatActivity {
     private String placeName;
     /** Where the phone was when this SMS was shown (saved with the expense when on). */
     private android.location.Location fix;
+    /** A location reading for the current SMS is still in flight. */
+    private boolean locating;
+    /** Add was tapped while locating: give the reading a moment before saving. */
+    private boolean approveWaiting;
     private TextView subLabel;
     private FlowLayout subChips;
     /** The group whose subcategories the chips show in place of the groups; null = groups. */
@@ -233,6 +237,8 @@ public class SmsPromptActivity extends AppCompatActivity {
         userPicked = false;
         placeName = null;
         fix = null;
+        locating = false;
+        approveWaiting = false;
         aiStatus.setVisibility(View.GONE);
         nearbyLabel.setVisibility(View.GONE);
         nearbyChips.removeAllViews();
@@ -307,6 +313,22 @@ public class SmsPromptActivity extends AppCompatActivity {
 
     private void onPrimary() {
         if (selectedCategory != null && selectedAccount != null) {
+            if (locating && fix == null && !test && NearbyPlaces.saveLocationEnabled(this)) {
+                // A known expense is one tap: wait up to 3 s so its location is saved with it.
+                if (approveWaiting) return;
+                approveWaiting = true;
+                primaryBtn.setEnabled(false);
+                primaryBtn.setAlpha(0.7f);
+                primaryBtn.setText("Saving location\u2026");
+                final int seq = renderSeq;
+                primaryBtn.postDelayed(() -> {
+                    if (approveWaiting && seq == renderSeq && !isFinishing() && !isDestroyed()) {
+                        approveWaiting = false;
+                        onApprove();
+                    }
+                }, 3000);
+                return;
+            }
             onApprove();
         } else if (!pickers.isShown()) {
             onReview();
@@ -547,11 +569,22 @@ public class SmsPromptActivity extends AppCompatActivity {
             nearbyLabel.setText("\uD83D\uDCCD Finding shops near you\u2026");
             nearbyLabel.setVisibility(View.VISIBLE);
         }
+        locating = true;
         new Thread(() -> {
             android.location.Location loc = NearbyPlaces.currentLocation(getApplicationContext(), 6000);
             if (wantSave && loc != null) {
                 NearbyPlaces.rememberForSms(getApplicationContext(), smsAddress, smsBody, loc);
             }
+            // The reading is ready: an Add waiting on it can go now (shops come later).
+            runOnUiThread(() -> {
+                if (seq != renderSeq) return;
+                if (loc != null) fix = loc;
+                locating = false;
+                if (approveWaiting && !isFinishing() && !isDestroyed()) {
+                    approveWaiting = false;
+                    onApprove();
+                }
+            });
             // Paid at this spot before: use that shop straight away, no lookup.
             NearbyPlaces.Remembered known = wantNearby && !skipMemory
                 ? NearbyPlaces.recall(getApplicationContext(), loc) : null;

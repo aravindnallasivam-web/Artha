@@ -383,6 +383,8 @@ export class SmsConfirmModal implements OnInit {
   @Input({ required: true }) parsed!: ParsedExpense;
   /** Where the phone was when the SMS arrived; saved with the expense. */
   @Input() location: ExpenseLocation | null = null;
+  /** A reading still in progress (the SMS arrived while the app was open); used when it lands in time. */
+  @Input() locationReady: Promise<ExpenseLocation | null> | null = null;
   /** An already-logged expense this SMS likely duplicates, if any. */
   @Input() duplicate: Expense | null = null;
   /** Pre-resolved best-guess category id (may be empty). */
@@ -461,7 +463,7 @@ export class SmsConfirmModal implements OnInit {
         note: this.composeNote(),
         excluded: this.excluded,
         type: this.parsed.type,
-        location: this.location,
+        location: this.location ?? (await this.readyLocation()),
       });
       // Return the chosen account + category so the capture service can learn
       // the SMS→account and merchant→category mappings for next time.
@@ -498,7 +500,16 @@ export class SmsConfirmModal implements OnInit {
    * currency (e.g. a USD card spend on an INR account), else null. Signals that
    * the prefilled amount needs converting before it's logged.
    */
-  protected foreignCurrency(): string | null {
+  /** The in-flight reading, waiting at most 3 s more so Save never hangs. */
+  private async readyLocation(): Promise<ExpenseLocation | null> {
+    if (!this.locationReady) return null;
+    return Promise.race([
+      this.locationReady.catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+    ]);
+  }
+
+    protected foreignCurrency(): string | null {
     const cur = this.parsed.currency;
     if (!cur) {
       return null;
