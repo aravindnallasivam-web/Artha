@@ -258,7 +258,7 @@ import { SettingsStore } from './settings.store';
                   </ion-label>
                 </ion-toggle>
               </ion-item>
-              @if (sms.nearbyEnabled()) {
+              @if (sms.nearbyEnabled() || sms.saveLocation()) {
                 <ion-item lines="none">
                   <ion-label class="ion-text-wrap">
                     <p class="key-hint">Shops come from OpenStreetMap (free). For better coverage of small shops,

@@ -47,10 +47,19 @@ final class NearbyPlaces {
     private static final int LOCATION_MAX = 300;
 
     private static final int RADIUS_M = 150;
-    private static final String OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+    /** Second, wider look when little is mapped right around you. */
+    private static final int WIDE_RADIUS_M = 400;
+    /** Public OpenStreetMap (Overpass) servers, tried in turn: the main one is often busy. */
+    private static final String[] OVERPASS_URLS = {
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    };
     private static final String GOOGLE_URL = "https://places.googleapis.com/v1/places:searchNearby";
     private static final String AMENITIES =
-        "restaurant|cafe|fast_food|food_court|bar|pub|ice_cream|fuel|pharmacy|cinema|marketplace|clinic|doctors|dentist|hospital";
+        "restaurant|cafe|fast_food|food_court|bar|pub|ice_cream|fuel|pharmacy|cinema|marketplace|clinic|doctors|dentist|"
+            + "hospital|bank|atm|bureau_de_change|car_wash|car_rental|veterinary|theatre|nightclub|internet_cafe|"
+            + "kindergarten|school|college|driving_school|post_office|courier|charging_station|parking|place_of_worship";
 
     /** A shop near the user. `hint` holds words to match against category names. */
     static final class Place {
@@ -223,7 +232,16 @@ final class NearbyPlaces {
         List<Place> out = new ArrayList<>();
         if (loc == null) return out;
         String googleKey = config(ctx).optString("googleKey", "").trim();
-        out = googleKey.isEmpty() ? overpass(loc) : google(loc, googleKey);
+        out = googleKey.isEmpty() ? overpass(loc, RADIUS_M) : google(loc, googleKey, RADIUS_M);
+        // Little mapped right here (common for small shops): look a bit wider.
+        if (out.size() < 3) {
+            try {
+                List<Place> wide = googleKey.isEmpty() ? overpass(loc, WIDE_RADIUS_M) : google(loc, googleKey, WIDE_RADIUS_M);
+                if (wide.size() > out.size()) out = wide;
+            } catch (Exception ignored) {
+                // Keep what the close look found.
+            }
+        }
         out.sort((a, b) -> Integer.compare(a.distanceM, b.distanceM));
         // One chip per name (chains often have several entries).
         List<Place> unique = new ArrayList<>();
@@ -293,23 +311,37 @@ final class NearbyPlaces {
 
     // ---- OpenStreetMap (Overpass) ----
 
-    private static List<Place> overpass(Location loc) throws Exception {
-        String around = "(around:" + RADIUS_M + "," + loc.getLatitude() + "," + loc.getLongitude() + ")";
-        String q = "[out:json][timeout:8];("
-            + "node" + around + "[\"name\"][\"shop\"];"
-            + "way" + around + "[\"name\"][\"shop\"];"
-            + "node" + around + "[\"name\"][\"amenity\"~\"^(" + AMENITIES + ")$\"];"
-            + "way" + around + "[\"name\"][\"amenity\"~\"^(" + AMENITIES + ")$\"];"
-            + ");out center 60;";
+    private static List<Place> overpass(Location loc, int radius) throws Exception {
+        String around = "(around:" + radius + "," + loc.getLatitude() + "," + loc.getLongitude() + ")";
+        // Shops, eating places, clinics and services, offices and workshops - anything with a name you pay.
+        String q = "[out:json][timeout:10];("
+            + "nwr" + around + "[\"name\"][\"shop\"];"
+            + "nwr" + around + "[\"name\"][\"amenity\"~\"^(" + AMENITIES + ")$\"];"
+            + "nwr" + around + "[\"name\"][\"healthcare\"];"
+            + "nwr" + around + "[\"name\"][\"craft\"];"
+            + "nwr" + around + "[\"name\"][\"office\"];"
+            + "nwr" + around + "[\"name\"][\"tourism\"~\"^(hotel|guest_house|hostel|motel)$\"];"
+            + "nwr" + around + "[\"name\"][\"leisure\"~\"^(fitness_centre|sports_centre|swimming_pool)$\"];"
+            + ");out center 80;";
         byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
-        HttpURLConnection conn = (HttpURLConnection) new URL(OVERPASS_URL).openConnection();
-        conn.setRequestMethod("POST");
-        conn.setConnectTimeout(5000);
-        conn.setReadTimeout(9000);
-        conn.setDoOutput(true);
-        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-        conn.setRequestProperty("User-Agent", "Artha-expense-app");
-        JSONObject res = send(conn, body);
+        JSONObject res = null;
+        Exception last = null;
+        for (String url : OVERPASS_URLS) {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(10000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                conn.setRequestProperty("User-Agent", "Artha-expense-app");
+                res = send(conn, body);
+                if (res != null) break;
+            } catch (Exception e) {
+                last = e; // Busy / down: try the next server.
+            }
+        }
+        if (res == null) throw last != null ? last : new java.io.IOException("Map service unavailable");
         List<Place> out = new ArrayList<>();
         JSONArray els = res != null ? res.optJSONArray("elements") : null;
         if (els == null) return out;
@@ -323,7 +355,12 @@ final class NearbyPlaces {
             double lat = el.has("lat") ? el.optDouble("lat") : el.optJSONObject("center") != null ? el.optJSONObject("center").optDouble("lat") : Double.NaN;
             double lon = el.has("lon") ? el.optDouble("lon") : el.optJSONObject("center") != null ? el.optJSONObject("center").optDouble("lon") : Double.NaN;
             if (Double.isNaN(lat) || Double.isNaN(lon)) continue;
-            String kind = tags.has("shop") ? tags.optString("shop") : tags.optString("amenity");
+            String kind = tags.has("shop") ? tags.optString("shop")
+                : tags.has("amenity") ? tags.optString("amenity")
+                : tags.has("healthcare") ? tags.optString("healthcare")
+                : tags.has("craft") ? tags.optString("craft")
+                : tags.has("office") ? tags.optString("office")
+                : tags.has("tourism") ? tags.optString("tourism") : tags.optString("leisure");
             out.add(new Place(name, kind, hintFor(kind), distance(loc, lat, lon)));
         }
         return out;
@@ -331,13 +368,13 @@ final class NearbyPlaces {
 
     // ---- Google Places (New), when the user saved a key ----
 
-    private static List<Place> google(Location loc, String key) throws Exception {
+    private static List<Place> google(Location loc, String key, int radius) throws Exception {
         JSONObject center = new JSONObject().put("latitude", loc.getLatitude()).put("longitude", loc.getLongitude());
         JSONObject reqBody = new JSONObject()
             .put("maxResultCount", 12)
             .put("rankPreference", "DISTANCE")
             .put("locationRestriction", new JSONObject().put("circle",
-                new JSONObject().put("center", center).put("radius", RADIUS_M)));
+                new JSONObject().put("center", center).put("radius", radius)));
         HttpURLConnection conn = (HttpURLConnection) new URL(GOOGLE_URL).openConnection();
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(5000);

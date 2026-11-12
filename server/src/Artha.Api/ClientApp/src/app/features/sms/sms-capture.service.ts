@@ -2287,36 +2287,70 @@ function loadNearby(): NearbyConfig {
   }
 }
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-const OVERPASS_AMENITIES = 'restaurant|cafe|fast_food|bar|pub|food_court|ice_cream|pharmacy|fuel|cinema|hospital|clinic|doctors|dentist|bank|marketplace';
+/** Public OpenStreetMap (Overpass) servers, tried in turn: the main one is often busy. */
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+const OVERPASS_AMENITIES =
+  'restaurant|cafe|fast_food|food_court|bar|pub|ice_cream|fuel|pharmacy|cinema|marketplace|clinic|doctors|dentist|' +
+  'hospital|bank|car_wash|car_rental|veterinary|theatre|driving_school|post_office|courier|charging_station|parking';
 
-/** Browser fallback for "Find nearby shops": OpenStreetMap's Overpass API. */
-async function overpassNearby(lat: number, lng: number, radius = 150): Promise<NearbyPlace[]> {
+/** Browser fallback for "Find nearby shops": OpenStreetMap, 150 m then 400 m. Throws when no server answers. */
+async function overpassNearby(lat: number, lng: number): Promise<NearbyPlace[]> {
+  let found = await overpassAround(lat, lng, 150);
+  if (found.length < 3) {
+    try {
+      const wide = await overpassAround(lat, lng, 400);
+      if (wide.length > found.length) found = wide;
+    } catch {
+      // Keep the close look.
+    }
+  }
+  return found;
+}
+
+async function overpassAround(lat: number, lng: number, radius: number): Promise<NearbyPlace[]> {
   const around = `(around:${radius},${lat},${lng})`;
   const q =
-    `[out:json][timeout:8];(` +
-    `node${around}["name"]["shop"];way${around}["name"]["shop"];` +
-    `node${around}["name"]["amenity"~"^(${OVERPASS_AMENITIES})$"];` +
-    `way${around}["name"]["amenity"~"^(${OVERPASS_AMENITIES})$"];` +
-    `);out center 60;`;
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(q)}`,
-  });
-  if (!res.ok) throw new Error(`Map lookup failed (${res.status})`);
-  const json = (await res.json()) as {
+    `[out:json][timeout:10];(` +
+    `nwr${around}["name"]["shop"];` +
+    `nwr${around}["name"]["amenity"~"^(${OVERPASS_AMENITIES})$"];` +
+    `nwr${around}["name"]["healthcare"];nwr${around}["name"]["craft"];nwr${around}["name"]["office"];` +
+    `nwr${around}["name"]["tourism"~"^(hotel|guest_house|hostel|motel)$"];` +
+    `nwr${around}["name"]["leisure"~"^(fitness_centre|sports_centre|swimming_pool)$"];` +
+    `);out center 80;`;
+  let json: {
     elements?: { lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }[];
-  };
+  } | null = null;
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(q)}`,
+      });
+      if (res.ok) {
+        json = await res.json();
+        break;
+      }
+    } catch {
+      // Busy / down: try the next server.
+    }
+  }
+  if (!json) throw new Error('Map service unavailable');
   const out: NearbyPlace[] = [];
   const seen = new Set<string>();
   const rows = (json.elements ?? [])
     .map((el) => {
-      const name = (el.tags?.['name:en'] || el.tags?.['name'] || '').trim();
+      const t = el.tags ?? {};
+      const name = (t['name:en'] || t['name'] || '').trim();
       const plat = el.lat ?? el.center?.lat;
       const plon = el.lon ?? el.center?.lon;
       if (!name || plat == null || plon == null) return null;
-      return { name, kind: el.tags?.['shop'] || el.tags?.['amenity'] || '', distanceM: metres(lat, lng, plat, plon) };
+      const kind = t['shop'] || t['amenity'] || t['healthcare'] || t['craft'] || t['office'] || t['tourism'] || t['leisure'] || '';
+      return { name, kind, distanceM: metres(lat, lng, plat, plon) };
     })
     .filter((p): p is NearbyPlace => !!p)
     .sort((a, b) => a.distanceM - b.distanceM);
@@ -2324,7 +2358,7 @@ async function overpassNearby(lat: number, lng: number, radius = 150): Promise<N
     if (seen.has(p.name.toLowerCase())) continue;
     seen.add(p.name.toLowerCase());
     out.push(p);
-    if (out.length >= 10) break;
+    if (out.length >= 12) break;
   }
   return out;
 }

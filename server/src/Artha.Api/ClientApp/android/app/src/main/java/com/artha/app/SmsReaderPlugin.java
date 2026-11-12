@@ -930,7 +930,15 @@ public class SmsReaderPlugin extends Plugin {
             loc.setLatitude(lat);
             loc.setLongitude(lng);
             com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
-            for (NearbyPlaces.Place p : NearbyPlaces.findAround(ctx, loc, 10)) {
+            List<NearbyPlaces.Place> found;
+            try {
+                found = NearbyPlaces.lookup(ctx, loc, 12);
+            } catch (Exception e) {
+                // Not "nothing here": the map service couldn't be reached.
+                call.reject("lookup-failed");
+                return;
+            }
+            for (NearbyPlaces.Place p : found) {
                 JSObject o = new JSObject();
                 o.put("name", p.name);
                 o.put("kind", p.kind);

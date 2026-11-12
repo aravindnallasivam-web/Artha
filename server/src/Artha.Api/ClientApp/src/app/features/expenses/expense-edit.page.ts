@@ -184,7 +184,14 @@ const QUICK_CATEGORY_COUNT = 7;
                     }
                   </button>
                 } @else if (places()!.length === 0) {
-                  <p class="loc-msg">{{ placesError() || 'No named shops found within 150 m.' }}</p>
+                  @if (placesError()) {
+                    <p class="loc-msg">{{ placesError() }}</p>
+                    <button type="button" class="loc-find" (click)="findPlaces(loc)">Try again</button>
+                  } @else {
+                    <p class="loc-msg">No named shops on the map within 400 m — OpenStreetMap misses many small shops.
+                      Type the shop's name in the note, or add a Google Places key in Settings → Nearby shops for
+                      much better coverage.</p>
+                  }
                 } @else {
                   <p class="loc-msg">Tap the shop you paid — it becomes the note.</p>
                   <div class="loc-chips">
@@ -450,7 +457,7 @@ export class ExpenseEditPage implements OnInit {
     try {
       this.places.set(await this.sms.findNearbyPlaces(loc.lat, loc.lng));
     } catch {
-      this.placesError.set("Couldn't reach the map service. Check the connection and try again.");
+      this.placesError.set("The map service didn't answer (it's often busy). Check the connection and try again.");
       this.places.set([]);
     } finally {
       this.placesBusy.set(false);
