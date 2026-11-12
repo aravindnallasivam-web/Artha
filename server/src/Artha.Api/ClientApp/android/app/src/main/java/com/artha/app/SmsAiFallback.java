@@ -149,6 +149,8 @@ final class SmsAiFallback {
             case "expense":
             case "income":
             case "refund":
+                // Paid with Artha's Scan & Pay moments ago: already recorded, nothing to do.
+                if ("expense".equals(k.type) && UpiRecent.consume(ctx, k.amount)) break;
                 if (k.amount > 0) {
                     storeFound(ctx, address, body, smsMs, k);
                     out.action = "expense".equals(k.type) ? "expense" : "income";

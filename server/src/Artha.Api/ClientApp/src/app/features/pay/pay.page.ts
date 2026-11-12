@@ -393,6 +393,9 @@ export class PayPage implements OnInit {
     writeLocal(APP_KEY, this.app());
     writeLocal(ACCOUNT_KEY, this.accountId);
     this.step.set('paying');
+    // From now on the bank's SMS for this payment is expected: neither the
+    // full-screen alert nor the in-app listener should ask about it.
+    this.sms.recordPaidHere(this.amount());
     let outcome: UpiOutcome = 'unknown';
     try {
       const res = await SmsReader.upiPay({
@@ -404,6 +407,7 @@ export class PayPage implements OnInit {
       outcome = parsed.status;
       this.ref.set(parsed.ref);
     } catch (e) {
+      this.sms.forgetPaidHere(this.amount());
       this.step.set('details');
       this.error.set(String((e as Error)?.message ?? e).includes('no-upi-app')
         ? 'That UPI app is no longer installed. Pick another.'
@@ -434,7 +438,6 @@ export class PayPage implements OnInit {
         type: 'expense',
         ...(this.location() ? { location: this.location() } : {}),
       });
-      this.sms.recordPaidHere(this.amount());
       if (this.remember) this.sms.rememberPayeeCategory(q.pn, this.categoryId());
       this.step.set('done');
     } catch {
@@ -446,6 +449,7 @@ export class PayPage implements OnInit {
   }
 
   protected async notPaid(failed = false): Promise<void> {
+    this.sms.forgetPaidHere(this.amount());
     await SmsReader.upiForget({ amount: this.amount() }).catch(() => undefined);
     this.step.set(failed ? 'failed' : 'details');
   }

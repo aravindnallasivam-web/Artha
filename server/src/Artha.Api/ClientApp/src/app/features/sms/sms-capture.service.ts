@@ -444,6 +444,19 @@ export class SmsCaptureService {
     }
   }
 
+  /** The Scan & Pay payment didn't happen: the next debit SMS of this amount prompts as usual. */
+  forgetPaidHere(amount: number): void {
+    const list = this.recentPaid();
+    const i = list.findIndex((x) => Math.abs(x.amount - amount) < 0.005);
+    if (i < 0) return;
+    list.splice(i, 1);
+    try {
+      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
+    } catch {
+      // Ignore.
+    }
+  }
+
   /** True (and forgets it) when this debit SMS is a payment already recorded by Scan & Pay. */
   private paidHere(p: ParsedExpense): boolean {
     if (p.type !== 'expense') return false;
