@@ -17,6 +17,7 @@ import {
 import { Category } from '../../core/models/category.model';
 import { ExpenseLocation } from '../../core/models/expense.model';
 import { SmsReader } from '../../core/native/sms-reader';
+import { AppLockService } from '../../core/security/app-lock.service';
 import { AccountsStore } from '../accounts/accounts.store';
 import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
@@ -277,6 +278,7 @@ export class PayPage implements OnInit {
   private readonly categoriesStore = inject(CategoriesStore);
   private readonly accountsStore = inject(AccountsStore);
   private readonly modalCtrl = inject(ModalController);
+  private readonly appLock = inject(AppLockService);
 
   protected readonly native = Capacitor.getPlatform() === 'android';
   @ViewChild('amountBox') private amountBox?: ElementRef<HTMLInputElement>;
@@ -373,7 +375,7 @@ export class PayPage implements OnInit {
     this.error.set(null);
     this.busy.set(true);
     try {
-      const r = await SmsReader.scanUpiQr();
+      const r = await this.appLock.hold(() => SmsReader.scanUpiQr());
       if (!r || r.cancelled || !r.qr) return;
       const q = parseUpiQr(r.qr);
       if (!q) {
@@ -467,13 +469,13 @@ export class PayPage implements OnInit {
     this.sms.recordPaidHere(this.amount(), q.pa, this.note.trim() || (placeholderName(q.pn) ? '' : q.pn));
     let outcome: UpiOutcome = 'unknown';
     try {
-      const res = await SmsReader.upiPay({
+      const res = await this.appLock.hold(() => SmsReader.upiPay({
         uri: buildPayUri(q, this.amount(), this.note),
         packageName: this.app() || null,
         amount: this.amount(),
         vpa: q.pa,
         name: q.pn,
-      });
+      }));
       const parsed = parseUpiResponse(res?.response);
       outcome = parsed.status;
       this.ref.set(parsed.ref);

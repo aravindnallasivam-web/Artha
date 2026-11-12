@@ -22,7 +22,7 @@ import {
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
-import { AppLockService } from '../../core/security/app-lock.service';
+import { AppLockService, LOCK_AFTER_OPTIONS, LockAfter } from '../../core/security/app-lock.service';
 import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { environment } from '../../../environments/environment';
@@ -146,6 +146,20 @@ import { SettingsStore } from './settings.store';
                 </ion-label>
               </ion-toggle>
             </ion-item>
+            @if (appLockEnabled()) {
+              <ion-item lines="none">
+                <ion-select
+                  label="Ask again"
+                  interface="popover"
+                  [value]="appLock.lockAfter()"
+                  (ionChange)="onLockAfter($event)"
+                >
+                  @for (o of lockAfterOptions; track o.label) {
+                    <ion-select-option [value]="o.value">{{ o.label }}</ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+            }
           </ion-list>
         }
 
@@ -589,6 +603,12 @@ export class SettingsPage implements OnInit {
   protected readonly session = inject(SessionService);
   protected readonly sms = inject(SmsCaptureService);
   protected readonly appLock = inject(AppLockService);
+  protected readonly lockAfterOptions = LOCK_AFTER_OPTIONS;
+
+  protected onLockAfter(event: Event): void {
+    const v = (event as CustomEvent<{ value: LockAfter }>).detail?.value;
+    if (v !== undefined) this.appLock.setLockAfter(v);
+  }
   protected readonly theme = inject(ThemeService);
   private readonly googleAuth = inject(GoogleAuthService);
   private readonly router = inject(Router);

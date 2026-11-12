@@ -223,7 +223,7 @@ export class VaultService {
    */
   async scanCard(): Promise<{ number: string; expiry: string; name: string } | null> {
     if (!this.isNative()) return null;
-    const r = await this.held(() => SmsReader.scanCard());
+    const r = await this.held(() => this.lock$.hold(() => SmsReader.scanCard()));
     this.touch();
     if (!r || r.cancelled || !r.number) return null;
     return { number: r.number, expiry: r.expiry ?? '', name: r.name ?? '' };

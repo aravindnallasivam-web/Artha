@@ -4,6 +4,19 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 
 const ENABLED_KEY = 'artha.appLock';
+const AFTER_KEY = 'artha.appLock.after';
+
+/**
+ * When to ask again after leaving the app: "start" = only when Artha starts
+ * (default), otherwise after this many ms away (0 = every time).
+ */
+export type LockAfter = 'start' | number;
+export const LOCK_AFTER_OPTIONS: { value: LockAfter; label: string }[] = [
+  { value: 'start', label: 'Only when Artha starts' },
+  { value: 5 * 60_000, label: 'After 5 minutes away' },
+  { value: 60_000, label: 'After 1 minute away' },
+  { value: 0, label: 'Every time I leave' },
+];
 
 /**
  * Optional biometric/device-credential app lock (Android/iOS only).
@@ -21,6 +34,43 @@ export class AppLockService {
 
   private lifecycleBound = false;
   private prompting = false;
+  /** When the app went to the background (0 = in front). */
+  private hiddenAt = 0;
+  /** Artha itself opened something (camera, UPI app, fingerprint prompt): that's not "leaving". */
+  private holds = 0;
+  private holdUntil = 0;
+
+  private readonly _lockAfter = signal<LockAfter>(loadLockAfter());
+  readonly lockAfter = this._lockAfter.asReadonly();
+
+  setLockAfter(v: LockAfter): void {
+    this._lockAfter.set(v);
+    try {
+      localStorage.setItem(AFTER_KEY, String(v));
+    } catch {
+      // This session only.
+    }
+  }
+
+  /**
+   * Run something that takes the user out of Artha on its behalf (camera
+   * scanner, the UPI app, a permission page) without the lock asking again
+   * on return.
+   */
+  async hold<T>(fn: () => Promise<T>): Promise<T> {
+    this.holds++;
+    try {
+      return await fn();
+    } finally {
+      this.holds--;
+      // The resume event can land just after the call returns.
+      this.holdUntil = Date.now() + 2000;
+    }
+  }
+
+  private held(): boolean {
+    return this.holds > 0 || Date.now() < this.holdUntil;
+  }
 
   /** Lock only makes sense on a native device. */
   isSupported(): boolean {
@@ -98,9 +148,21 @@ export class AppLockService {
         return;
       }
       if (!isActive) {
-        // Going to the background — lock so the app is covered on return.
+        if (this.held() || this.prompting) return;
+        this.hiddenAt = Date.now();
+        // "Every time": cover the app at once (also hides it in the recents view).
+        if (this._lockAfter() === 0) this._locked.set(true);
+        return;
+      }
+      const away = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
+      this.hiddenAt = 0;
+      if (this._locked()) {
+        void this.tryUnlock();
+        return;
+      }
+      const after = this._lockAfter();
+      if (after !== 'start' && away > 0 && away >= after && !this.held()) {
         this._locked.set(true);
-      } else if (this._locked()) {
         void this.tryUnlock();
       }
     });
@@ -113,6 +175,8 @@ export class AppLockService {
   }
 
   private async authenticate(title = 'Unlock Artha', subtitle = 'Verify to continue'): Promise<boolean> {
+    // The fingerprint sheet itself can pause the app on some phones: not "leaving".
+    this.holds++;
     try {
       await BiometricAuth.authenticate({
         reason: title,
@@ -126,6 +190,20 @@ export class AppLockService {
     } catch {
       // Cancelled, failed, or unavailable.
       return false;
+    } finally {
+      this.holds--;
+      this.holdUntil = Date.now() + 2000;
     }
+  }
+}
+
+function loadLockAfter(): LockAfter {
+  try {
+    const v = localStorage.getItem(AFTER_KEY);
+    if (v === null || v === 'start') return 'start';
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 'start';
+  } catch {
+    return 'start';
   }
 }
