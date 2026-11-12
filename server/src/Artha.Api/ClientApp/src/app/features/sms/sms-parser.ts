@@ -67,7 +67,12 @@ function counterparty(body: string, re: RegExp): string | null {
   let m: RegExpExecArray | null;
   while ((m = re.exec(body)) !== null) {
     const name = cleanMerchant(m[1]);
-    if (name && !OWN_ACCOUNT_RE.test(name)) return name;
+    // "for UPI txn to X": a payment word, not the payee - keep looking.
+    if (name && !OWN_ACCOUNT_RE.test(name) && !/^(?:upi|txn|imps|neft|rtgs|payment|transaction|transfer|purchase)\b/i.test(name)) {
+      return name;
+    }
+    // Look again inside the rejected text ("for UPI txn to APOLLO DENTAL").
+    re.lastIndex = m.index + 1;
   }
   return null;
 }

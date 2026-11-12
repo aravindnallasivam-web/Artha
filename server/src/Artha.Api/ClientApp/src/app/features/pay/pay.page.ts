@@ -22,14 +22,21 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
-import { UpiOutcome, UpiQr, buildPayUri, parseUpiQr, parseUpiResponse, placeholderName } from './upi';
+import {
+  UpiOutcome,
+  UpiQr,
+  buildPayUri,
+  parseUpiQr,
+  parseUpiResponse,
+  payeeNames,
+  placeholderName,
+  savePayeeName,
+} from './upi';
 
 type Step = 'scan' | 'details' | 'paying' | 'confirm' | 'done' | 'failed';
 
 const APP_KEY = 'artha.pay.app';
 const ACCOUNT_KEY = 'artha.pay.account';
-/** Shop names you typed for a UPI id whose QR has none ("Default"): { vpa: name }. */
-const PAYEE_NAMES_KEY = 'artha.pay.payeeNames';
 
 /**
  * Scan & Pay: read a shop's UPI QR, set amount + category first, pay in the
@@ -494,7 +501,7 @@ export class PayPage implements OnInit {
     this.busy.set(true);
     try {
       const name = this.note.trim();
-      await this.expensesStore.add({
+      const created = await this.expensesStore.add({
         date: localToday(),
         amount: this.amount(),
         categoryId: this.categoryId(),
@@ -504,6 +511,8 @@ export class PayPage implements OnInit {
         type: 'expense',
         ...(this.location() ? { location: this.location() } : {}),
       });
+      // No name yet: the payee name in the bank's SMS (e.g. "To APOLLO DENTAL") fills it in later.
+      this.sms.setPaidExpense(this.amount(), created.id, !name);
       // The name you typed for this UPI id is used next time you scan it.
       if (name && name !== q.pn) savePayeeName(q.pa, name);
       if (this.remember) {
@@ -534,24 +543,6 @@ export class PayPage implements OnInit {
     this.location.set(null);
     this.step.set('scan');
     void this.scan();
-  }
-}
-
-function payeeNames(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(PAYEE_NAMES_KEY) ?? '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-function savePayeeName(vpa: string, name: string): void {
-  const all = payeeNames();
-  all[vpa.toLowerCase()] = name;
-  try {
-    localStorage.setItem(PAYEE_NAMES_KEY, JSON.stringify(all));
-  } catch {
-    // This session only.
   }
 }
 

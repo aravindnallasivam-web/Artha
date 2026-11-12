@@ -14,7 +14,7 @@ import { SettingsStore } from '../settings/settings.store';
 import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { SmsScanRangeModal } from './sms-scan-range.modal';
-import { PaidHere, matchPaidIndex } from '../pay/upi';
+import { PaidHere, cleanPayeeName, matchPaidIndex, payeeNames, savePayeeName } from '../pay/upi';
 import { rememberByDefault } from './person-transfer';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 import { SAMPLE_BANK_SMS } from './sms-samples';
@@ -452,6 +452,46 @@ export class SmsCaptureService {
     if (this.isSupported()) void SmsReader.upiSetRef({ amount, ref }).catch(() => undefined);
   }
 
+  /** The expense saved for a Scan & Pay payment (its bank SMS can name the payee). */
+  setPaidExpense(amount: number, expenseId: string, autoNote: boolean): void {
+    const list = this.recentPaid();
+    const p = [...list].reverse().find((x) => Math.abs(x.amount - amount) < 0.005 && !x.expenseId);
+    if (!p) return;
+    p.expenseId = expenseId;
+    p.autoNote = autoNote;
+    this.savePaid(list);
+  }
+
+  /**
+   * The bank SMS for a Scan & Pay payment usually names the payee as the bank
+   * has it ("To APOLLO DENTAL") - the name Google Pay shows. Use it when the
+   * QR didn't carry one: for the expense's note and for that UPI id next time.
+   */
+  private async namePaidExpense(paid: PaidHere, sms: ParsedExpense): Promise<void> {
+    const name = cleanPayeeName(sms.merchant);
+    if (!name || !paid.autoNote) return;
+    if (paid.vpa && !payeeNames()[paid.vpa]) savePayeeName(paid.vpa, name);
+    if (!paid.expenseId) return;
+    try {
+      const e = this.expensesStore.findById(paid.expenseId);
+      if (!e) return;
+      // Only replace a note that is still just the UPI id.
+      if (e.note && e.note.toLowerCase() !== paid.vpa) return;
+      await this.expensesStore.update(e.id, {
+        date: e.date,
+        amount: e.amount,
+        categoryId: e.categoryId,
+        accountId: e.accountId,
+        note: name,
+        excluded: e.excluded ?? false,
+        type: e.type ?? 'expense',
+      });
+      if (e.categoryId) this.rememberPayeeCategory(name, e.categoryId);
+    } catch {
+      // The note stays as the UPI id.
+    }
+  }
+
   /** The Scan & Pay payment didn't happen: the next debit SMS of this amount prompts as usual. */
   forgetPaidHere(amount: number): void {
     const list = this.recentPaid();
@@ -470,6 +510,7 @@ export class SmsCaptureService {
     const list = this.recentPaid();
     const i = matchPaidIndex(list, p.amount, p.raw);
     if (i < 0) return false;
+    void this.namePaidExpense(list[i], p);
     list.splice(i, 1);
     this.savePaid(list);
     return true;
@@ -480,7 +521,15 @@ export class SmsCaptureService {
       const v = JSON.parse(localStorage.getItem(UPI_RECENT_KEY) ?? '[]');
       return (Array.isArray(v) ? v : [])
         .filter((x) => x && Date.now() - x.at < UPI_WINDOW_MS)
-        .map((x) => ({ amount: x.amount, at: x.at, vpa: x.vpa ?? '', name: x.name ?? '', ref: x.ref ?? '' }));
+        .map((x) => ({
+          amount: x.amount,
+          at: x.at,
+          vpa: x.vpa ?? '',
+          name: x.name ?? '',
+          ref: x.ref ?? '',
+          expenseId: x.expenseId,
+          autoNote: x.autoNote,
+        }));
     } catch {
       return [];
     }

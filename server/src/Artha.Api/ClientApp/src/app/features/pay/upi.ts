@@ -109,6 +109,49 @@ export interface PaidHere {
   vpa: string;
   name: string;
   ref: string;
+  /** The expense saved for it, once saved. */
+  expenseId?: string;
+  /** Its note is only the UPI id (no name known): the bank SMS's payee name replaces it. */
+  autoNote?: boolean;
+}
+
+const PAYEE_NAMES_KEY = 'artha.pay.payeeNames';
+
+/** Shop names known for UPI ids whose QR has none ("Default"): { vpa: name }. */
+export function payeeNames(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(PAYEE_NAMES_KEY) ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export function savePayeeName(vpa: string, name: string): void {
+  if (!vpa || !name) return;
+  const all = payeeNames();
+  all[vpa.toLowerCase()] = name;
+  try {
+    localStorage.setItem(PAYEE_NAMES_KEY, JSON.stringify(all));
+  } catch {
+    // This session only.
+  }
+}
+
+/**
+ * A payee name from a bank SMS that's good enough to show ("APOLLO DENTAL" →
+ * "Apollo Dental"), or null for UPI ids, numbers, placeholders and the
+ * user's own account.
+ */
+export function cleanPayeeName(raw: string | null | undefined): string | null {
+  const n = (raw ?? '').replace(/\s+/g, ' ').trim();
+  if (n.length < 3 || n.length > 40) return null;
+  if (n.includes('@') || n.replace(/\D/g, '').length >= 5 || placeholderName(n)) return null;
+  if (/\b(a\/?c|acct|account|card|bank|upi|ref|imps|neft)\b/i.test(n)) return null;
+  if (!/[a-z]{2}/i.test(n)) return null;
+  // Bank SMS shout in capitals: make it readable.
+  return n === n.toUpperCase()
+    ? n.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase())
+    : n;
 }
 
 const AMOUNT_ONLY_MS = 30 * 60 * 1000;
