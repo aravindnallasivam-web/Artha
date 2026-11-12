@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
@@ -22,12 +22,14 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
-import { UpiOutcome, UpiQr, buildPayUri, parseUpiQr, parseUpiResponse } from './upi';
+import { UpiOutcome, UpiQr, buildPayUri, parseUpiQr, parseUpiResponse, placeholderName } from './upi';
 
 type Step = 'scan' | 'details' | 'paying' | 'confirm' | 'done' | 'failed';
 
 const APP_KEY = 'artha.pay.app';
 const ACCOUNT_KEY = 'artha.pay.account';
+/** Shop names you typed for a UPI id whose QR has none ("Default"): { vpa: name }. */
+const PAYEE_NAMES_KEY = 'artha.pay.payeeNames';
 
 /**
  * Scan & Pay: read a shop's UPI QR, set amount + category first, pay in the
@@ -67,17 +69,22 @@ const ACCOUNT_KEY = 'artha.pay.account';
             @case ('details') {
               @if (qr(); as q) {
                 <section class="payee">
-                  <span class="avatar" aria-hidden="true">{{ initial(q.pn) }}</span>
+                  <span class="avatar" aria-hidden="true">{{ initial(note.trim() || headerName()) }}</span>
                   <div class="payee-text">
-                    <div class="payee-name">{{ q.pn }}</div>
+                    <div class="payee-name">{{ headerName() }}</div>
                     <div class="payee-id">{{ q.pa }}</div>
                   </div>
                   <span class="tag">{{ q.mc ? 'Shop' : 'Person' }}</span>
                 </section>
+                @if (noQrName() && !note.trim()) {
+                  <p class="hint">This QR doesn't carry the shop's name. Type it in <b>Note</b> once and Artha will
+                    remember it for this UPI ID.</p>
+                }
 
                 <div class="amount">
                   <span class="cur">₹</span>
-                  <input class="amount-input" type="text" inputmode="decimal" placeholder="0" aria-label="Amount"
+                  <input #amountBox class="amount-input" type="text" inputmode="decimal" placeholder="0" aria-label="Amount"
+                         [style.width.ch]="amountWidth()"
                          [readOnly]="q.am !== null" [ngModel]="amountText" (ngModelChange)="amountText = $event" />
                 </div>
                 @if (q.am !== null) { <p class="hint center">Amount set by the shop's QR.</p> }
@@ -94,7 +101,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 @if (subPath(); as p) { <p class="hint">Selected: <b>{{ p }}</b></p> }
                 <label class="remember">
                   <input type="checkbox" [(ngModel)]="remember" />
-                  <span>Remember this category for {{ q.pn }}</span>
+                  <span>Remember this category for {{ note.trim() || (noQrName() ? 'this shop' : headerName()) }}</span>
                 </label>
 
                 <div class="section">Paid from</div>
@@ -103,7 +110,8 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 </select>
 
                 <div class="section">Note</div>
-                <input class="select" type="text" [(ngModel)]="note" [placeholder]="q.pn" aria-label="Note" />
+                <input class="select" type="text" [(ngModel)]="note" [placeholder]="noQrName() ? 'Shop name' : q.pn"
+                       aria-label="Note" />
 
                 <div class="section">Pay with</div>
                 @if (apps().length === 0) {
@@ -123,11 +131,13 @@ const ACCOUNT_KEY = 'artha.pay.account';
                   <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
                   {{ location() ? 'Location will be saved with it' : locating() ? 'Getting location…' : 'No location' }}
                 </p>
-                @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
-                <button type="button" class="btn btn--primary pay" (click)="pay()" [disabled]="!canPay() || busy()">
-                  Pay {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}{{ appLabel() ? ' with ' + appLabel() : '' }}
-                </button>
                 <button type="button" class="btn btn--ghost" (click)="reset()">Scan another QR</button>
+                <div class="paybar">
+                  @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
+                  <button type="button" class="btn btn--primary pay" (click)="pay()" [disabled]="!canPay() || busy()">
+                    Pay {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}{{ appLabel() ? ' with ' + appLabel() : '' }}
+                  </button>
+                </div>
               }
             }
 
@@ -203,7 +213,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
     .amount { display: flex; align-items: baseline; justify-content: center; gap: 4px; padding: 18px 0 4px; }
     .cur { font-size: 30px; font-weight: 700; color: var(--artha-text-muted); }
     .amount-input {
-      width: 6ch; max-width: 66vw; border: 0; outline: 0; background: transparent; text-align: center;
+      max-width: 66vw; border: 0; outline: 0; background: transparent; text-align: center;
       font: inherit; font-size: 48px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text);
       font-variant-numeric: tabular-nums; caret-color: var(--artha-accent);
     }
@@ -224,6 +234,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
     }
     .hint { margin: 6px 2px 0; font-size: 12.5px; color: var(--artha-text-muted); }
     .center { text-align: center; }
+    .payee + .hint { margin-top: 8px; }
     .loc { display: flex; align-items: center; gap: 6px; margin: 16px 2px 0; font-size: 12.5px; color: var(--artha-text-muted); }
     .err { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--artha-negative); }
     .btn {
@@ -235,7 +246,21 @@ const ACCOUNT_KEY = 'artha.pay.account';
     .btn ion-icon { font-size: 20px; }
     .btn--primary { border: 0; background: var(--artha-accent); color: #fff; }
     .btn--ghost { width: 100%; border: 0; background: transparent; color: var(--artha-text-muted); margin-top: 6px; }
-    .pay { width: 100%; margin-top: 16px; height: 56px; font-size: 16px; }
+    .pay { width: 100%; height: 56px; font-size: 16px; }
+    /* Pay stays on screen, above the floating tab bar. */
+    .paybar {
+      position: sticky; bottom: 0; z-index: 5; margin: 12px -16px 0; padding: 12px 16px 16px;
+      background: var(--artha-surface);
+    }
+    .paybar::before {
+      content: ''; position: absolute; left: 0; right: 0; top: -20px; height: 20px; pointer-events: none;
+      background: linear-gradient(to bottom, transparent, var(--artha-surface));
+    }
+    .paybar .err { margin: 0 0 8px; }
+    @media (max-width: 767.98px) {
+      :host ion-content { --padding-bottom: 0px; }
+      .paybar { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+    }
   `],
 })
 export class PayPage implements OnInit {
@@ -247,6 +272,7 @@ export class PayPage implements OnInit {
   private readonly modalCtrl = inject(ModalController);
 
   protected readonly native = Capacitor.getPlatform() === 'android';
+  @ViewChild('amountBox') private amountBox?: ElementRef<HTMLInputElement>;
   protected readonly step = signal<Step>('scan');
   protected readonly qr = signal<UpiQr | null>(null);
   protected readonly categoryId = signal<string>('');
@@ -290,7 +316,15 @@ export class PayPage implements OnInit {
     const c = this.categoryId() ? this.categoriesStore.byId()[this.categoryId()] : undefined;
     return c?.parentId ? this.categoryPath() : null;
   });
-    protected readonly appLabel = computed(() => this.apps().find((a) => a.packageName === this.app())?.label ?? null);
+    /** The QR's name is a placeholder ("Default"): the shop's name has to come from you. */
+  protected readonly noQrName = computed(() => placeholderName(this.qr()?.pn));
+  private readonly savedName = signal<string | null>(null);
+  protected readonly headerName = computed(() => {
+    const q = this.qr();
+    if (!q) return '';
+    return this.savedName() ?? (this.noQrName() ? 'Unknown shop' : q.pn);
+  });
+  protected readonly appLabel = computed(() => this.apps().find((a) => a.packageName === this.app())?.label ?? null);
 
   async ngOnInit(): Promise<void> {
     if (!this.native) return;
@@ -313,6 +347,11 @@ export class PayPage implements OnInit {
     if (q?.am != null) return q.am;
     const v = Number(String(this.amountText).replace(/[^0-9.]/g, ''));
     return Number.isFinite(v) ? Math.round(v * 100) / 100 : 0;
+  }
+
+  /** The amount box grows with the number, so "₹" sits right next to it. */
+  protected amountWidth(): number {
+    return Math.max(1.6, String(this.amountText || '0').length * 0.62 + 0.4);
   }
 
   protected canPay(): boolean {
@@ -349,24 +388,47 @@ export class PayPage implements OnInit {
   private start(q: UpiQr): void {
     this.qr.set(q);
     this.amountText = q.am != null ? String(q.am) : '';
-    this.note = q.pn;
+    // A name typed before for this UPI id wins; a placeholder ("Default") is never used.
+    const saved = payeeNames()[q.pa.toLowerCase()] ?? null;
+    this.savedName.set(saved);
+    this.note = saved ?? (placeholderName(q.pn) ? '' : q.pn);
     this.ref.set(null);
-    // The category learned for this payee; shops are remembered by default, people aren't.
-    const learned = this.sms.payeeCategory(q.pn);
+    // The category learned for this shop: by its UPI id first (unique), then by name.
+    const learned =
+      this.sms.payeeCategory(q.pa) ??
+      (saved ? this.sms.payeeCategory(saved) : null) ??
+      (placeholderName(q.pn) ? null : this.sms.payeeCategory(q.pn));
     this.categoryId.set(learned ?? '');
+    // Shops are remembered by default, people aren't.
     this.remember = !!learned || !!q.mc;
     const accounts = this.accounts();
-    const saved = readLocal(ACCOUNT_KEY);
+    const savedAcc = readLocal(ACCOUNT_KEY);
     this.accountId =
-      (saved && accounts.some((a) => a.id === saved) ? saved : null) ??
+      (savedAcc && accounts.some((a) => a.id === savedAcc) ? savedAcc : null) ??
       accounts.find((a) => a.type === 'savings' || a.type === 'checking')?.id ??
       accounts[0]?.id ??
       '';
     this.step.set('details');
+    // Amount to type: open the keyboard on it.
+    if (q.am == null) setTimeout(() => this.amountBox?.nativeElement.focus(), 350);
     this.locating.set(true);
     void this.sms
       .currentLocation()
-      .then((l) => this.location.set(l))
+      .then(async (l) => {
+        this.location.set(l);
+        // No name yet: the shop you paid at this spot before.
+        if (l && !this.note.trim() && this.qr() === q) {
+          const r = await SmsReader.recallPlace({ lat: l.lat, lng: l.lng, accuracy: l.accuracy }).catch(() => null);
+          if (r?.name && !this.note.trim() && this.qr() === q) {
+            this.note = r.name;
+            this.savedName.set(r.name);
+            if (!this.categoryId() && r.categoryId && this.categoriesStore.byId()[r.categoryId]) {
+              this.categoryId.set(r.categoryId);
+              this.remember = true;
+            }
+          }
+        }
+      })
       .finally(() => this.locating.set(false));
   }
 
@@ -395,7 +457,7 @@ export class PayPage implements OnInit {
     this.step.set('paying');
     // From now on the bank's SMS for this payment is expected: neither the
     // full-screen alert nor the in-app listener should ask about it.
-    this.sms.recordPaidHere(this.amount(), q.pa, q.pn);
+    this.sms.recordPaidHere(this.amount(), q.pa, this.note.trim() || (placeholderName(q.pn) ? '' : q.pn));
     let outcome: UpiOutcome = 'unknown';
     try {
       const res = await SmsReader.upiPay({
@@ -431,17 +493,27 @@ export class PayPage implements OnInit {
     if (!q) return;
     this.busy.set(true);
     try {
+      const name = this.note.trim();
       await this.expensesStore.add({
         date: localToday(),
         amount: this.amount(),
         categoryId: this.categoryId(),
         accountId: this.accountId,
-        note: this.note.trim() || q.pn,
+        note: name || (placeholderName(q.pn) ? q.pa : q.pn),
         excluded: false,
         type: 'expense',
         ...(this.location() ? { location: this.location() } : {}),
       });
-      if (this.remember) this.sms.rememberPayeeCategory(q.pn, this.categoryId());
+      // The name you typed for this UPI id is used next time you scan it.
+      if (name && name !== q.pn) savePayeeName(q.pa, name);
+      if (this.remember) {
+        this.sms.rememberPayeeCategory(q.pa, this.categoryId());
+        if (name) this.sms.rememberPayeeCategory(name, this.categoryId());
+        if (!placeholderName(q.pn) && q.pn !== name) this.sms.rememberPayeeCategory(q.pn, this.categoryId());
+        // "You paid here before": a later payment at this spot (even by card) gets the shop and category.
+        const loc = this.location();
+        if (loc && name) void this.sms.rememberPlaceAt(loc, name, this.categoryId());
+      }
       this.step.set('done');
     } catch {
       this.step.set('confirm');
@@ -462,6 +534,24 @@ export class PayPage implements OnInit {
     this.location.set(null);
     this.step.set('scan');
     void this.scan();
+  }
+}
+
+function payeeNames(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(PAYEE_NAMES_KEY) ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function savePayeeName(vpa: string, name: string): void {
+  const all = payeeNames();
+  all[vpa.toLowerCase()] = name;
+  try {
+    localStorage.setItem(PAYEE_NAMES_KEY, JSON.stringify(all));
+  } catch {
+    // This session only.
   }
 }
 

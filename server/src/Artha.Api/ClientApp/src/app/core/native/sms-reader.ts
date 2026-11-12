@@ -205,6 +205,11 @@ export interface SmsReaderPlugin {
   }>;
   /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
   rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
+  /** The shop remembered at this spot ("you paid here before"). */
+  recallPlace(options: { lat: number; lng: number; accuracy?: number | null }): Promise<{
+    name: string | null;
+    categoryId?: string | null;
+  }>;
   /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */
   findNearbyPlaces(options: { lat: number; lng: number }): Promise<{ places: NearbyPlace[] }>;
   /** Location fixes the full-screen alert took, keyed `address|javaHash(body)|body.length`. */

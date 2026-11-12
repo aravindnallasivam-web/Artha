@@ -893,6 +893,28 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve();
     }
 
+    /** The shop remembered at this spot (paid here before): { name, categoryId } or { name: null }. */
+    @PluginMethod
+    public void recallPlace(PluginCall call) {
+        Double lat = call.getDouble("lat");
+        Double lng = call.getDouble("lng");
+        JSObject ret = new JSObject();
+        if (lat == null || lng == null) {
+            ret.put("name", null);
+            call.resolve(ret);
+            return;
+        }
+        android.location.Location loc = new android.location.Location("artha");
+        loc.setLatitude(lat);
+        loc.setLongitude(lng);
+        Double acc = call.getDouble("accuracy");
+        if (acc != null) loc.setAccuracy(acc.floatValue());
+        NearbyPlaces.Remembered r = NearbyPlaces.recall(getContext(), loc);
+        ret.put("name", r != null ? r.name : null);
+        ret.put("categoryId", r != null ? r.categoryId : null);
+        call.resolve(ret);
+    }
+
     /** Named shops around a saved location (OpenStreetMap, or Google Places with the saved key). */
     @PluginMethod
     public void findNearbyPlaces(PluginCall call) {

@@ -18,6 +18,15 @@ export interface UpiQr {
   raw: string;
 }
 
+/** Names billing apps / QR kits put in instead of the shop's ("Default", "Merchant", "NA"…). */
+const PLACEHOLDER_NAMES = /^(default|merchant|merchants|payee|customer|name|na|n\/a|none|null|test|shop|store|upi|vpa|user|unknown|paytm merchant|phonepe merchant|bharatpe merchant|my shop|your name|business|seller|retailer)$/i;
+
+/** True when the QR's name is a placeholder, not the shop's real name. */
+export function placeholderName(pn: string | null | undefined): boolean {
+  const n = (pn ?? '').trim();
+  return !n || n.length < 2 || PLACEHOLDER_NAMES.test(n) || /^[\w.\-]+@[a-z]+$/i.test(n);
+}
+
 /** Read a upi://pay link; null when it isn't one or has no payee. */
 export function parseUpiQr(raw: string): UpiQr | null {
   const text = (raw ?? '').trim();
