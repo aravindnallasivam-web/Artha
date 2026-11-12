@@ -395,17 +395,20 @@ export class PayPage implements OnInit {
     this.step.set('paying');
     // From now on the bank's SMS for this payment is expected: neither the
     // full-screen alert nor the in-app listener should ask about it.
-    this.sms.recordPaidHere(this.amount());
+    this.sms.recordPaidHere(this.amount(), q.pa, q.pn);
     let outcome: UpiOutcome = 'unknown';
     try {
       const res = await SmsReader.upiPay({
         uri: buildPayUri(q, this.amount(), this.note),
         packageName: this.app() || null,
         amount: this.amount(),
+        vpa: q.pa,
+        name: q.pn,
       });
       const parsed = parseUpiResponse(res?.response);
       outcome = parsed.status;
       this.ref.set(parsed.ref);
+      this.sms.setPaidRef(this.amount(), parsed.ref);
     } catch (e) {
       this.sms.forgetPaidHere(this.amount());
       this.step.set('details');

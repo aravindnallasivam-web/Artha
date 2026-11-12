@@ -14,6 +14,7 @@ import { SettingsStore } from '../settings/settings.store';
 import { SmsBulkReviewModal, SmsCandidateRow } from './sms-bulk-review.modal';
 import { SmsConfirmModal } from './sms-confirm.modal';
 import { SmsScanRangeModal } from './sms-scan-range.modal';
+import { PaidHere, matchPaidIndex } from '../pay/upi';
 import { rememberByDefault } from './person-transfer';
 import { ParsedExpense, parseExpenseSms } from './sms-parser';
 import { SAMPLE_BANK_SMS } from './sms-samples';
@@ -434,50 +435,62 @@ export class SmsCaptureService {
   // ----- Scan & Pay: payments made from Artha are already recorded -----
 
   /** Remember a payment made with Scan & Pay so its bank SMS doesn't prompt again. */
-  recordPaidHere(amount: number): void {
-    const list = this.recentPaid().filter((p) => Date.now() - p.at < UPI_WINDOW_MS);
-    list.push({ amount, at: Date.now() });
-    try {
-      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
-    } catch {
-      // This session only.
-    }
+  recordPaidHere(amount: number, vpa = '', name = ''): void {
+    const list = this.recentPaid();
+    list.push({ amount, at: Date.now(), vpa: vpa.toLowerCase(), name, ref: '' });
+    this.savePaid(list);
+  }
+
+  /** The UPI app's reference for that payment (bank SMS usually quote it). */
+  setPaidRef(amount: number, ref: string | null): void {
+    if (!ref) return;
+    const list = this.recentPaid();
+    const p = [...list].reverse().find((x) => Math.abs(x.amount - amount) < 0.005 && !x.ref);
+    if (!p) return;
+    p.ref = ref;
+    this.savePaid(list);
+    if (this.isSupported()) void SmsReader.upiSetRef({ amount, ref }).catch(() => undefined);
   }
 
   /** The Scan & Pay payment didn't happen: the next debit SMS of this amount prompts as usual. */
   forgetPaidHere(amount: number): void {
     const list = this.recentPaid();
-    const i = list.findIndex((x) => Math.abs(x.amount - amount) < 0.005);
-    if (i < 0) return;
-    list.splice(i, 1);
-    try {
-      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
-    } catch {
-      // Ignore.
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (Math.abs(list[i].amount - amount) < 0.005) {
+        list.splice(i, 1);
+        break;
+      }
     }
+    this.savePaid(list);
   }
 
   /** True (and forgets it) when this debit SMS is a payment already recorded by Scan & Pay. */
   private paidHere(p: ParsedExpense): boolean {
     if (p.type !== 'expense') return false;
     const list = this.recentPaid();
-    const i = list.findIndex((x) => Math.abs(x.amount - p.amount) < 0.005 && Date.now() - x.at < UPI_WINDOW_MS);
+    const i = matchPaidIndex(list, p.amount, p.raw);
     if (i < 0) return false;
     list.splice(i, 1);
-    try {
-      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
-    } catch {
-      // Ignore.
-    }
+    this.savePaid(list);
     return true;
   }
 
-  private recentPaid(): { amount: number; at: number }[] {
+  private recentPaid(): PaidHere[] {
     try {
       const v = JSON.parse(localStorage.getItem(UPI_RECENT_KEY) ?? '[]');
-      return Array.isArray(v) ? v : [];
+      return (Array.isArray(v) ? v : [])
+        .filter((x) => x && Date.now() - x.at < UPI_WINDOW_MS)
+        .map((x) => ({ amount: x.amount, at: x.at, vpa: x.vpa ?? '', name: x.name ?? '', ref: x.ref ?? '' }));
     } catch {
       return [];
+    }
+  }
+
+  private savePaid(list: PaidHere[]): void {
+    try {
+      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
+    } catch {
+      // This session only.
     }
   }
 

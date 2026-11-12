@@ -125,7 +125,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
         // Paid with Artha's Scan & Pay moments ago: already recorded, no second prompt.
         if (knownExpense) {
             Matcher paid = AMOUNT.matcher(body);
-            if (paid.find() && UpiRecent.consume(context, UpiRecent.parseAmount(paid.group(1)))) {
+            if (paid.find() && UpiRecent.consume(context, UpiRecent.parseAmount(paid.group(1)), body)) {
                 return;
             }
         }

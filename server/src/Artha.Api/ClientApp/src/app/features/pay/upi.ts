@@ -92,3 +92,53 @@ function decodeSafe(s: string): string {
     return s;
   }
 }
+
+/** A payment made with Scan & Pay, waiting for its bank SMS. */
+export interface PaidHere {
+  amount: number;
+  at: number;
+  vpa: string;
+  name: string;
+  ref: string;
+}
+
+const AMOUNT_ONLY_MS = 30 * 60 * 1000;
+
+/**
+ * Which recorded payment (if any) this debit SMS is. The amount must be equal
+ * and the SMS must name the UPI reference, the payee's UPI id or name - or,
+ * with nothing to compare, be a non-card SMS within 30 minutes. Mirrors
+ * UpiRecent.matchIndex on the phone.
+ */
+export function matchPaidIndex(list: PaidHere[], amount: number, body: string, now = Date.now()): number {
+  const text = (body ?? '').toLowerCase();
+  const flat = text.replace(/[^a-z0-9]/g, '');
+  const cardSpend = /\b(card|pos|atm)\b/.test(text);
+  // An SMS naming a UPI id or a 12-digit UPI reference is someone else's unless it matches below.
+  const namesPayee = /[a-z0-9._-]{2,}@[a-z]{2,}/.test(text);
+  const refs: string[] = text.match(/\b\d{12}\b/g) ?? [];
+  let amountOnly = -1;
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    if (Math.abs(p.amount - amount) >= 0.005) continue;
+    const vpa = (p.vpa ?? '').toLowerCase();
+    const local = vpa.includes('@') ? vpa.slice(0, vpa.indexOf('@')) : vpa;
+    const key = nameKey(p.name ?? '');
+    if ((p.ref ?? '').length >= 6 && text.includes(p.ref.toLowerCase())) return i;
+    if (vpa && text.includes(vpa)) return i;
+    if (local.length >= 4 && flat.includes(local.replace(/[^a-z0-9]/g, ''))) return i;
+    if (key.length >= 4 && flat.includes(key)) return i;
+    const otherRef = !!p.ref && refs.length > 0 && !refs.includes(p.ref);
+    if (!cardSpend && !namesPayee && !otherRef && amountOnly < 0 && now - p.at <= AMOUNT_ONLY_MS) amountOnly = i;
+  }
+  return amountOnly;
+}
+
+function nameKey(name: string): string {
+  let out = '';
+  for (const w of name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim().split(/\s+/)) {
+    if (out.length >= 8) break;
+    out += w;
+  }
+  return out;
+}

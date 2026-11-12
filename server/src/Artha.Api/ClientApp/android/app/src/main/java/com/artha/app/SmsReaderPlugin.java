@@ -718,14 +718,21 @@ public class SmsReaderPlugin extends Plugin {
             return;
         }
         // The bank's debit SMS for this payment shouldn't prompt again.
-        UpiRecent.add(getContext(), call.getDouble("amount", 0d));
+        UpiRecent.add(getContext(), call.getDouble("amount", 0d), call.getString("vpa", ""), call.getString("name", ""));
         startActivityForResult(call, pkg != null && !pkg.isEmpty() ? pay : Intent.createChooser(pay, "Pay with"), "upiPayResult");
     }
 
     /** The payment didn't go through: let the next debit SMS of this amount prompt as usual. */
     @PluginMethod
     public void upiForget(PluginCall call) {
-        UpiRecent.consume(getContext(), call.getDouble("amount", 0d));
+        UpiRecent.forget(getContext(), call.getDouble("amount", 0d));
+        call.resolve();
+    }
+
+    /** The UPI app's reference for a payment (bank SMS usually quote it): makes the SMS match exact. */
+    @PluginMethod
+    public void upiSetRef(PluginCall call) {
+        UpiRecent.setRef(getContext(), call.getDouble("amount", 0d), call.getString("ref", ""));
         call.resolve();
     }
 
