@@ -176,6 +176,12 @@ export interface SmsReaderPlugin {
   captureSmsLocation(options: { address: string; body: string }): Promise<{
     location: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
   }>;
+  /** Card vault: seal / open the vault key with the hardware keystore (right after a fingerprint check). */
+  vaultSeal(options: { data: string }): Promise<{ sealed: string }>;
+  vaultOpen(options: { sealed: string }): Promise<{ data: string }>;
+  vaultForget(): Promise<void>;
+  /** Block screenshots and the recents preview (FLAG_SECURE). */
+  setSecureScreen(options: { secure: boolean }): Promise<void>;
   /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
   rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
   /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */

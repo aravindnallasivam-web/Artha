@@ -106,14 +106,20 @@ export class AppLockService {
     });
   }
 
-  private async authenticate(): Promise<boolean> {
+  /** One fingerprint / face / screen-lock check, e.g. to open the card vault. */
+  async verify(title: string, subtitle = 'Verify it\'s you'): Promise<boolean> {
+    if (!this.isSupported()) return false;
+    return this.authenticate(title, subtitle);
+  }
+
+  private async authenticate(title = 'Unlock Artha', subtitle = 'Verify to continue'): Promise<boolean> {
     try {
       await BiometricAuth.authenticate({
-        reason: 'Unlock Artha',
+        reason: title,
         cancelTitle: 'Cancel',
         allowDeviceCredential: true,
-        androidTitle: 'Unlock Artha',
-        androidSubtitle: 'Verify to continue',
+        androidTitle: title,
+        androidSubtitle: subtitle,
         iosFallbackTitle: 'Use passcode',
       });
       return true;

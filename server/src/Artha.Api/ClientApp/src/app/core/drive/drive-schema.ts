@@ -24,6 +24,8 @@ export const DRIVE_FILES = {
   plannedExpenses: 'planned-expenses.json',
   loans: 'loans.json',
   investments: 'investments.json',
+  /** Encrypted card vault (ciphertext only; see vault-crypto.ts). */
+  cardVault: 'card-vault.json',
 } as const;
 
 /** Default Cash account seeded for every user (mirror DefaultAccountId). */

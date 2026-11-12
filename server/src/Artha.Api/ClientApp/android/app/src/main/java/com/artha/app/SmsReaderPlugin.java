@@ -631,6 +631,70 @@ public class SmsReaderPlugin extends Plugin {
         }, "artha-sms-location").start();
     }
 
+    // ---- Card vault: hardware-keystore seal + no screenshots ----
+
+    /** Seal the vault key for fingerprint unlock (call right after a fingerprint check). */
+    @PluginMethod
+    public void vaultSeal(PluginCall call) {
+        String data = call.getString("data");
+        if (data == null) {
+            call.reject("data is required");
+            return;
+        }
+        try {
+            JSObject ret = new JSObject();
+            ret.put("sealed", VaultKeystore.seal(data));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not use the phone's secure key store: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /** Open the sealed vault key (call right after a fingerprint check). */
+    @PluginMethod
+    public void vaultOpen(PluginCall call) {
+        String sealed = call.getString("sealed");
+        if (sealed == null) {
+            call.reject("sealed is required");
+            return;
+        }
+        try {
+            JSObject ret = new JSObject();
+            ret.put("data", VaultKeystore.open(sealed));
+            call.resolve(ret);
+        } catch (android.security.keystore.KeyPermanentlyInvalidatedException e) {
+            VaultKeystore.forget();
+            call.reject("invalidated");
+        } catch (Exception e) {
+            call.reject("failed");
+        }
+    }
+
+    @PluginMethod
+    public void vaultForget(PluginCall call) {
+        VaultKeystore.forget();
+        call.resolve();
+    }
+
+    /** Block screenshots / screen recording / the recents preview while the vault is open. */
+    @PluginMethod
+    public void setSecureScreen(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("secure", false));
+        android.app.Activity activity = getActivity();
+        if (activity == null) {
+            call.resolve();
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            if (on) {
+                activity.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+            } else {
+                activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+            }
+            call.resolve();
+        });
+    }
+
     /** Teach the alert: at this spot the user paid `name` (picked on the expense screen). */
     @PluginMethod
     public void rememberPlace(PluginCall call) {
