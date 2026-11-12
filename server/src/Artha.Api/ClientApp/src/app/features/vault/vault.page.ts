@@ -277,7 +277,7 @@ type View = 'list' | 'detail' | 'form' | 'settings';
                     </label>
                     <label class="field">
                       <span>Type</span>
-                      <select name="kind" [(ngModel)]="draft.kind">
+                      <select name="kind" [(ngModel)]="draft.kind" (ngModelChange)="draftKind.set($event)">
                         <option value="credit">Credit</option>
                         <option value="debit">Debit</option>
                         <option value="prepaid">Prepaid</option>
@@ -297,12 +297,21 @@ type View = 'list' | 'detail' | 'form' | 'settings';
                     </label>
                   </div>
                   <label class="field">
-                    <span>Linked account (optional)</span>
+                    <span>Linked account</span>
                     <select name="account" [(ngModel)]="draft.accountId">
                       <option [ngValue]="null">None</option>
-                      @for (a of accounts(); track a.id) { <option [ngValue]="a.id">{{ a.name }}</option> }
+                      @for (a of accountOptions(); track a.id) {
+                        <option [ngValue]="a.id">{{ a.name }}{{ a.type === 'credit_card' ? ' · credit card' : '' }}</option>
+                      }
                     </select>
                   </label>
+                  @if (!draft.accountId && draft.kind === 'credit' && digits(draft.number).length >= 12) {
+                    <button type="button" class="btn link-new" (click)="createAccount()" [disabled]="busy()">
+                      <ion-icon name="add" aria-hidden="true"></ion-icon>Create account for this card
+                    </button>
+                  }
+                  <p class="hint">SMS for the card ending {{ last4(draft.number) || '····' }} will go to the linked account.
+                    Only those last 4 digits are used outside the vault.</p>
                   <label class="field">
                     <span>Note (optional)</span>
                     <input name="note" autocomplete="off" [(ngModel)]="draft.note" placeholder="Customer care 1800…" />
@@ -412,6 +421,7 @@ type View = 'list' | 'detail' | 'form' | 'settings';
     .btn--ghost-danger { color: var(--artha-negative); }
     .add { margin-top: 16px; }
     .scan { width: 100%; border-style: dashed; color: var(--artha-accent); }
+    .link-new { width: 100%; height: 42px; font-size: 14px; color: var(--artha-accent); }
 
     .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
     .pcard {
@@ -480,6 +490,14 @@ export class VaultPage implements OnInit, OnDestroy {
 
   protected readonly networks: CardNetwork[] = ['visa', 'mastercard', 'rupay', 'amex', 'diners', 'discover', 'jcb', 'other'];
   protected readonly accounts = computed(() => this.accountsStore.active());
+  protected readonly draftKind = signal<VaultCard['kind']>('credit');
+  /** Credit cards list credit-card accounts first; debit / prepaid list the rest first. */
+  protected readonly accountOptions = computed(() => {
+    const credit = this.draftKind() === 'credit';
+    return [...this.accounts()].sort(
+      (a, b) => Number((b.type === 'credit_card') === credit) - Number((a.type === 'credit_card') === credit),
+    );
+  });
 
   protected readonly digits = digits;
   protected readonly last4 = last4;
@@ -589,11 +607,13 @@ export class VaultPage implements OnInit, OnDestroy {
 
   protected newCard(): void {
     this.draft = blankCard();
+    this.draftKind.set(this.draft.kind);
     this.go('form');
   }
 
   protected editCard(c: VaultCard): void {
     this.draft = { ...c, number: formatNumber(c.number) };
+    this.draftKind.set(c.kind);
     this.go('form');
   }
 
@@ -604,6 +624,27 @@ export class VaultPage implements OnInit, OnDestroy {
     const net = detectNetwork(d);
     // Follow the number until the user picks a network themselves.
     if (this.draft.network === 'other' || this.draft.network === before) this.draft.network = net;
+  }
+
+  /** A credit-card account for this card (name, card digits), linked at once. */
+  protected async createAccount(): Promise<void> {
+    await this.run(async () => {
+      const l4 = last4(this.draft.number);
+      const name =
+        this.draft.label.trim() || `${this.draft.bank.trim() || this.netLabel(this.draft.network)} card ${l4}`.trim();
+      const created = await this.accountsStore.add({
+        name,
+        type: 'credit_card',
+        currency: this.accounts()[0]?.currency ?? 'INR',
+        openingBalance: 0,
+        color: null,
+        icon: null,
+        bank: null,
+        cardLast4: l4,
+      });
+      this.draft.accountId = created.id;
+      this.flash(`Account "${created.name}" created and linked.`);
+    });
   }
 
   protected async scan(): Promise<void> {

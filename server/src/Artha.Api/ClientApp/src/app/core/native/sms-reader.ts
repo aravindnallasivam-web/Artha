@@ -121,6 +121,8 @@ export interface SmsReaderPlugin {
    */
   setNotificationMappings(options: {
     accountNames: Record<string, string>;
+    /** Card / a/c last digits → account name ("4444" → "HDFC Credit Card"). */
+    accountHints?: Record<string, string>;
     categoryNames: Record<string, string>;
     /** Every active category (most used first), for the full-screen prompt's picker. */
     categories?: { id: string; name: string; color: string | null; parentId: string | null }[];

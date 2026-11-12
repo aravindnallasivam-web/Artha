@@ -16,7 +16,8 @@ import {
   unlockWithPassword,
   wrapWithPassword,
 } from '../../core/security/vault-crypto';
-import { CardNetwork } from './card-utils';
+import { SmsCaptureService } from '../sms/sms-capture.service';
+import { CardNetwork, last4 } from './card-utils';
 
 export interface VaultCard {
   id: string;
@@ -58,6 +59,7 @@ export class VaultService {
   private readonly repo = inject(AppDataRepository);
   private readonly lock$ = inject(AppLockService);
   private readonly zone = inject(NgZone);
+  private readonly sms = inject(SmsCaptureService);
 
   private readonly _status = signal<VaultStatus>('loading');
   private readonly _cards = signal<VaultCard[]>([]);
@@ -176,19 +178,43 @@ export class VaultService {
     const now = new Date().toISOString();
     const list = this._cards();
     const i = list.findIndex((c) => c.id === card.id);
+    const before = i >= 0 ? list[i] : null;
     const next = i >= 0
       ? list.map((c) => (c.id === card.id ? { ...card, updatedAt: now } : c))
       : [...list, { ...card, createdAt: now, updatedAt: now }];
     this._cards.set(next);
     await this.persist();
     this.touch();
+    await this.syncLink(before, card);
   }
 
   async remove(id: string): Promise<void> {
     this.requireUnlocked();
+    const gone = this._cards().find((c) => c.id === id) ?? null;
     this._cards.set(this._cards().filter((c) => c.id !== id));
     await this.persist();
     this.touch();
+    await this.syncLink(gone, null);
+  }
+
+  /**
+   * Keep the linked account's card digits in step with the vault, so SMS for
+   * this card land on that account. Only the last 4 digits leave the vault
+   * (they're in every bank SMS anyway).
+   */
+  private async syncLink(before: VaultCard | null, after: VaultCard | null): Promise<void> {
+    try {
+      const was = before?.accountId ? { l4: last4(before.number), acc: before.accountId } : null;
+      const now = after?.accountId ? { l4: last4(after.number), acc: after.accountId } : null;
+      if (was && (!now || was.l4 !== now.l4 || was.acc !== now.acc)) {
+        await this.sms.unlinkCard(was.l4, was.acc);
+      }
+      if (now && now.l4.length === 4) {
+        await this.sms.linkCard(now.l4, now.acc);
+      }
+    } catch {
+      // The card is saved; the link can be set again by saving it once more.
+    }
   }
 
   /**

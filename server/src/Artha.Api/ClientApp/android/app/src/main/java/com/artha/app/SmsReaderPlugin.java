@@ -355,6 +355,9 @@ public class SmsReaderPlugin extends Plugin {
                 editor.remove(AiClient.KEY_AI_CONFIG);
             }
         }
+        JSObject accountHints = call.getObject("accountHints");
+        editor.putString(SmsBackgroundReceiver.KEY_ACCOUNT_HINTS,
+            accountHints != null ? accountHints.toString() : "{}");
         editor
             .putString(SmsBackgroundReceiver.KEY_ACCOUNT_NAMES,
                 accountNames != null ? accountNames.toString() : "{}")

@@ -3,6 +3,7 @@ import { App } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { ModalController } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
+import { Account, AccountUpsertRequest } from '../../core/models/account.model';
 import { Expense, ExpenseLocation } from '../../core/models/expense.model';
 import { AiFoundEntry, NearbyPlace, PreApprovedEntry, SmsMessage, SmsReader } from '../../core/native/sms-reader';
 import { AccountsStore } from '../accounts/accounts.store';
@@ -228,6 +229,16 @@ export class SmsCaptureService {
       }
     }
 
+    // Card / a/c endings → account, so the alert tells two cards of one bank apart.
+    const accountHints: Record<string, string> = {};
+    for (const [key, accountId] of Object.entries(this.accountMap())) {
+      const acc = accById[accountId];
+      if (key.startsWith('h:') && acc && !acc.archived) accountHints[key.slice(2)] = acc.name;
+    }
+    for (const acc of Object.values(accById)) {
+      if (acc.cardLast4 && !acc.archived) accountHints[acc.cardLast4] = acc.name;
+    }
+
     const categoryNames: Record<string, string> = {};
     for (const [merchantKey, categoryId] of Object.entries(this.categoryMap())) {
       const cat = catById[categoryId];
@@ -271,7 +282,7 @@ export class SmsCaptureService {
         ? { ...this.ai.config(), alert: this.ai.alertSuggest(), smsFallback: this.ai.smsFallback() }
         : null;
     const nearby = { ...this._nearby() };
-    await SmsReader.setNotificationMappings({ accountNames, categoryNames, categories, accounts, ai, nearby }).catch(
+    await SmsReader.setNotificationMappings({ accountNames, accountHints, categoryNames, categories, accounts, ai, nearby }).catch(
       () => undefined,
     );
   }
@@ -1649,6 +1660,9 @@ export class SmsCaptureService {
   /** An account confidently known for this SMS (learned, or the only account). */
   private learnedAccountId(parsed: ParsedExpense): string | null {
     const accounts = this.accountsStore.items().filter((a) => !a.archived);
+    // A card linked to an account (Card vault / the account's "last 4 digits") is certain.
+    const byCard = this.accountByCard(parsed);
+    if (byCard) return byCard;
     const map = this.accountMap();
     for (const key of accountKeys(parsed)) {
       const mapped = map[key];
@@ -1827,6 +1841,9 @@ export class SmsCaptureService {
     const accounts = this.accountsStore.items().filter((a) => !a.archived);
     // 1) A mapping the user taught us by confirming a prior SMS — try the
     //    card/account hint first (most specific), then the sender.
+    // 0) The card this SMS names is linked to an account.
+    const byCard = this.accountByCard(parsed);
+    if (byCard) return byCard;
     const map = this.accountMap();
     for (const key of accountKeys(parsed)) {
       const mapped = map[key];
@@ -1847,6 +1864,42 @@ export class SmsCaptureService {
     }
     // 4) Fall back to the first account; the user's choice gets remembered.
     return accounts[0]?.id ?? '';
+  }
+
+  /** The active account whose card ends in the digits this SMS names ("card XX4444"). */
+  private accountByCard(parsed: ParsedExpense): string | null {
+    const hint = parsed.accountHint;
+    if (!hint || hint.length < 3) return null;
+    const hits = this.accountsStore
+      .items()
+      .filter((a) => !a.archived && a.cardLast4 && a.cardLast4.endsWith(hint));
+    return hits.length === 1 ? hits[0].id : null;
+  }
+
+  /**
+   * Link a card (by its last 4 digits) to an account, e.g. from the Card vault.
+   * Sets the account's card digits (synced in Drive) so every SMS for that card
+   * lands on it; the digits are cleared from any other account that had them.
+   */
+  async linkCard(last4: string, accountId: string): Promise<void> {
+    await this.ensureStores();
+    for (const a of this.accountsStore.items()) {
+      const want = a.id === accountId ? last4 : a.cardLast4 === last4 ? null : a.cardLast4 ?? null;
+      if ((a.cardLast4 ?? null) !== want) {
+        await this.accountsStore.update(a.id, { ...upsertOf(a), cardLast4: want });
+      }
+    }
+    void this.syncNotificationMappings();
+  }
+
+  /** Undo linkCard (the card was deleted or re-linked elsewhere). */
+  async unlinkCard(last4: string, accountId: string): Promise<void> {
+    await this.ensureStores();
+    const a = this.accountsStore.byId()[accountId];
+    if (a && a.cardLast4 === last4) {
+      await this.accountsStore.update(a.id, { ...upsertOf(a), cardLast4: null });
+      void this.syncNotificationMappings();
+    }
   }
 
   private accountMap(): Record<string, string> {
@@ -2113,6 +2166,23 @@ function fromAlertEntry(e: PreApprovedEntry): ParsedExpense | null {
     sender: e.address,
     raw: e.body,
     source: 'ai',
+  };
+}
+
+/** An account as an update request (all fields kept). */
+function upsertOf(a: Account): AccountUpsertRequest {
+  return {
+    name: a.name,
+    type: a.type,
+    currency: a.currency,
+    openingBalance: a.openingBalance,
+    color: a.color,
+    icon: a.icon,
+    bank: a.bank,
+    creditLimit: a.creditLimit ?? null,
+    cardLast4: a.cardLast4 ?? null,
+    statementDay: a.statementDay ?? null,
+    dueDay: a.dueDay ?? null,
   };
 }
 

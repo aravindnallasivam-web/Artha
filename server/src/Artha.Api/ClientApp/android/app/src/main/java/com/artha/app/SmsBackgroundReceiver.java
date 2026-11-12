@@ -42,6 +42,11 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     static final String KEY_IGNORED = "ignored_senders";
     /** JSON {normalisedSender: accountName} of learned account mappings (JS-synced). */
     static final String KEY_ACCOUNT_NAMES = "account_names";
+    /** JSON {last digits: accountName}: linked cards / learned a/c endings (JS-synced). */
+    static final String KEY_ACCOUNT_HINTS = "account_hints";
+    /** "card XX4444", "A/c no. ...5678", "card ending 4444". */
+    private static final Pattern ACCOUNT_DIGITS =
+        Pattern.compile("(?i)\\b(?:a/c|acct|account|card)\\b[^\\d]{0,14}(\\d{3,4})\\b");
     /** JSON {merchantKey: categoryName} of learned category mappings (JS-synced). */
     static final String KEY_CATEGORY_NAMES = "category_names";
     /** All active categories, [{name, color}], so the prompt can offer a picker. */
@@ -220,7 +225,28 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
     }
 
     /** Learned account name for this sender, or null. */
-    private String accountNameFor(Context ctx, String sender) {
+    private String accountNameFor(Context ctx, String sender, String body) {
+        // The card / account the SMS names first: tells two cards of one bank apart.
+        if (body != null) {
+            org.json.JSONObject hints = readJson(ctx, KEY_ACCOUNT_HINTS);
+            Matcher m = ACCOUNT_DIGITS.matcher(body);
+            while (m.find()) {
+                String digits = m.group(1);
+                String byHint = hints.optString(digits, null);
+                if (byHint == null && digits.length() == 3) {
+                    // "XX444" style masks: match the end of a 4-digit ending.
+                    java.util.Iterator<String> keys = hints.keys();
+                    while (keys.hasNext()) {
+                        String k = keys.next();
+                        if (k.endsWith(digits)) {
+                            byHint = hints.optString(k, null);
+                            break;
+                        }
+                    }
+                }
+                if (byHint != null && !byHint.isEmpty()) return byHint;
+            }
+        }
         if (sender == null || sender.isEmpty()) {
             return null;
         }
@@ -350,7 +376,7 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
 
         // Both the account (by sender) and category (a learned merchant key found
         // in the body) must resolve to offer the one-tap "Add" action.
-        String accountName = test ? testAccount(context) : accountNameFor(context, address);
+        String accountName = test ? testAccount(context) : accountNameFor(context, address, body);
         // The test leaves the category unknown (when the app has synced its
         // list) so the prompt shows the category picker.
         String categoryName = test
