@@ -135,4 +135,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Scan & Pay: find the installed UPI apps (Google Pay, PhonePe, Paytm, BHIM…). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" android:host="pay" />
+        </intent>
+    </queries>
 </manifest>

@@ -178,6 +178,17 @@ export interface SmsReaderPlugin {
   captureSmsLocation(options: { address: string; body: string }): Promise<{
     location: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
   }>;
+  /** Scan & Pay: read a UPI QR with the camera. */
+  scanUpiQr(): Promise<{ qr?: string | null; cancelled?: boolean }>;
+  /** Installed apps that can pay a upi:// link. */
+  listUpiApps(): Promise<{ apps: { packageName: string; label: string }[] }>;
+  /** Open a UPI app with the payment; resolves when the user comes back. */
+  upiPay(options: { uri: string; packageName?: string | null; amount: number }): Promise<{
+    resultCode: number;
+    response: string | null;
+  }>;
+  /** A Scan & Pay payment didn't happen: stop skipping the next debit SMS of this amount. */
+  upiForget(options: { amount: number }): Promise<void>;
   /** Card vault: scan a card with the camera (read on the phone; the CVV is never read). */
   scanCard(): Promise<{ number?: string | null; expiry?: string | null; name?: string | null; cancelled?: boolean }>;
   /** Card vault: seal / open the vault key with the hardware keystore (right after a fingerprint check). */

@@ -122,9 +122,15 @@ interface CategorySlice {
             <a routerLink="/planned-expenses" class="action">
               <span class="action-ic ic-orange"><ion-icon name="calendar-outline" aria-hidden="true"></ion-icon></span>Planned
             </a>
-            <a routerLink="/loans" class="action">
-              <span class="action-ic ic-blue"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon></span>Loans
-            </a>
+            @if (sms.isSupported()) {
+              <a routerLink="/pay" class="action">
+                <span class="action-ic ic-blue"><ion-icon name="qr-code-outline" aria-hidden="true"></ion-icon></span>Scan &amp; Pay
+              </a>
+            } @else {
+              <a routerLink="/loans" class="action">
+                <span class="action-ic ic-blue"><ion-icon name="cash-outline" aria-hidden="true"></ion-icon></span>Loans
+              </a>
+            }
           </nav>
 
           <!-- Pending SMS expenses -->

@@ -431,6 +431,54 @@ export class SmsCaptureService {
     return added;
   }
 
+  // ----- Scan & Pay: payments made from Artha are already recorded -----
+
+  /** Remember a payment made with Scan & Pay so its bank SMS doesn't prompt again. */
+  recordPaidHere(amount: number): void {
+    const list = this.recentPaid().filter((p) => Date.now() - p.at < UPI_WINDOW_MS);
+    list.push({ amount, at: Date.now() });
+    try {
+      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
+    } catch {
+      // This session only.
+    }
+  }
+
+  /** True (and forgets it) when this debit SMS is a payment already recorded by Scan & Pay. */
+  private paidHere(p: ParsedExpense): boolean {
+    if (p.type !== 'expense') return false;
+    const list = this.recentPaid();
+    const i = list.findIndex((x) => Math.abs(x.amount - p.amount) < 0.005 && Date.now() - x.at < UPI_WINDOW_MS);
+    if (i < 0) return false;
+    list.splice(i, 1);
+    try {
+      localStorage.setItem(UPI_RECENT_KEY, JSON.stringify(list));
+    } catch {
+      // Ignore.
+    }
+    return true;
+  }
+
+  private recentPaid(): { amount: number; at: number }[] {
+    try {
+      const v = JSON.parse(localStorage.getItem(UPI_RECENT_KEY) ?? '[]');
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** The category learned for a payee name (Scan & Pay), if any. */
+  payeeCategory(name: string): string | null {
+    const id = this.categoryMap()[categoryKey(name)];
+    return id && this.categoriesStore.byId()[id] && !this.categoriesStore.byId()[id].archived ? id : null;
+  }
+
+  /** Learn "payee → category" from a Scan & Pay payment. */
+  rememberPayeeCategory(name: string, categoryId: string): void {
+    this.rememberCategory({ merchant: name } as ParsedExpense, categoryId);
+  }
+
   /** Teach the alert's place memory (phone only; ignored elsewhere). */
   async rememberPlaceAt(loc: ExpenseLocation, name: string, categoryId: string | null): Promise<void> {
     if (!this.isSupported() || !name.trim()) return;
@@ -730,6 +778,7 @@ export class SmsCaptureService {
     // ones whose vendor + account are already learned (notifying the user),
     // then surface whatever is left as the reviewable backlog.
     for (const p of parsed) {
+      if (this.paidHere(p)) continue;
       this.enqueue(p);
     }
     // SMS the AI read (patterns didn't recognise them) wait in Pending as "AI guess".
@@ -1137,7 +1186,7 @@ export class SmsCaptureService {
       this.setLastSeen(Math.max(this.getLastSeen(), msg.date + 1));
     }
     const parsed = parseExpenseSms(msg);
-    if (!parsed) {
+    if (!parsed || this.paidHere(parsed)) {
       return;
     }
     // Queue it (never lost). If the vendor + account are already learned, log
@@ -2139,6 +2188,9 @@ const SCAN_LIMIT = 5000;
 
 const NEARBY_KEY = 'artha.sms.nearby';
 const PLACE_NAMES_KEY = 'artha.sms.placeNames';
+const UPI_RECENT_KEY = 'artha.upi.recent';
+/** A Scan & Pay payment's bank SMS arrives within this window. */
+const UPI_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 interface NearbyConfig {
   enabled: boolean;

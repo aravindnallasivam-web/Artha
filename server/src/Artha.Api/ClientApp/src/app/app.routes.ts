@@ -139,6 +139,10 @@ export const routes: Routes = [
           import('./features/settings/settings.page').then((m) => m.SettingsPage),
       },
       {
+        path: 'pay',
+        loadComponent: () => import('./features/pay/pay.page').then((m) => m.PayPage),
+      },
+      {
         path: 'vault',
         loadComponent: () => import('./features/vault/vault.page').then((m) => m.VaultPage),
       },

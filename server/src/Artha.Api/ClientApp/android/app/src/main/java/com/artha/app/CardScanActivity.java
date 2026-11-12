@@ -29,6 +29,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.mlkit.vision.barcode.BarcodeScanner;
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions;
+import com.google.mlkit.vision.barcode.BarcodeScanning;
+import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
@@ -47,6 +51,9 @@ public class CardScanActivity extends AppCompatActivity {
     static final String EXTRA_NUMBER = "number";
     static final String EXTRA_EXPIRY = "expiry";
     static final String EXTRA_NAME = "name";
+    /** "card" (default) or "upi": read a UPI QR code instead of a card. */
+    static final String EXTRA_MODE = "mode";
+    static final String EXTRA_QR = "qr";
 
     /** After the number is read, how long to keep looking for the expiry / name. */
     private static final long EXTRA_LOOK_MS = 3500;
@@ -57,6 +64,8 @@ public class CardScanActivity extends AppCompatActivity {
     private Camera camera;
     private ExecutorService executor;
     private TextRecognizer recognizer;
+    private BarcodeScanner qrScanner;
+    private boolean upiMode;
     private boolean torchOn;
     private volatile boolean done;
     private volatile boolean busy;
@@ -71,10 +80,16 @@ public class CardScanActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        upiMode = "upi".equals(getIntent().getStringExtra(EXTRA_MODE));
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(buildLayout());
         executor = Executors.newSingleThreadExecutor();
-        recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        if (upiMode) {
+            qrScanner = BarcodeScanning.getClient(new BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE).build());
+        } else {
+            recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        }
         startCamera();
     }
 
@@ -84,6 +99,7 @@ public class CardScanActivity extends AppCompatActivity {
         done = true;
         if (executor != null) executor.shutdown();
         if (recognizer != null) recognizer.close();
+        if (qrScanner != null) qrScanner.close();
     }
 
     private View buildLayout() {
@@ -92,10 +108,10 @@ public class CardScanActivity extends AppCompatActivity {
         previewView = new PreviewView(this);
         previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
         root.addView(previewView, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(new FrameOverlay(this), new FrameLayout.LayoutParams(-1, -1));
+        root.addView(new FrameOverlay(this, upiMode), new FrameLayout.LayoutParams(-1, -1));
 
         TextView title = new TextView(this);
-        title.setText("Scan card");
+        title.setText(upiMode ? "Scan & Pay" : "Scan card");
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
@@ -104,7 +120,9 @@ public class CardScanActivity extends AppCompatActivity {
         root.addView(title, tp);
 
         hint = new TextView(this);
-        hint.setText("Fit the card in the frame, on a plain surface with good light");
+        hint.setText(upiMode
+            ? "Point at the shop's UPI QR code"
+            : "Fit the card in the frame, on a plain surface with good light");
         hint.setTextColor(Color.WHITE);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         hint.setGravity(Gravity.CENTER);
@@ -177,6 +195,24 @@ public class CardScanActivity extends AppCompatActivity {
         }
         busy = true;
         InputImage image = InputImage.fromMediaImage(proxy.getImage(), proxy.getImageInfo().getRotationDegrees());
+        if (upiMode) {
+            qrScanner.process(image)
+                .addOnSuccessListener(codes -> {
+                    for (Barcode b : codes) {
+                        String raw = b.getRawValue();
+                        if (raw != null && raw.trim().toLowerCase(java.util.Locale.ROOT).startsWith("upi:")) {
+                            finishWithQr(raw.trim());
+                            return;
+                        }
+                    }
+                    if (!codes.isEmpty() && !done) hint.setText("That QR isn't a UPI payment code.");
+                })
+                .addOnCompleteListener(t -> {
+                    busy = false;
+                    proxy.close();
+                });
+            return;
+        }
         recognizer.process(image)
             .addOnSuccessListener(text -> onText(text.getText()))
             .addOnCompleteListener(t -> {
@@ -224,6 +260,13 @@ public class CardScanActivity extends AppCompatActivity {
         finish();
     }
 
+    private void finishWithQr(String qr) {
+        if (done) return;
+        done = true;
+        setResult(RESULT_OK, new Intent().putExtra(EXTRA_QR, qr));
+        finish();
+    }
+
     private void toggleTorch() {
         if (camera == null || !camera.getCameraInfo().hasFlashUnit()) return;
         torchOn = !torchOn;
@@ -242,8 +285,11 @@ public class CardScanActivity extends AppCompatActivity {
         private final Path path = new Path();
         private final RectF card = new RectF();
 
-        FrameOverlay(android.content.Context ctx) {
+        private final boolean square;
+
+        FrameOverlay(android.content.Context ctx, boolean square) {
             super(ctx);
+            this.square = square;
             dim.setColor(0x99000000);
             edge.setStyle(Paint.Style.STROKE);
             edge.setColor(Color.WHITE);
@@ -254,8 +300,8 @@ public class CardScanActivity extends AppCompatActivity {
         protected void onDraw(@NonNull Canvas canvas) {
             float w = getWidth();
             float h = getHeight();
-            float cw = w * 0.86f;
-            float ch = cw / 1.586f; // ID-1 card ratio
+            float cw = square ? w * 0.7f : w * 0.86f;
+            float ch = square ? cw : cw / 1.586f; // ID-1 card ratio
             float left = (w - cw) / 2f;
             float top = (h - ch) / 2f - h * 0.04f;
             float r = cw * 0.05f;

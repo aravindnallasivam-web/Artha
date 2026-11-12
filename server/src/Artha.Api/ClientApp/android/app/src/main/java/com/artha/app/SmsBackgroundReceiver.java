@@ -122,6 +122,13 @@ public class SmsBackgroundReceiver extends BroadcastReceiver {
             askAi(context, address, body);
             return;
         }
+        // Paid with Artha's Scan & Pay moments ago: already recorded, no second prompt.
+        if (knownExpense) {
+            Matcher paid = AMOUNT.matcher(body);
+            if (paid.find() && UpiRecent.consume(context, UpiRecent.parseAmount(paid.group(1)))) {
+                return;
+            }
+        }
         // Foreground: the in-app live listener shows the popup — don't also notify.
         if (MainActivity.isForeground) {
             return;

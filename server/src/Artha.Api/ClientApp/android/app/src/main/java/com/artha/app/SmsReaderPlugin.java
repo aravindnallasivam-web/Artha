@@ -639,6 +639,119 @@ public class SmsReaderPlugin extends Plugin {
         }, "artha-sms-location").start();
     }
 
+    // ---- Scan & Pay (UPI) ----
+
+    /** Scan a UPI QR code; resolves { qr: "upi://pay?..." } or { cancelled: true }. */
+    @PluginMethod
+    public void scanUpiQr(PluginCall call) {
+        if (getPermissionState("camera") != PermissionState.GRANTED) {
+            requestPermissionForAlias("camera", call, "cameraQrPermsCallback");
+            return;
+        }
+        launchQrScan(call);
+    }
+
+    @PermissionCallback
+    private void cameraQrPermsCallback(PluginCall call) {
+        if (getPermissionState("camera") == PermissionState.GRANTED) {
+            launchQrScan(call);
+        } else {
+            call.reject("camera-denied");
+        }
+    }
+
+    private void launchQrScan(PluginCall call) {
+        Intent i = new Intent(getContext(), CardScanActivity.class).putExtra(CardScanActivity.EXTRA_MODE, "upi");
+        startActivityForResult(call, i, "qrScanResult");
+    }
+
+    @ActivityCallback
+    private void qrScanResult(PluginCall call, androidx.activity.result.ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        Intent data = result.getData();
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || data == null) {
+            ret.put("cancelled", true);
+        } else {
+            ret.put("qr", data.getStringExtra(CardScanActivity.EXTRA_QR));
+        }
+        call.resolve(ret);
+    }
+
+    /** Installed apps that can pay a upi://pay link: [{ packageName, label }]. */
+    @PluginMethod
+    public void listUpiApps(PluginCall call) {
+        android.content.pm.PackageManager pm = getContext().getPackageManager();
+        Intent probe = new Intent(Intent.ACTION_VIEW, Uri.parse("upi://pay?pa=test@upi&pn=Test&am=1&cu=INR"));
+        JSArray apps = new JSArray();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(probe, 0)) {
+            String pkg = ri.activityInfo.packageName;
+            if (pkg.equals(getContext().getPackageName()) || !seen.add(pkg)) continue;
+            JSObject o = new JSObject();
+            o.put("packageName", pkg);
+            o.put("label", String.valueOf(ri.loadLabel(pm)));
+            apps.put(o);
+        }
+        JSObject ret = new JSObject();
+        ret.put("apps", apps);
+        call.resolve(ret);
+    }
+
+    /**
+     * Open a UPI app with the payment filled in. Resolves when the user comes
+     * back: { resultCode, response } where response is the app's
+     * "txnId=..&responseCode=..&Status=SUCCESS&txnRef=.." text when it sends one.
+     */
+    @PluginMethod
+    public void upiPay(PluginCall call) {
+        String uri = call.getString("uri");
+        if (uri == null || !uri.toLowerCase(java.util.Locale.ROOT).startsWith("upi:")) {
+            call.reject("A upi:// link is required");
+            return;
+        }
+        Intent pay = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
+        String pkg = call.getString("packageName");
+        if (pkg != null && !pkg.isEmpty()) pay.setPackage(pkg);
+        if (pay.resolveActivity(getContext().getPackageManager()) == null) {
+            call.reject("no-upi-app");
+            return;
+        }
+        // The bank's debit SMS for this payment shouldn't prompt again.
+        UpiRecent.add(getContext(), call.getDouble("amount", 0d));
+        startActivityForResult(call, pkg != null && !pkg.isEmpty() ? pay : Intent.createChooser(pay, "Pay with"), "upiPayResult");
+    }
+
+    /** The payment didn't go through: let the next debit SMS of this amount prompt as usual. */
+    @PluginMethod
+    public void upiForget(PluginCall call) {
+        UpiRecent.consume(getContext(), call.getDouble("amount", 0d));
+        call.resolve();
+    }
+
+    @ActivityCallback
+    private void upiPayResult(PluginCall call, androidx.activity.result.ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        ret.put("resultCode", result.getResultCode());
+        Intent data = result.getData();
+        String response = null;
+        if (data != null) {
+            response = data.getStringExtra("response");
+            if (response == null && data.getExtras() != null) {
+                // Some apps send separate extras instead of one response string.
+                StringBuilder sb = new StringBuilder();
+                for (String k : data.getExtras().keySet()) {
+                    Object v = data.getExtras().get(k);
+                    if (v != null) sb.append(sb.length() == 0 ? "" : "&").append(k).append('=').append(v);
+                }
+                response = sb.length() > 0 ? sb.toString() : null;
+            }
+        }
+        ret.put("response", response);
+        call.resolve(ret);
+    }
+
     // ---- Card vault: scan a card with the camera ----
 
     /** Open the camera card scanner; resolves { number, expiry, name } or { cancelled: true }. */
