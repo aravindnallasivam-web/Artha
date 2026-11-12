@@ -186,6 +186,10 @@ export interface SmsReaderPlugin {
   vaultForget(): Promise<void>;
   /** Block screenshots and the recents preview (FLAG_SECURE). */
   setSecureScreen(options: { secure: boolean }): Promise<void>;
+  /** The phone's location now (Android). */
+  getCurrentLocation(): Promise<{
+    location: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
+  }>;
   /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
   rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
   /** Named shops around a point (OpenStreetMap, or Google Places with the saved key). */

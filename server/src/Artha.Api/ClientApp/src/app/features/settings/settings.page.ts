@@ -219,6 +219,27 @@ import { SettingsStore } from './settings.store';
                   </ion-select>
                 </ion-item>
               }
+              <!-- Save where you were with every new expense (own setting, on by default). -->
+              <ion-item lines="none">
+                <span class="icon-chip chip-accent" slot="start">
+                  <ion-icon name="location-outline"></ion-icon>
+                </span>
+                <ion-toggle
+                  labelPlacement="start"
+                  justify="space-between"
+                  [checked]="sms.saveLocation()"
+                  (ionChange)="onSaveLocationToggle($event)"
+                >
+                  <ion-label class="ion-text-wrap">
+                    <h2>Save location with expenses</h2>
+                    <p>Keeps where you were when you paid — for SMS expenses and ones you add yourself — in your
+                      Drive with the expense, so you can open it in Maps or find the shop later.</p>
+                    @if (sms.saveLocation() && locationPerm() && locationPerm() !== 'granted') {
+                      <p class="warn-line">Location permission is off, so nothing is saved. Turn this off and on to allow it.</p>
+                    }
+                  </ion-label>
+                </ion-toggle>
+              </ion-item>
               <!-- Nearby shops on the expense alert (location, while it is on screen). -->
               <ion-item lines="none">
                 <span class="icon-chip chip-accent" slot="start">
@@ -238,20 +259,6 @@ import { SettingsStore } from './settings.store';
                 </ion-toggle>
               </ion-item>
               @if (sms.nearbyEnabled()) {
-                <ion-item lines="none">
-                  <ion-toggle
-                    labelPlacement="start"
-                    justify="space-between"
-                    [checked]="sms.saveLocation()"
-                    (ionChange)="onSaveLocationToggle($event)"
-                  >
-                    <ion-label class="ion-text-wrap">
-                      <h2>Save location with SMS expenses</h2>
-                      <p>Keeps where you were when the SMS came in (in your Drive, with the expense), so you can
-                        open it in Maps or find the shop later from the expense.</p>
-                    </ion-label>
-                  </ion-toggle>
-                </ion-item>
                 <ion-item lines="none">
                   <ion-label class="ion-text-wrap">
                     <p class="key-hint">Shops come from OpenStreetMap (free). For better coverage of small shops,
@@ -548,6 +555,7 @@ import { SettingsStore } from './settings.store';
 
     /* Nearby shops: optional Google key */
     .key-hint { margin: 0 0 8px; }
+    .warn-line { color: var(--artha-negative) !important; font-weight: 600; }
     .key-input {
       box-sizing: border-box; width: 100%; height: 44px; padding: 0 12px; border-radius: 12px;
       border: 1px solid var(--artha-border); background: var(--artha-bg); color: var(--artha-text); font: inherit; font-size: 14px;
@@ -611,8 +619,17 @@ export class SettingsPage implements OnInit {
     }
   }
 
-  protected onSaveLocationToggle(event: Event): void {
-    this.sms.setSaveLocation((event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false);
+  protected readonly locationPerm = signal<string | null>(null);
+
+  protected async onSaveLocationToggle(event: Event): Promise<void> {
+    const toggle = event.target as HTMLIonToggleElement;
+    const on = (event as CustomEvent<{ checked: boolean }>).detail?.checked ?? false;
+    const ok = await this.sms.setSaveLocation(on);
+    if (on && !ok) {
+      toggle.checked = false;
+      await this.notifier.notifyError('Location permission is needed to save where you paid.');
+    }
+    this.locationPerm.set(await this.sms.locationPermission());
   }
 
   protected onNearbyKey(event: Event): void {
@@ -653,6 +670,7 @@ export class SettingsPage implements OnInit {
   }
 
   ngOnInit(): void {
+    void this.sms.locationPermission().then((p) => this.locationPerm.set(p));
     void this.store.load();
     this.smsEnabled.set(this.sms.isEnabled());
     this.smsIgnoredCount.set(this.sms.ignoredCount());

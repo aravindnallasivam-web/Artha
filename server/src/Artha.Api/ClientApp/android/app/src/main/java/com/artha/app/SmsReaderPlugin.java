@@ -743,6 +743,22 @@ public class SmsReaderPlugin extends Plugin {
         });
     }
 
+    /** The phone's location now (for an expense added by hand). { location: {lat,lng,accuracy,at} | null }. */
+    @PluginMethod
+    public void getCurrentLocation(PluginCall call) {
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(() -> {
+            JSObject ret = new JSObject();
+            android.location.Location loc = NearbyPlaces.hasPermission(ctx) ? NearbyPlaces.currentLocation(ctx, 6000) : null;
+            try {
+                ret.put("location", loc != null ? JSObject.fromJSONObject(NearbyPlaces.locationJson(loc)) : null);
+            } catch (Exception e) {
+                ret.put("location", null);
+            }
+            call.resolve(ret);
+        }, "artha-current-location").start();
+    }
+
     /** Teach the alert: at this spot the user paid `name` (picked on the expense screen). */
     @PluginMethod
     public void rememberPlace(PluginCall call) {

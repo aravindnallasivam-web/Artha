@@ -424,6 +424,8 @@ export class ExpenseEditPage implements OnInit {
   protected readonly location = signal<ExpenseLocation | null>(null);
   /** Set when the user removed it, so the save clears it in Drive. */
   private locationRemoved = false;
+  /** New expense: the location reading in progress. */
+  private locating: Promise<ExpenseLocation | null> | null = null;
   /** null = not looked up yet. */
   protected readonly places = signal<NearbyPlace[] | null>(null);
   protected readonly placesBusy = signal(false);
@@ -663,6 +665,11 @@ export class ExpenseEditPage implements OnInit {
           this.location.set(expense.location ?? null);
         }
       } else {
+        // A new expense saves where you are now (Settings → "Save location with expenses").
+        this.locating = this.sms.currentLocation().then((l) => {
+          if (l && !this.locationRemoved && !this.location()) this.location.set(l);
+          return l;
+        });
         const firstCat = this.categories()[0];
         if (firstCat) {
           this.form.patchValue({ categoryId: firstCat.id });
@@ -718,7 +725,12 @@ export class ExpenseEditPage implements OnInit {
           void this.sms.rememberPlaceAt(loc, this.pickedPlace, payload.categoryId);
         }
       } else {
-        await this.expensesStore.add(payload);
+        // Give a reading still in progress a moment, so the expense isn't saved without it.
+        let loc = this.locationRemoved ? null : this.location();
+        if (!loc && !this.locationRemoved && this.locating) {
+          loc = await Promise.race([this.locating, new Promise<null>((r) => setTimeout(() => r(null), 2500))]);
+        }
+        await this.expensesStore.add({ ...payload, ...(loc ? { location: loc } : {}) });
       }
       await this.router.navigate(['/expenses']);
     } catch (err) {

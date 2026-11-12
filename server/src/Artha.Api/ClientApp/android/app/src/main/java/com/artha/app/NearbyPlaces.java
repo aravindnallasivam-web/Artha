@@ -74,10 +74,9 @@ final class NearbyPlaces {
         return config(ctx).optBoolean("enabled", false) && hasPermission(ctx);
     }
 
-    /** Save the location with each expense SMS (on with "Nearby shops" unless turned off). */
+    /** Save the location with each expense SMS: its own setting (on by default), needs location permission. */
     static boolean saveLocationEnabled(Context ctx) {
-        JSONObject c = config(ctx);
-        return c.optBoolean("enabled", false) && c.optBoolean("saveLocation", true) && hasPermission(ctx);
+        return config(ctx).optBoolean("saveLocation", true) && hasPermission(ctx);
     }
 
     /** Remember where the phone was for this SMS, so the app can store it with the expense. */

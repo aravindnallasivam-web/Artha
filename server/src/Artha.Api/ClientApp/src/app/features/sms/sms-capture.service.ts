@@ -292,10 +292,76 @@ export class SmsCaptureService {
   readonly nearbyEnabled = computed(() => this._nearby().enabled);
   readonly nearbyGoogleKey = computed(() => this._nearby().googleKey);
   /** Save where the phone was with each SMS expense (needs "Nearby shops" on). */
-  readonly saveLocation = computed(() => this._nearby().enabled && this._nearby().saveLocation);
+  /** Save where you were with every new expense (its own setting, on by default). */
+  readonly saveLocation = computed(() => this._nearby().saveLocation);
 
-  setSaveLocation(on: boolean): void {
+  /** Turn location saving on or off; turning it on asks for location permission. False when refused. */
+  async setSaveLocation(on: boolean): Promise<boolean> {
+    if (on && this.isSupported()) {
+      const res = await SmsReader.requestLocationPermission().catch(() => null);
+      if (res?.location !== 'granted') {
+        this.saveNearby({ ...this._nearby(), saveLocation: false });
+        return false;
+      }
+    }
     this.saveNearby({ ...this._nearby(), saveLocation: on });
+    return true;
+  }
+
+  /** "Save location with expenses" is on by default: ask for the permission once. */
+  private async askLocationOnce(): Promise<void> {
+    if (!this.saveLocation()) return;
+    try {
+      if (localStorage.getItem('artha.location.asked')) return;
+      if ((await this.locationPermission()) === 'granted') return;
+      localStorage.setItem('artha.location.asked', '1');
+      await SmsReader.requestLocationPermission();
+    } catch {
+      // Asked again from Settings.
+    }
+  }
+
+  /** Location permission state on the phone (null off-Android / unknown). */
+  async locationPermission(): Promise<string | null> {
+    if (!this.isSupported()) return null;
+    const res = await SmsReader.checkPermissions().catch(() => null);
+    return (res as { location?: string } | null)?.location ?? null;
+  }
+
+  /**
+   * Where the phone is now, for an expense added by hand. Android asks the
+   * phone; the web app uses the browser's location (it asks the first time).
+   */
+  async currentLocation(): Promise<ExpenseLocation | null> {
+    if (!this.saveLocation()) return null;
+    if (this.isSupported()) {
+      try {
+        const { location: l } = await SmsReader.getCurrentLocation();
+        if (!l || typeof l.lat !== 'number' || typeof l.lng !== 'number') return null;
+        return {
+          lat: l.lat,
+          lng: l.lng,
+          accuracy: typeof l.accuracy === 'number' ? l.accuracy : null,
+          at: new Date(typeof l.at === 'number' ? l.at : Date.now()).toISOString(),
+        };
+      } catch {
+        return null;
+      }
+    }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (p) =>
+          resolve({
+            lat: p.coords.latitude,
+            lng: p.coords.longitude,
+            accuracy: Math.round(p.coords.accuracy),
+            at: new Date(p.timestamp).toISOString(),
+          }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
+      );
+    });
   }
 
   // ----- Location fixes the alert took per SMS (native prefs, keyed like PromptQueue) -----
@@ -531,6 +597,7 @@ export class SmsCaptureService {
     if (!this.isSupported()) {
       return;
     }
+    void this.askLocationOnce();
     this.bindResume();
     void this.syncIgnoredToNative();
     void this.syncNotificationMappings();
