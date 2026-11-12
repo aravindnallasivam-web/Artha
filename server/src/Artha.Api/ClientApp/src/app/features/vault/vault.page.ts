@@ -240,6 +240,12 @@ type View = 'list' | 'detail' | 'form' | 'settings';
 
               @case ('form') {
                 <form class="form form--card" (ngSubmit)="saveCard()">
+                  @if (vault.isNative()) {
+                    <button type="button" class="btn scan" (click)="scan()" [disabled]="busy()">
+                      <ion-icon name="camera-outline" aria-hidden="true"></ion-icon>Scan card with camera
+                    </button>
+                    <p class="hint">Read on your phone; no photo is kept. Type the CVV yourself.</p>
+                  }
                   <label class="field">
                     <span>Card number</span>
                     <input name="number" inputmode="numeric" autocomplete="off" [ngModel]="draft.number"
@@ -302,6 +308,7 @@ type View = 'list' | 'detail' | 'form' | 'settings';
                     <input name="note" autocomplete="off" [(ngModel)]="draft.note" placeholder="Customer care 1800…" />
                   </label>
                   @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
+                  @if (toast()) { <p class="toast" role="status">{{ toast() }}</p> }
                   <button type="submit" class="btn btn--primary" [disabled]="busy() || !canSaveCard()">
                     {{ busy() ? 'Saving…' : 'Save card' }}
                   </button>
@@ -404,6 +411,7 @@ type View = 'list' | 'detail' | 'form' | 'settings';
     .btn--danger { border: 0; background: var(--artha-negative); color: #fff; }
     .btn--ghost-danger { color: var(--artha-negative); }
     .add { margin-top: 16px; }
+    .scan { width: 100%; border-style: dashed; color: var(--artha-accent); }
 
     .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
     .pcard {
@@ -596,6 +604,24 @@ export class VaultPage implements OnInit, OnDestroy {
     const net = detectNetwork(d);
     // Follow the number until the user picks a network themselves.
     if (this.draft.network === 'other' || this.draft.network === before) this.draft.network = net;
+  }
+
+  protected async scan(): Promise<void> {
+    this.error.set(null);
+    try {
+      const r = await this.vault.scanCard();
+      if (!r) return;
+      this.onNumber(r.number);
+      if (r.expiry) this.draft.expiry = normalizeExpiry(r.expiry);
+      if (r.name && !this.draft.nameOnCard) this.draft.nameOnCard = r.name;
+      this.flash(r.expiry ? 'Card read — check it, then add the CVV.' : 'Number read — add the expiry and CVV.');
+    } catch (e) {
+      this.error.set(
+        String((e as Error)?.message ?? e).includes('camera-denied')
+          ? 'Camera permission is needed to scan. You can still type the details.'
+          : "Couldn't scan. Type the details instead.",
+      );
+    }
   }
 
   protected canSaveCard(): boolean {

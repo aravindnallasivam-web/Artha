@@ -176,6 +176,8 @@ export interface SmsReaderPlugin {
   captureSmsLocation(options: { address: string; body: string }): Promise<{
     location: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
   }>;
+  /** Card vault: scan a card with the camera (read on the phone; the CVV is never read). */
+  scanCard(): Promise<{ number?: string | null; expiry?: string | null; name?: string | null; cancelled?: boolean }>;
   /** Card vault: seal / open the vault key with the hardware keystore (right after a fingerprint check). */
   vaultSeal(options: { data: string }): Promise<{ sealed: string }>;
   vaultOpen(options: { sealed: string }): Promise<{ data: string }>;

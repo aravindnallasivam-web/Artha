@@ -22,6 +22,9 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Lets the expense prompt open over other apps (Background Activity Launch exemption). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Card vault: scan a card with the camera (read on the phone, nothing stored). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Re-arm the daily bill-reminder check after the phone restarts. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Optional "Nearby shops" on the expense prompt: one fix while it is on screen. -->
@@ -87,6 +90,14 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <!-- Card scan for the vault (camera + on-device text recognition). -->
+        <activity
+            android:name=".CardScanActivity"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true"
+            android:exported="false" />
 
         <!-- Bill reminders: the daily check alarm, re-armed after a reboot or update. -->
         <receiver

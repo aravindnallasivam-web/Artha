@@ -20,6 +20,7 @@ import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
@@ -56,6 +57,10 @@ import java.util.List;
         @Permission(
             alias = "location",
             strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }
+        ),
+        @Permission(
+            alias = "camera",
+            strings = { Manifest.permission.CAMERA }
         )
     }
 )
@@ -629,6 +634,46 @@ public class SmsReaderPlugin extends Plugin {
             }
             call.resolve(ret);
         }, "artha-sms-location").start();
+    }
+
+    // ---- Card vault: scan a card with the camera ----
+
+    /** Open the camera card scanner; resolves { number, expiry, name } or { cancelled: true }. */
+    @PluginMethod
+    public void scanCard(PluginCall call) {
+        if (getPermissionState("camera") != PermissionState.GRANTED) {
+            requestPermissionForAlias("camera", call, "cameraPermsCallback");
+            return;
+        }
+        launchCardScan(call);
+    }
+
+    @PermissionCallback
+    private void cameraPermsCallback(PluginCall call) {
+        if (getPermissionState("camera") == PermissionState.GRANTED) {
+            launchCardScan(call);
+        } else {
+            call.reject("camera-denied");
+        }
+    }
+
+    private void launchCardScan(PluginCall call) {
+        startActivityForResult(call, new Intent(getContext(), CardScanActivity.class), "cardScanResult");
+    }
+
+    @ActivityCallback
+    private void cardScanResult(PluginCall call, androidx.activity.result.ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        Intent data = result.getData();
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || data == null) {
+            ret.put("cancelled", true);
+        } else {
+            ret.put("number", data.getStringExtra(CardScanActivity.EXTRA_NUMBER));
+            ret.put("expiry", data.getStringExtra(CardScanActivity.EXTRA_EXPIRY));
+            ret.put("name", data.getStringExtra(CardScanActivity.EXTRA_NAME));
+        }
+        call.resolve(ret);
     }
 
     // ---- Card vault: hardware-keystore seal + no screenshots ----

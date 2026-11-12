@@ -71,6 +71,8 @@ export class VaultService {
   private dek: CryptoKey | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private lifecycleBound = false;
+  /** The camera scanner / fingerprint prompt is up: going to the background then is expected. */
+  private holdLock = false;
 
   isNative(): boolean {
     return Capacitor.getPlatform() === 'android';
@@ -131,7 +133,7 @@ export class VaultService {
   /** Turn fingerprint unlock on (must be unlocked). */
   async enableBiometric(): Promise<boolean> {
     if (!this.dek || !this.isNative()) return false;
-    if (!(await this.lock$.verify('Use fingerprint for the vault'))) return false;
+    if (!(await this.held(() => this.lock$.verify('Use fingerprint for the vault')))) return false;
     try {
       const { sealed } = await SmsReader.vaultSeal({ data: await exportDek(this.dek) });
       localStorage.setItem(BIO_KEY, sealed);
@@ -189,6 +191,28 @@ export class VaultService {
     this.touch();
   }
 
+  /**
+   * Read a card with the camera (Android). Null when cancelled or not available.
+   * The vault stays unlocked while the scanner is open.
+   */
+  async scanCard(): Promise<{ number: string; expiry: string; name: string } | null> {
+    if (!this.isNative()) return null;
+    const r = await this.held(() => SmsReader.scanCard());
+    this.touch();
+    if (!r || r.cancelled || !r.number) return null;
+    return { number: r.number, expiry: r.expiry ?? '', name: r.name ?? '' };
+  }
+
+  private async held<T>(fn: () => Promise<T>): Promise<T> {
+    this.holdLock = true;
+    try {
+      return await fn();
+    } finally {
+      // The app's resume event lands just after; release the hold a moment later.
+      setTimeout(() => (this.holdLock = false), 1500);
+    }
+  }
+
   /** Block screenshots while vault content is on screen (Android). */
   async setSecureScreen(on: boolean): Promise<void> {
     if (this.isNative()) await SmsReader.setSecureScreen({ secure: on }).catch(() => undefined);
@@ -235,7 +259,7 @@ export class VaultService {
     }
     // Leaving the app locks the vault at once.
     void App.addListener('appStateChange', ({ isActive }) => {
-      if (!isActive) this.zone.run(() => this.lock());
+      if (!isActive && !this.holdLock) this.zone.run(() => this.lock());
     });
   }
 }
