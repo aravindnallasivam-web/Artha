@@ -208,7 +208,7 @@ export interface SmsReaderPlugin {
   /** Shop names matching what's typed, near lat/lng (Google Places Autocomplete with the saved key). */
   searchPlaces(options: { query: string; lat: number | null; lng: number | null }): Promise<{
     google: boolean;
-    places: { name: string; area: string; distanceM: number }[];
+    places: { name: string; area: string; distanceM: number; kind?: string }[];
   }>;
   /** Package name + signing SHA-1 (to restrict a Google API key to this app). */
   appSigningInfo(): Promise<{ packageName: string; sha1: string | null }>;

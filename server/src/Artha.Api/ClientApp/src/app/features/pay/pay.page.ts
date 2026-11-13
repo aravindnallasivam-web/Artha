@@ -24,6 +24,7 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
+import { suggestCategories } from './category-hints';
 import {
   UpiOutcome,
   UpiQr,
@@ -137,7 +138,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
                   <p class="hint center"><ion-spinner name="dots"></ion-spinner> Searching…</p>
                 }
                 @for (r of results(); track r.name + r.area) {
-                  <button type="button" class="row" (click)="pickShop(r.name)">
+                  <button type="button" class="row" (click)="pickShop(r.name, r.kind ?? '')">
                     <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
                     <span class="row-main">{{ r.name }}@if (r.area) {<span class="row-area">{{ r.area }}</span>}</span>
                     @if (r.distanceM >= 0) { <span class="row-sub">{{ distance(r.distanceM) }}</span> }
@@ -162,7 +163,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 } @else {
                   @for (s of shops(); track s.name) {
                     @if (s.name !== knownName()) {
-                      <button type="button" class="row" (click)="pickShop(s.name)">
+                      <button type="button" class="row" (click)="pickShop(s.name, s.kind ?? '')">
                         <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>
                         <span class="row-main">{{ s.name }}</span><span class="row-sub">{{ s.distanceM }} m</span>
                       </button>
@@ -179,19 +180,54 @@ const ACCOUNT_KEY = 'artha.pay.account';
             <!-- 3 · Category -->
             @case ('category') {
               <h2 class="q">What for?</h2>
-              <div class="tiles">
-                @for (c of quickCats(); track c.id) {
-                  <button type="button" class="tile" [class.sel]="categoryId() === c.id" (click)="pickCategory(c.id)"
-                          [style.--c]="c.color || 'var(--artha-accent)'">
-                    <span class="tile-ic"><ion-icon [name]="c.icon || 'pricetag-outline'" aria-hidden="true"></ion-icon></span>
-                    <span class="tile-name">{{ c.name }}</span>
+              <input class="field field--search" type="search" enterkeyhint="search" autocomplete="off"
+                     placeholder="Search categories" aria-label="Search categories"
+                     [ngModel]="catQuery()" (ngModelChange)="catQuery.set($event)" />
+
+              @if (catQuery().trim()) {
+                @for (c of catMatches(); track c.id) {
+                  <button type="button" class="row" [class.row--sel]="categoryId() === c.id" (click)="pickCategory(c.id)">
+                    <span class="dot" [style.background]="c.color"></span>
+                    <span class="row-main">{{ c.label }}</span>
                   </button>
                 }
-                <button type="button" class="tile" (click)="moreCategories()">
-                  <span class="tile-ic tile-ic--more"><ion-icon name="ellipsis-horizontal" aria-hidden="true"></ion-icon></span>
-                  <span class="tile-name">More</span>
-                </button>
-              </div>
+                @if (catMatches().length === 0) { <p class="hint center">No category matches “{{ catQuery().trim() }}”.</p> }
+              } @else {
+                @if (suggested().length) {
+                  <div class="label">Suggested</div>
+                  <div class="sugg">
+                    @for (c of suggested(); track c.id) {
+                      <button type="button" class="sugg-chip" [class.sel]="categoryId() === c.id" (click)="pickCategory(c.id)"
+                              [style.--c]="c.color">
+                        @if (categoryId() === c.id) { <ion-icon name="checkmark" aria-hidden="true"></ion-icon> }
+                        {{ c.label }}
+                      </button>
+                    }
+                  </div>
+                }
+                <div class="label">All categories</div>
+                <div class="groups">
+                  @for (g of groups(); track g.id) {
+                    <button type="button" class="group" [class.group--open]="openGroup() === g.id"
+                            [class.group--sel]="categoryId() === g.id || isChildSelected(g.id)" (click)="tapGroup(g.id)">
+                      <span class="dot" [style.background]="g.color"></span>
+                      <span class="row-main">{{ g.name }}</span>
+                      @if (g.children.length) {
+                        <span class="row-sub">{{ g.children.length }}</span>
+                        <ion-icon class="chev" name="chevron-down" aria-hidden="true"></ion-icon>
+                      }
+                    </button>
+                    @if (openGroup() === g.id) {
+                      <div class="subs">
+                        <button type="button" class="sub" [class.sel]="categoryId() === g.id" (click)="pickCategory(g.id)">Just {{ g.name }}</button>
+                        @for (c of g.children; track c.id) {
+                          <button type="button" class="sub" [class.sel]="categoryId() === c.id" (click)="pickCategory(c.id)">{{ c.name }}</button>
+                        }
+                      </div>
+                    }
+                  }
+                </div>
+              }
               <label class="remember">
                 <input type="checkbox" [(ngModel)]="remember" />
                 <span>Use this category next time for {{ shopName() || 'this shop' }}</span>
@@ -346,7 +382,36 @@ const ACCOUNT_KEY = 'artha.pay.account';
       font: inherit; font-size: 14px; font-weight: 700; color: var(--artha-text-muted);
     }
 
-    /* Category tiles */
+    /* Categories */
+    .field--search { width: 100%; margin-bottom: 4px; }
+    .label { margin: 14px 2px 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--artha-text-subtle); }
+    .dot { width: 12px; height: 12px; border-radius: 999px; flex-shrink: 0; background: var(--artha-accent); }
+    .sugg { display: flex; flex-wrap: wrap; gap: 8px; }
+    .sugg-chip {
+      --c: var(--artha-accent);
+      display: inline-flex; align-items: center; gap: 6px; min-height: 46px; padding: 0 16px; border-radius: 999px;
+      border: 2px solid color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--artha-surface));
+      color: var(--artha-text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+    }
+    .sugg-chip.sel { background: var(--c); border-color: var(--c); color: #fff; }
+    .groups { display: flex; flex-direction: column; border: 1px solid var(--artha-border); border-radius: 18px; overflow: hidden; }
+    .group {
+      display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border: 0;
+      border-top: 1px solid var(--artha-border); background: var(--artha-surface); color: var(--artha-text);
+      text-align: left; font: inherit; cursor: pointer;
+    }
+    .group:first-child { border-top: 0; }
+    .group--sel { background: var(--artha-accent-tint); }
+    .group .chev { font-size: 16px; color: var(--artha-text-subtle); transition: transform .15s; }
+    .group--open .chev { transform: rotate(180deg); }
+    .subs { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 14px 40px; background: var(--artha-surface); }
+    .sub {
+      height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--artha-border);
+      background: var(--artha-surface-2); color: var(--artha-text); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    }
+    .sub.sel { background: var(--artha-accent); border-color: var(--artha-accent); color: #fff; }
+
+    /* Category tiles (unused) */
     .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
     .tile {
       --c: var(--artha-accent);
@@ -410,7 +475,7 @@ export class PayPage implements OnInit {
   protected readonly locating = signal(false);
   protected readonly busy = signal(false);
   /** Nearby shops (Google Places with your key, else OpenStreetMap); null = still looking. */
-  protected readonly shops = signal<{ name: string; distanceM: number }[] | null>(null);
+  protected readonly shops = signal<{ name: string; distanceM: number; kind?: string }[] | null>(null);
   protected readonly shopsError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly ref = signal<string | null>(null);
@@ -421,7 +486,13 @@ export class PayPage implements OnInit {
   protected readonly knownWhy = signal<string>('');
   private readonly amountSig = signal<string>('');
   /** Suggestions for the shop name being typed. */
-  protected readonly results = signal<{ name: string; area: string; distanceM: number }[]>([]);
+  protected readonly results = signal<{ name: string; area: string; distanceM: number; kind?: string }[]>([]);
+  /** The picked shop's place type ("dentist", "cafe"…): suggests a category. */
+  private readonly shopKind = signal<string>('');
+  /** The category learned for this shop before (suggested first). */
+  private readonly learnedCat = signal<string | null>(null);
+  protected readonly catQuery = signal('');
+  protected readonly openGroup = signal<string | null>(null);
   protected readonly searching = signal(false);
   protected readonly searchError = signal<string | null>(null);
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -443,6 +514,63 @@ export class PayPage implements OnInit {
     const last = this.app();
     return [...this.apps()].sort((a, b) => Number(b.packageName === last) - Number(a.packageName === last));
   });
+  /** Every active category with its "Group › Sub" label and colour. */
+  private readonly allCats = computed(() => {
+    const byId = this.categoriesStore.byId();
+    return this.categoriesStore.active().map((c) => {
+      const parent = c.parentId ? byId[c.parentId] : undefined;
+      return {
+        id: c.id,
+        name: c.name,
+        path: parent ? `${parent.name} › ${c.name}` : c.name,
+        label: parent ? `${parent.name} › ${c.name}` : c.name,
+        color: c.color || parent?.color || 'var(--artha-accent)',
+        parentId: c.parentId,
+      };
+    });
+  });
+  /** Up to 3 one-tap picks: used for this shop before, then from the shop's type and name. */
+  protected readonly suggested = computed(() => {
+    const byId = new Map(this.allCats().map((c) => [c.id, c]));
+    const ids = [this.learnedCat(), ...suggestCategories(this.allCats(), this.shopKind(), this.shopName())]
+      .filter((id): id is string => !!id && byId.has(id));
+    return [...new Set(ids)].slice(0, 3).map((id) => byId.get(id)!);
+  });
+  /** Groups, most used first, each with its subcategories. */
+  protected readonly groups = computed(() => {
+    const uses = new Map<string, number>();
+    const byId = this.categoriesStore.byId();
+    for (const e of this.expensesStore.items()) {
+      const root = byId[e.categoryId]?.parentId ?? e.categoryId;
+      uses.set(root, (uses.get(root) ?? 0) + 1);
+    }
+    const all = this.allCats();
+    return all
+      .filter((c) => !c.parentId)
+      .map((g) => ({ ...g, children: all.filter((c) => c.parentId === g.id).sort((a, b) => a.name.localeCompare(b.name)) }))
+      .sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0) || a.name.localeCompare(b.name));
+  });
+  /** Search over every category and subcategory. */
+  protected readonly catMatches = computed(() => {
+    const q = this.catQuery().trim().toLowerCase();
+    if (!q) return [];
+    return this.allCats()
+      .filter((c) => c.path.toLowerCase().includes(q))
+      .sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)))
+      .slice(0, 12);
+  });
+
+  protected isChildSelected(groupId: string): boolean {
+    return this.categoriesStore.byId()[this.categoryId()]?.parentId === groupId;
+  }
+
+  /** A group with subcategories opens them here; one without is picked. */
+  protected tapGroup(id: string): void {
+    const g = this.groups().find((x) => x.id === id);
+    if (g && g.children.length) this.openGroup.set(this.openGroup() === id ? null : id);
+    else this.pickCategory(id);
+  }
+
   protected readonly quickCats = computed<Category[]>(() => {
     const byId = this.categoriesStore.byId();
     const ids: string[] = [];
@@ -580,11 +708,16 @@ export class PayPage implements OnInit {
       const l = this.location();
       const local = (this.shops() ?? [])
         .filter((s) => s.name.toLowerCase().includes(q.toLowerCase()))
-        .map((s) => ({ name: s.name, area: '', distanceM: s.distanceM }));
+        .map((s) => ({ name: s.name, area: '', distanceM: s.distanceM, kind: s.kind ?? '' }));
       try {
         const res = await SmsReader.searchPlaces({ query: q, lat: l?.lat ?? null, lng: l?.lng ?? null });
         if (seq !== this.searchSeq) return;
-        const google = (res?.places ?? []).map((p) => ({ name: p.name, area: p.area ?? '', distanceM: p.distanceM ?? -1 }));
+        const google = (res?.places ?? []).map((p) => ({
+          name: p.name,
+          area: p.area ?? '',
+          distanceM: p.distanceM ?? -1,
+          kind: p.kind ?? '',
+        }));
         // Nearby matches first, then Google's (without repeating a name).
         const seen = new Set(local.map((x) => x.name.toLowerCase()));
         this.results.set([...local, ...google.filter((g) => !seen.has(g.name.toLowerCase()))].slice(0, 10));
@@ -602,7 +735,8 @@ export class PayPage implements OnInit {
     return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
   }
 
-  protected pickShop(name: string): void {
+  protected pickShop(name: string, kind = ''): void {
+    this.shopKind.set(kind);
     this.results.set([]);
     if (!name) return;
     this.shopName.set(name);
@@ -613,6 +747,7 @@ export class PayPage implements OnInit {
   }
 
   protected pickCategory(id: string): void {
+    this.catQuery.set('');
     this.categoryId.set(id);
     this.next();
   }
@@ -661,6 +796,10 @@ export class PayPage implements OnInit {
       (saved ? this.sms.payeeCategory(saved) : null) ??
       (own ? this.sms.payeeCategory(own) : null);
     this.categoryId.set(learned ?? '');
+    this.learnedCat.set(learned ?? null);
+    this.shopKind.set('');
+    this.catQuery.set('');
+    this.openGroup.set(null);
     // Shops are remembered by default, people aren't.
     this.remember = !!learned || !!q.mc;
     const accounts = this.accounts();

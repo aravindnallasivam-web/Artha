@@ -921,6 +921,7 @@ public class SmsReaderPlugin extends Plugin {
                         o.put("name", s.name);
                         o.put("area", s.area);
                         o.put("distanceM", s.distanceM);
+                        o.put("kind", s.kind);
                         arr.put(o);
                     }
                 } catch (Exception e) {

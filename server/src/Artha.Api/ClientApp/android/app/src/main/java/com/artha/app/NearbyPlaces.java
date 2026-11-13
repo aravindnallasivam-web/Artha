@@ -349,11 +349,14 @@ final class NearbyPlaces {
         final String name;
         final String area;
         final int distanceM;
+        /** Google's place type ("dentist", "cafe"…), to suggest a category. */
+        final String kind;
 
-        Suggestion(String name, String area, int distanceM) {
+        Suggestion(String name, String area, int distanceM, String kind) {
             this.name = name;
             this.area = area;
             this.distanceM = distanceM;
+            this.kind = kind;
         }
     }
 
@@ -401,7 +404,9 @@ final class NearbyPlaces {
                 ? sf.optJSONObject("secondaryText").optString("text", "") : "";
             if (name.isEmpty() && pp.optJSONObject("text") != null) name = pp.optJSONObject("text").optString("text", "");
             if (name.trim().isEmpty()) continue;
-            out.add(new Suggestion(name.trim(), area.trim(), pp.optInt("distanceMeters", -1)));
+            JSONArray types = pp.optJSONArray("types");
+            String kind = types != null && types.length() > 0 ? types.optString(0, "") : "";
+            out.add(new Suggestion(name.trim(), area.trim(), pp.optInt("distanceMeters", -1), kind));
         }
         return out;
     }
