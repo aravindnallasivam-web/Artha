@@ -126,6 +126,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
                   <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
                   <span class="row-main">{{ k }}</span><span class="row-sub">{{ knownWhy() }}</span>
                 </button>
+                <p class="hint">Tap it to continue, or pick another shop below.</p>
               }
               @if (shops() === null) {
                 <p class="hint center">
@@ -497,9 +498,8 @@ export class PayPage implements OnInit {
     }
   }
 
-  private skippable(s: Step): boolean {
-    // Known shop: no need to ask (its name shows at the top; tap Back to change it).
-    if (s === 'shop') return !!this.shopName();
+  private skippable(_s: Step): boolean {
+    // Every step is shown: a known shop is preselected on "Which shop?" (one tap to confirm).
     return false;
   }
 
@@ -598,7 +598,7 @@ export class PayPage implements OnInit {
       accounts.find((a) => a.type === 'savings' || a.type === 'checking')?.id ??
       accounts[0]?.id ??
       '';
-    this.go(q.am != null ? (this.shopName() ? 'category' : 'shop') : 'amount');
+    this.go(q.am != null ? 'shop' : 'amount');
     this.locate(q);
   }
 
