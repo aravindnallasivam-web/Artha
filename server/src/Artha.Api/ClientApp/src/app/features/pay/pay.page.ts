@@ -1,10 +1,10 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
 import {
-  IonBackButton,
+  IonButton,
   IonButtons,
   IonContent,
   IonHeader,
@@ -34,24 +34,31 @@ import {
   savePayeeName,
 } from './upi';
 
-type Step = 'scan' | 'details' | 'paying' | 'confirm' | 'done' | 'failed';
+/** One question per screen: amount → shop → category → pay with. */
+type Step = 'scan' | 'amount' | 'shop' | 'category' | 'app' | 'paying' | 'confirm' | 'done' | 'failed';
+const FLOW: Step[] = ['amount', 'shop', 'category', 'app'];
 
 const APP_KEY = 'artha.pay.app';
 const ACCOUNT_KEY = 'artha.pay.account';
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
 /**
- * Scan & Pay: read a shop's UPI QR, set amount + category first, pay in the
- * user's UPI app, and the expense is saved on return (with location). The
- * bank's debit SMS for it is then skipped.
+ * Scan & Pay as a short guided flow: scan the shop's UPI QR, then one
+ * question per screen - amount (keypad), which shop (nearby places, or what
+ * Artha already knows), category (one tap), and the UPI app to pay with
+ * (one tap opens it). The expense is saved when you come back, with the
+ * location, and the bank's SMS for it is skipped.
  */
 @Component({
   selector: 'artha-pay',
   standalone: true,
-  imports: [CurrencyPipe, FormsModule, IonBackButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar],
+  imports: [CurrencyPipe, FormsModule, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar],
   template: `
     <ion-header class="ion-no-border">
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/dashboard" text=""></ion-back-button></ion-buttons>
+        <ion-buttons slot="start">
+          <ion-button (click)="back()" aria-label="Back"><ion-icon name="arrow-back" slot="icon-only"></ion-icon></ion-button>
+        </ion-buttons>
         <ion-title>Scan &amp; Pay</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -61,151 +68,176 @@ const ACCOUNT_KEY = 'artha.pay.account';
         @if (!native) {
           <p class="msg">Scan &amp; Pay opens your UPI app, so it works in the Android app.</p>
         } @else {
+          <!-- Who + how much, on every step after the scan -->
+          @if (qr(); as q) {
+            @if (inFlow()) {
+              <section class="who">
+                <span class="avatar" aria-hidden="true">{{ initial(shopName() || '?') }}</span>
+                <div class="who-text">
+                  <div class="who-name">{{ shopName() || 'Unknown shop' }}</div>
+                  <div class="who-id">{{ q.pa }}</div>
+                </div>
+                @if (amount() > 0 && step() !== 'amount') {
+                  <button type="button" class="who-amt num" (click)="go('amount')" [disabled]="q.am !== null">
+                    {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}
+                  </button>
+                }
+              </section>
+              <div class="dots" aria-hidden="true">
+                @for (s of flow(); track s) { <span [class.on]="flow().indexOf(s) <= flow().indexOf(step())"></span> }
+              </div>
+            }
+          }
+
           @switch (step()) {
             @case ('scan') {
-              <section class="gate">
-                <span class="gate-ic"><ion-icon name="qr-code-outline" aria-hidden="true"></ion-icon></span>
+              <section class="center-block">
+                <span class="big-ic"><ion-icon name="qr-code-outline" aria-hidden="true"></ion-icon></span>
                 <h2>Scan the shop's UPI QR</h2>
-                <p>Set the amount and category here, pay in your UPI app, and the expense is saved when you come back.</p>
+                <p>Then: amount, shop, category — and your UPI app opens to pay.</p>
                 @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
-                <button type="button" class="btn btn--primary" (click)="scan()" [disabled]="busy()">
+                <button type="button" class="btn btn--primary btn--wide" (click)="scan()" [disabled]="busy()">
                   <ion-icon name="scan-outline" aria-hidden="true"></ion-icon>Scan QR
                 </button>
               </section>
             }
 
-            @case ('details') {
-              @if (qr(); as q) {
-                <section class="payee">
-                  <span class="avatar" aria-hidden="true">{{ initial(note.trim() || headerName()) }}</span>
-                  <div class="payee-text">
-                    <div class="payee-name">{{ headerName() }}</div>
-                    <div class="payee-id">{{ q.pa }}</div>
-                  </div>
-                  <span class="tag">{{ q.mc ? 'Shop' : 'Person' }}</span>
-                </section>
-                @if (noQrName() && !note.trim()) {
-                  <p class="hint">This QR doesn't carry the shop's name. Type it in <b>Note</b> once and Artha will
-                    remember it for this UPI ID.</p>
+            <!-- 1 · Amount -->
+            @case ('amount') {
+              <h2 class="q">How much?</h2>
+              <div class="amount num" [class.amount--empty]="!amountText">₹{{ amountText || '0' }}</div>
+              <div class="keypad">
+                @for (k of keys; track k) {
+                  <button type="button" class="key" (click)="press(k)" [attr.aria-label]="k === '⌫' ? 'Delete' : k">{{ k }}</button>
                 }
+              </div>
+              <div class="bar">
+                <button type="button" class="btn btn--primary btn--wide" (click)="next()" [disabled]="amount() <= 0">Next</button>
+              </div>
+            }
 
-                <div class="amount">
-                  <span class="cur">₹</span>
-                  <input #amountBox class="amount-input" type="text" inputmode="decimal" placeholder="0" aria-label="Amount"
-                         [style.width.ch]="amountWidth()"
-                         [readOnly]="q.am !== null" [ngModel]="amountText" (ngModelChange)="amountText = $event" />
-                </div>
-                @if (q.am !== null) { <p class="hint center">Amount set by the shop's QR.</p> }
-
-                <div class="section">Category</div>
-                <div class="chips">
-                  @for (c of quickCats(); track c.id) {
-                    <button type="button" class="chip" [class.sel]="categoryId() === c.id" (click)="categoryId.set(c.id)">
-                      {{ c.name }}
+            <!-- 2 · Shop -->
+            @case ('shop') {
+              <h2 class="q">Which shop?</h2>
+              @if (knownName(); as k) {
+                <button type="button" class="row row--sel" (click)="pickShop(k)">
+                  <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+                  <span class="row-main">{{ k }}</span><span class="row-sub">{{ knownWhy() }}</span>
+                </button>
+              }
+              @if (shops() === null) {
+                <p class="hint center">
+                  <ion-spinner name="dots"></ion-spinner>
+                  {{ locating() ? 'Getting your location…' : location() ? 'Finding shops near you…' : '' }}
+                </p>
+              } @else {
+                @for (s of shops(); track s.name) {
+                  @if (s.name !== knownName()) {
+                    <button type="button" class="row" (click)="pickShop(s.name)">
+                      <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>
+                      <span class="row-main">{{ s.name }}</span><span class="row-sub">{{ s.distanceM }} m</span>
                     </button>
                   }
-                  <button type="button" class="chip chip--more" (click)="moreCategories()">More…</button>
-                </div>
-                @if (subPath(); as p) { <p class="hint">Selected: <b>{{ p }}</b></p> }
-                <label class="remember">
-                  <input type="checkbox" [(ngModel)]="remember" />
-                  <span>Remember this category for {{ note.trim() || (noQrName() ? 'this shop' : headerName()) }}</span>
-                </label>
-
-                <div class="section">Paid from</div>
-                <select class="select" [(ngModel)]="accountId" aria-label="Paid from">
-                  @for (a of accounts(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
-                </select>
-
-                <div class="section">Note</div>
-                <input class="select" type="text" [(ngModel)]="note" [placeholder]="noQrName() ? 'Shop name' : q.pn"
-                       aria-label="Note" />
-                @if (shops() === null) {
-                  <button type="button" class="near-btn" (click)="findShops()" [disabled]="shopsBusy() || !location()">
-                    @if (shopsBusy()) {
-                      <ion-spinner name="dots" aria-label="Finding shops"></ion-spinner>
-                    } @else {
-                      <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>
-                      {{ location() ? 'Pick from nearby shops' : locating() ? 'Getting location…' : 'Nearby shops need your location' }}
-                    }
-                  </button>
-                } @else if (shops()!.length === 0) {
-                  <p class="hint">{{ shopsError() || 'No shops found nearby. Type the name in Note.' }}</p>
-                  @if (shopsError()) { <button type="button" class="near-btn" (click)="findShops()">Try again</button> }
-                } @else {
-                  <p class="hint">Tap the shop you're paying — it becomes the note.</p>
-                  <div class="chips near">
-                    @for (s of shops(); track s.name) {
-                      <button type="button" class="chip" [class.sel]="note === s.name" (click)="pickShop(s.name)">
-                        {{ s.name }}<span class="dist">{{ s.distanceM }} m</span>
-                      </button>
-                    }
-                  </div>
                 }
-
-                <div class="section">Pay with</div>
-                @if (apps().length === 0) {
-                  <p class="hint">No UPI app found. Install Google Pay, PhonePe, Paytm or BHIM.</p>
-                } @else {
-                  <div class="chips">
-                    @for (a of apps(); track a.packageName) {
-                      <button type="button" class="chip" [class.sel]="app() === a.packageName" (click)="app.set(a.packageName)">
-                        {{ a.label }}
-                      </button>
-                    }
-                    <button type="button" class="chip" [class.sel]="app() === ''" (click)="app.set('')">Ask each time</button>
-                  </div>
+                @if (shops()!.length === 0) {
+                  <p class="hint center">{{ shopsError() || (location() ? 'No shops found nearby.' : 'No location — type the name below.') }}</p>
                 }
+              }
+              <div class="type-row">
+                <input class="field" type="text" [(ngModel)]="typedName" placeholder="Or type the shop's name"
+                       aria-label="Shop name" (keyup.enter)="typedName.trim() && pickShop(typedName.trim())" />
+                <button type="button" class="btn btn--primary" (click)="pickShop(typedName.trim())" [disabled]="!typedName.trim()">OK</button>
+              </div>
+              <button type="button" class="link" (click)="next()">Skip</button>
+            }
 
-                <p class="loc">
-                  <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
-                  {{ location() ? 'Location will be saved with it' : locating() ? 'Getting location…' : 'No location' }}
-                </p>
-                <button type="button" class="btn btn--ghost" (click)="reset()">Scan another QR</button>
-                <div class="paybar">
-                  @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
-                  <button type="button" class="btn btn--primary pay" (click)="pay()" [disabled]="!canPay() || busy()">
-                    Pay {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}{{ appLabel() ? ' with ' + appLabel() : '' }}
+            <!-- 3 · Category -->
+            @case ('category') {
+              <h2 class="q">What for?</h2>
+              <div class="tiles">
+                @for (c of quickCats(); track c.id) {
+                  <button type="button" class="tile" [class.sel]="categoryId() === c.id" (click)="pickCategory(c.id)"
+                          [style.--c]="c.color || 'var(--artha-accent)'">
+                    <span class="tile-ic"><ion-icon [name]="c.icon || 'pricetag-outline'" aria-hidden="true"></ion-icon></span>
+                    <span class="tile-name">{{ c.name }}</span>
                   </button>
+                }
+                <button type="button" class="tile" (click)="moreCategories()">
+                  <span class="tile-ic tile-ic--more"><ion-icon name="ellipsis-horizontal" aria-hidden="true"></ion-icon></span>
+                  <span class="tile-name">More</span>
+                </button>
+              </div>
+              <label class="remember">
+                <input type="checkbox" [(ngModel)]="remember" />
+                <span>Use this category next time for {{ shopName() || 'this shop' }}</span>
+              </label>
+              @if (categoryId()) {
+                <div class="bar">
+                  <button type="button" class="btn btn--primary btn--wide" (click)="next()">Continue with {{ categoryName() }}</button>
                 </div>
               }
             }
 
+            <!-- 4 · Pay with -->
+            @case ('app') {
+              <h2 class="q">Pay {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }} with</h2>
+              <p class="summary">
+                {{ categoryName() }} · from
+                <select class="inline-select" [(ngModel)]="accountId" aria-label="Paid from">
+                  @for (a of accounts(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
+                </select>
+              </p>
+              @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
+              @if (apps().length === 0) {
+                <p class="hint center">No UPI app found. Install Google Pay, PhonePe, Paytm or BHIM.</p>
+              }
+              @for (a of orderedApps(); track a.packageName; let first = $first) {
+                <button type="button" class="row row--app" [class.row--sel]="first && a.packageName === app()" (click)="pay(a.packageName)">
+                  <span class="app-ic" aria-hidden="true">{{ initial(a.label) }}</span>
+                  <span class="row-main">{{ a.label }}</span>
+                  @if (a.packageName === app()) { <span class="row-sub">Last used</span> }
+                  <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
+                </button>
+              }
+            }
+
             @case ('paying') {
-              <div class="state"><ion-spinner></ion-spinner><p>Finish the payment in your UPI app…</p></div>
+              <div class="center-block"><ion-spinner></ion-spinner><p>Finish the payment in your UPI app…</p></div>
             }
 
             @case ('confirm') {
-              <section class="gate">
-                <span class="gate-ic"><ion-icon name="help-circle-outline" aria-hidden="true"></ion-icon></span>
+              <section class="center-block">
+                <span class="big-ic"><ion-icon name="help-circle-outline" aria-hidden="true"></ion-icon></span>
                 <h2>Did the payment go through?</h2>
                 <p>Your UPI app didn't say. Check it, then tell Artha.</p>
-                <button type="button" class="btn btn--primary" (click)="save('confirmed')" [disabled]="busy()">
+                @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
+                <button type="button" class="btn btn--primary btn--wide" (click)="save()" [disabled]="busy()">
                   Yes, paid {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}
                 </button>
-                <button type="button" class="btn" (click)="notPaid()">No, it didn't</button>
+                <button type="button" class="btn btn--wide" (click)="notPaid()">No, it didn't</button>
               </section>
             }
 
             @case ('done') {
-              <section class="gate">
-                <span class="gate-ic gate-ic--ok"><ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon></span>
-                <h2>{{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }} to {{ qr()?.pn }}</h2>
-                <p>Saved under <b>{{ categoryPath() || 'your category' }}</b>{{ ref() ? ' · UPI ref ' + ref() : '' }}.
-                  The bank's SMS for it won't ask again.</p>
-                <button type="button" class="btn btn--primary" (click)="reset()">
+              <section class="center-block">
+                <span class="big-ic big-ic--ok"><ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon></span>
+                <h2>Paid {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}</h2>
+                <p>{{ shopName() || qr()?.pa }} · {{ categoryName() }}{{ ref() ? ' · ref ' + ref() : '' }}<br />
+                  Saved — the bank's SMS for it won't ask again.</p>
+                <button type="button" class="btn btn--primary btn--wide" (click)="reset()">
                   <ion-icon name="scan-outline" aria-hidden="true"></ion-icon>Scan another
                 </button>
-                <button type="button" class="btn" (click)="router.navigate(['/expenses'])">See expenses</button>
+                <button type="button" class="btn btn--wide" (click)="router.navigate(['/expenses'])">See expenses</button>
               </section>
             }
 
             @case ('failed') {
-              <section class="gate">
-                <span class="gate-ic gate-ic--bad"><ion-icon name="close-circle-outline" aria-hidden="true"></ion-icon></span>
+              <section class="center-block">
+                <span class="big-ic big-ic--bad"><ion-icon name="close-circle-outline" aria-hidden="true"></ion-icon></span>
                 <h2>Payment didn't go through</h2>
                 <p>Nothing was saved.</p>
-                <button type="button" class="btn btn--primary" (click)="step.set('details')">Try again</button>
+                <button type="button" class="btn btn--primary btn--wide" (click)="go('app')">Try again</button>
+                <button type="button" class="btn btn--wide" (click)="reset()">Scan another QR</button>
               </section>
             }
           }
@@ -216,89 +248,119 @@ const ACCOUNT_KEY = 'artha.pay.account';
   styles: [`
     ion-content { --background: var(--artha-surface); }
     ion-toolbar { --background: var(--artha-surface); }
-    .wrap { max-width: 560px; margin: 0 auto; padding: 8px 16px 32px; }
+    .wrap { max-width: 520px; margin: 0 auto; padding: 4px 16px 24px; }
+    .num { font-variant-numeric: tabular-nums; }
     .msg { text-align: center; color: var(--artha-text-muted); padding: 32px 8px; }
-    .state { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 64px 16px; color: var(--artha-text-muted); }
-    .gate { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 4px; text-align: center; }
-    .gate h2 { margin: 4px 0 0; font-size: 20px; font-weight: 800; color: var(--artha-text); }
-    .gate p { margin: 0 0 6px; max-width: 38ch; font-size: 14px; line-height: 1.5; color: var(--artha-text-muted); }
-    .gate .btn { width: 100%; }
-    .gate-ic {
-      width: 60px; height: 60px; border-radius: 20px; display: grid; place-items: center; font-size: 30px;
-      background: var(--artha-accent-tint); color: var(--artha-accent);
-    }
-    .gate-ic--ok { background: color-mix(in srgb, var(--artha-positive) 15%, transparent); color: var(--artha-positive); }
-    .gate-ic--bad { background: var(--artha-negative-tint); color: var(--artha-negative); }
 
-    .payee { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: var(--artha-surface-2); }
+    .who { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 18px; background: var(--artha-surface-2); }
     .avatar {
-      width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex-shrink: 0;
+      width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; flex-shrink: 0;
       background: var(--artha-accent); color: #fff; font-weight: 800; font-size: 18px;
     }
-    .payee-text { flex: 1; min-width: 0; }
-    .payee-name { font-size: 16px; font-weight: 800; color: var(--artha-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .payee-id { font-size: 12.5px; color: var(--artha-text-muted); overflow-wrap: anywhere; }
-    .tag { padding: 3px 10px; border-radius: 999px; background: var(--artha-surface); font-size: 11.5px; font-weight: 700; color: var(--artha-text-muted); }
+    .who-text { flex: 1; min-width: 0; }
+    .who-name { font-size: 15.5px; font-weight: 800; color: var(--artha-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .who-id { font-size: 12px; color: var(--artha-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .who-amt {
+      border: 0; background: var(--artha-surface); border-radius: 999px; padding: 6px 12px; cursor: pointer;
+      font: inherit; font-size: 15px; font-weight: 800; color: var(--artha-text);
+    }
+    .who-amt[disabled] { cursor: default; }
+    .dots { display: flex; justify-content: center; gap: 6px; margin: 12px 0 4px; }
+    .dots span { width: 22px; height: 4px; border-radius: 999px; background: var(--artha-border); }
+    .dots span.on { background: var(--artha-accent); }
 
-    .amount { display: flex; align-items: baseline; justify-content: center; gap: 4px; padding: 18px 0 4px; }
-    .cur { font-size: 30px; font-weight: 700; color: var(--artha-text-muted); }
-    .amount-input {
-      max-width: 66vw; border: 0; outline: 0; background: transparent; text-align: center;
-      font: inherit; font-size: 48px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text);
-      font-variant-numeric: tabular-nums; caret-color: var(--artha-accent);
+    .q { margin: 14px 2px 12px; font-size: 22px; font-weight: 800; color: var(--artha-text); text-align: center; }
+    .hint { margin: 10px 2px; font-size: 13px; color: var(--artha-text-muted); }
+    .center { text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .err { margin: 6px 0; font-size: 13px; font-weight: 600; color: var(--artha-negative); text-align: center; }
+
+    .center-block { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 4px; text-align: center; }
+    .center-block h2 { margin: 4px 0 0; font-size: 21px; font-weight: 800; color: var(--artha-text); }
+    .center-block p { margin: 0 0 6px; max-width: 36ch; font-size: 14px; line-height: 1.5; color: var(--artha-text-muted); }
+    .big-ic {
+      width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center; font-size: 32px;
+      background: var(--artha-accent-tint); color: var(--artha-accent);
     }
-    .section { margin: 16px 2px 8px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--artha-text-subtle); }
-    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-    .chip {
-      height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--artha-border);
-      background: var(--artha-surface); color: var(--artha-text); cursor: pointer;
-      font: inherit; font-size: 13.5px; font-weight: 600; max-width: 100%;
+    .big-ic--ok { background: color-mix(in srgb, var(--artha-positive) 15%, transparent); color: var(--artha-positive); }
+    .big-ic--bad { background: var(--artha-negative-tint); color: var(--artha-negative); }
+
+    /* Amount keypad */
+    .amount { text-align: center; font-size: 52px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); margin: 4px 0 14px; }
+    .amount--empty { color: var(--artha-border-strong); }
+    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .key {
+      height: 58px; border: 0; border-radius: 16px; background: var(--artha-surface-2); color: var(--artha-text);
+      font: inherit; font-size: 24px; font-weight: 700; cursor: pointer;
     }
-    .chip.sel { background: var(--artha-accent); border-color: var(--artha-accent); color: #fff; }
-    .chip--more { color: var(--artha-accent); }
-    .remember { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--artha-text-muted); }
-    .remember input { width: 18px; height: 18px; }
-    .select {
-      width: 100%; height: 46px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--artha-border);
+    .key:active { background: var(--artha-accent-tint); }
+
+    /* Lists */
+    .row {
+      display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; margin-top: 8px; padding: 10px 14px;
+      border-radius: 16px; border: 1px solid var(--artha-border); background: var(--artha-surface); color: var(--artha-text);
+      text-align: left; font: inherit; cursor: pointer;
+    }
+    .row ion-icon { font-size: 20px; color: var(--artha-accent); flex-shrink: 0; }
+    .row-main { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+    .row-sub { font-size: 12.5px; color: var(--artha-text-muted); flex-shrink: 0; }
+    .row--sel { border: 2px solid var(--artha-accent); background: var(--artha-accent-tint); }
+    .row--app ion-icon { color: var(--artha-text-subtle); }
+    .app-ic {
+      width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0;
+      background: var(--artha-surface-2); color: var(--artha-text); font-weight: 800;
+    }
+    .type-row { display: flex; gap: 8px; margin-top: 14px; }
+    .field {
+      flex: 1; min-width: 0; height: 48px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--artha-border);
       background: var(--artha-surface); color: var(--artha-text); font: inherit; font-size: 15px;
     }
-    .hint { margin: 6px 2px 0; font-size: 12.5px; color: var(--artha-text-muted); }
-    .center { text-align: center; }
-    .payee + .hint { margin-top: 8px; }
-    .near-btn {
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
-      height: 42px; margin-top: 8px; border-radius: 999px; border: 1px dashed var(--artha-border);
-      background: transparent; color: var(--artha-accent); cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 700;
+    .type-row .btn { height: 48px; }
+    .link {
+      display: block; margin: 14px auto 0; padding: 8px 16px; border: 0; background: transparent; cursor: pointer;
+      font: inherit; font-size: 14px; font-weight: 700; color: var(--artha-text-muted);
     }
-    .near-btn[disabled] { color: var(--artha-text-muted); cursor: default; }
-    .near-btn ion-spinner { width: 22px; height: 22px; }
-    .near { margin-top: 8px; }
-    .dist { margin-left: 6px; font-size: 11.5px; font-weight: 500; opacity: 0.7; }
-    .loc { display: flex; align-items: center; gap: 6px; margin: 16px 2px 0; font-size: 12.5px; color: var(--artha-text-muted); }
-    .err { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--artha-negative); }
+
+    /* Category tiles */
+    .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .tile {
+      --c: var(--artha-accent);
+      display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; padding: 14px 6px;
+      border: 2px solid transparent; border-radius: 18px; background: var(--artha-surface-2); color: var(--artha-text);
+      font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    }
+    .tile.sel { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--artha-surface)); }
+    .tile-ic {
+      width: 40px; height: 40px; border-radius: 14px; display: grid; place-items: center; font-size: 20px;
+      color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent);
+    }
+    .tile.sel .tile-ic { background: var(--c); color: #fff; }
+    .tile-ic--more { color: var(--artha-text-muted); background: var(--artha-border); }
+    .tile-name { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .remember { display: flex; align-items: center; gap: 8px; margin: 14px 2px 0; font-size: 13px; color: var(--artha-text-muted); }
+    .remember input { width: 18px; height: 18px; flex-shrink: 0; }
+
+    .summary { text-align: center; margin: -4px 0 8px; font-size: 14px; color: var(--artha-text-muted); }
+    .inline-select {
+      border: 0; border-bottom: 1px dashed var(--artha-border-strong); background: transparent;
+      color: var(--artha-text); font: inherit; font-weight: 700; padding: 2px 0;
+    }
+
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      height: 50px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--artha-border);
+      height: 52px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--artha-border);
       background: var(--artha-surface); color: var(--artha-text); cursor: pointer; font: inherit; font-size: 15px; font-weight: 700;
     }
-    .btn[disabled] { opacity: 0.5; cursor: default; }
+    .btn[disabled] { opacity: 0.45; cursor: default; }
     .btn ion-icon { font-size: 20px; }
     .btn--primary { border: 0; background: var(--artha-accent); color: #fff; }
-    .btn--ghost { width: 100%; border: 0; background: transparent; color: var(--artha-text-muted); margin-top: 6px; }
-    .pay { width: 100%; height: 56px; font-size: 16px; }
-    /* Pay stays on screen, above the floating tab bar. */
-    .paybar {
-      position: sticky; bottom: 0; z-index: 5; margin: 12px -16px 0; padding: 12px 16px 16px;
-      background: var(--artha-surface);
-    }
-    .paybar::before {
-      content: ''; position: absolute; left: 0; right: 0; top: -20px; height: 20px; pointer-events: none;
-      background: linear-gradient(to bottom, transparent, var(--artha-surface));
-    }
-    .paybar .err { margin: 0 0 8px; }
+    .btn--wide { width: 100%; }
+
+    /* The main button stays on screen, above the floating tab bar. */
+    .bar { position: sticky; bottom: 0; z-index: 5; margin: 16px -16px 0; padding: 12px 16px 16px; background: var(--artha-surface); }
     @media (max-width: 767.98px) {
       :host ion-content { --padding-bottom: 0px; }
-      .paybar { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+      .wrap { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+      .bar { padding-bottom: calc(96px + env(safe-area-inset-bottom)); margin-bottom: calc(-96px - env(safe-area-inset-bottom)); }
     }
   `],
 })
@@ -312,7 +374,7 @@ export class PayPage implements OnInit {
   private readonly appLock = inject(AppLockService);
 
   protected readonly native = Capacitor.getPlatform() === 'android';
-  @ViewChild('amountBox') private amountBox?: ElementRef<HTMLInputElement>;
+  protected readonly keys = KEYS;
   protected readonly step = signal<Step>('scan');
   protected readonly qr = signal<UpiQr | null>(null);
   protected readonly categoryId = signal<string>('');
@@ -321,19 +383,34 @@ export class PayPage implements OnInit {
   protected readonly location = signal<ExpenseLocation | null>(null);
   protected readonly locating = signal(false);
   protected readonly busy = signal(false);
-  /** Nearby shops for the note (Google Places with your key, else OpenStreetMap); null = not looked up. */
+  /** Nearby shops (Google Places with your key, else OpenStreetMap); null = still looking. */
   protected readonly shops = signal<{ name: string; distanceM: number }[] | null>(null);
-  protected readonly shopsBusy = signal(false);
   protected readonly shopsError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly ref = signal<string | null>(null);
+  /** The shop's name as chosen (a nearby place, typed, known before, or the QR's own). */
+  protected readonly shopName = signal<string>('');
+  /** A name Artha already had for this QR / spot, offered first on the shop step. */
+  protected readonly knownName = signal<string | null>(null);
+  protected readonly knownWhy = signal<string>('');
+  private readonly amountSig = signal<string>('');
 
-  protected amountText = '';
+  protected typedName = '';
   protected accountId = '';
-  protected note = '';
   protected remember = true;
 
+  protected get amountText(): string {
+    return this.amountSig();
+  }
+
   protected readonly accounts = computed(() => this.accountsStore.active());
+  /** The steps this payment goes through (a fixed amount skips the keypad). */
+  protected readonly flow = computed<Step[]>(() => FLOW.filter((s) => !(s === 'amount' && this.qr()?.am != null)));
+  protected readonly inFlow = computed(() => FLOW.includes(this.step()));
+  protected readonly orderedApps = computed(() => {
+    const last = this.app();
+    return [...this.apps()].sort((a, b) => Number(b.packageName === last) - Number(a.packageName === last));
+  });
   protected readonly quickCats = computed<Category[]>(() => {
     const byId = this.categoriesStore.byId();
     const ids: string[] = [];
@@ -343,32 +420,18 @@ export class PayPage implements OnInit {
     };
     push(this.categoryId());
     for (const e of [...this.expensesStore.items()].sort((a, b) => b.date.localeCompare(a.date))) {
-      if (ids.length >= 7) break;
+      if (ids.length >= 8) break;
       push(e.categoryId);
     }
     for (const c of this.categoriesStore.active()) {
-      if (ids.length >= 7) break;
+      if (ids.length >= 8) break;
       if (!c.parentId) push(c.id);
     }
     return ids.map((id) => byId[id]);
   });
-  protected readonly categoryPath = computed(() =>
-    this.categoryId() ? this.categoriesStore.pathLabel(this.categoryId()) : null,
+  protected readonly categoryName = computed(() =>
+    this.categoryId() ? this.categoriesStore.pathLabel(this.categoryId()) || '' : '',
   );
-  /** "Food · Cafés" when a subcategory is picked (the chips only show its name). */
-  protected readonly subPath = computed(() => {
-    const c = this.categoryId() ? this.categoriesStore.byId()[this.categoryId()] : undefined;
-    return c?.parentId ? this.categoryPath() : null;
-  });
-    /** The QR's name is a placeholder ("Default"): the shop's name has to come from you. */
-  protected readonly noQrName = computed(() => placeholderName(this.qr()?.pn));
-  private readonly savedName = signal<string | null>(null);
-  protected readonly headerName = computed(() => {
-    const q = this.qr();
-    if (!q) return '';
-    return this.savedName() ?? (this.noQrName() ? 'Unknown shop' : q.pn);
-  });
-  protected readonly appLabel = computed(() => this.apps().find((a) => a.packageName === this.app())?.label ?? null);
 
   async ngOnInit(): Promise<void> {
     if (!this.native) return;
@@ -389,22 +452,75 @@ export class PayPage implements OnInit {
   protected amount(): number {
     const q = this.qr();
     if (q?.am != null) return q.am;
-    const v = Number(String(this.amountText).replace(/[^0-9.]/g, ''));
+    const v = Number(this.amountSig());
     return Number.isFinite(v) ? Math.round(v * 100) / 100 : 0;
-  }
-
-  /** The amount box grows with the number, so "₹" sits right next to it. */
-  protected amountWidth(): number {
-    return Math.max(1.6, String(this.amountText || '0').length * 0.62 + 0.4);
-  }
-
-  protected canPay(): boolean {
-    return this.amount() > 0 && !!this.categoryId() && !!this.accountId && this.apps().length > 0;
   }
 
   protected initial(name: string): string {
     return (name.trim()[0] ?? '?').toUpperCase();
   }
+
+  // ---- Steps ----
+
+  protected go(step: Step): void {
+    this.error.set(null);
+    this.step.set(step);
+  }
+
+  /** The next step this payment needs (shop / category are skipped when already known). */
+  protected next(): void {
+    const order = this.flow();
+    let i = order.indexOf(this.step()) + 1;
+    while (i < order.length && this.skippable(order[i])) i++;
+    this.go(order[Math.min(i, order.length - 1)]);
+  }
+
+  /** Back goes one step back in the flow; from the start it leaves Scan & Pay. */
+  protected back(): void {
+    const order = this.flow();
+    const i = order.indexOf(this.step());
+    if (i > 0) {
+      this.go(order[i - 1]);
+    } else if (i === 0 || this.step() === 'failed' || this.step() === 'confirm') {
+      this.reset(false);
+    } else {
+      void this.router.navigate(['/dashboard']);
+    }
+  }
+
+  private skippable(s: Step): boolean {
+    // Known shop: no need to ask (its name shows at the top; tap Back to change it).
+    if (s === 'shop') return !!this.shopName();
+    return false;
+  }
+
+  protected press(k: string): void {
+    let v = this.amountSig();
+    if (k === '⌫') v = v.slice(0, -1);
+    else if (k === '.') v = v.includes('.') ? v : (v || '0') + '.';
+    else {
+      if (v.includes('.') && v.split('.')[1].length >= 2) return; // paise: two digits
+      if (v.replace('.', '').length >= 7) return;
+      v = v === '0' ? k : v + k;
+    }
+    this.amountSig.set(v);
+  }
+
+  protected pickShop(name: string): void {
+    if (!name) return;
+    this.shopName.set(name);
+    this.typedName = '';
+    // A shop: worth remembering its category.
+    this.remember = true;
+    this.go('category');
+  }
+
+  protected pickCategory(id: string): void {
+    this.categoryId.set(id);
+    this.next();
+  }
+
+  // ---- Scan ----
 
   protected async scan(): Promise<void> {
     this.error.set(null);
@@ -431,19 +547,22 @@ export class PayPage implements OnInit {
 
   private start(q: UpiQr): void {
     this.qr.set(q);
+    this.ref.set(null);
     this.shops.set(null);
     this.shopsError.set(null);
-    this.amountText = q.am != null ? String(q.am) : '';
-    // A name typed before for this UPI id wins; a placeholder ("Default") is never used.
+    this.amountSig.set('');
+    this.typedName = '';
+    // The shop's name: one typed before for this UPI id, else the QR's own (never a placeholder like "Default").
     const saved = payeeNames()[q.pa.toLowerCase()] ?? null;
-    this.savedName.set(saved);
-    this.note = saved ?? (placeholderName(q.pn) ? '' : q.pn);
-    this.ref.set(null);
+    const own = placeholderName(q.pn) ? null : q.pn;
+    this.shopName.set(saved ?? own ?? '');
+    this.knownName.set(saved ?? own);
+    this.knownWhy.set(saved ? 'You named it before' : own ? 'From the QR' : '');
     // The category learned for this shop: by its UPI id first (unique), then by name.
     const learned =
       this.sms.payeeCategory(q.pa) ??
       (saved ? this.sms.payeeCategory(saved) : null) ??
-      (placeholderName(q.pn) ? null : this.sms.payeeCategory(q.pn));
+      (own ? this.sms.payeeCategory(own) : null);
     this.categoryId.set(learned ?? '');
     // Shops are remembered by default, people aren't.
     this.remember = !!learned || !!q.mc;
@@ -454,52 +573,43 @@ export class PayPage implements OnInit {
       accounts.find((a) => a.type === 'savings' || a.type === 'checking')?.id ??
       accounts[0]?.id ??
       '';
-    this.step.set('details');
-    // Amount to type: open the keyboard on it.
-    if (q.am == null) setTimeout(() => this.amountBox?.nativeElement.focus(), 350);
+    this.go(q.am != null ? (this.shopName() ? 'category' : 'shop') : 'amount');
+    this.locate(q);
+  }
+
+  /** Location for the expense, then the shop remembered at this spot and the shops around it. */
+  private locate(q: UpiQr): void {
     this.locating.set(true);
     void this.sms
       .currentLocation()
       .then(async (l) => {
+        if (this.qr() !== q) return;
         this.location.set(l);
-        // No name yet: the shop you paid at this spot before.
-        if (l && !this.note.trim() && this.qr() === q) {
+        if (!l) {
+          this.shops.set([]);
+          return;
+        }
+        if (!this.knownName()) {
           const r = await SmsReader.recallPlace({ lat: l.lat, lng: l.lng, accuracy: l.accuracy }).catch(() => null);
-          if (r?.name && !this.note.trim() && this.qr() === q) {
-            this.note = r.name;
-            this.savedName.set(r.name);
+          if (r?.name && this.qr() === q && !this.knownName()) {
+            this.knownName.set(r.name);
+            this.knownWhy.set('You paid here before');
             if (!this.categoryId() && r.categoryId && this.categoriesStore.byId()[r.categoryId]) {
               this.categoryId.set(r.categoryId);
-              this.remember = true;
             }
           }
         }
-        // Still no name (the QR says "Default"): show the shops around you right away.
-        if (l && !this.note.trim() && this.qr() === q) void this.findShops();
+        try {
+          const found = await this.sms.findNearbyPlaces(l.lat, l.lng);
+          if (this.qr() === q) this.shops.set(found);
+        } catch {
+          if (this.qr() === q) {
+            this.shopsError.set("Couldn't reach the shop search — type the name instead.");
+            this.shops.set([]);
+          }
+        }
       })
       .finally(() => this.locating.set(false));
-  }
-
-  protected async findShops(): Promise<void> {
-    const l = this.location();
-    if (!l) return;
-    this.shopsBusy.set(true);
-    this.shopsError.set(null);
-    try {
-      this.shops.set(await this.sms.findNearbyPlaces(l.lat, l.lng));
-    } catch {
-      this.shopsError.set("Couldn't reach the shop search. Check the connection (or the Google key in Settings).");
-      this.shops.set([]);
-    } finally {
-      this.shopsBusy.set(false);
-    }
-  }
-
-  protected pickShop(name: string): void {
-    this.note = name;
-    this.savedName.set(name);
-    // A shop: worth remembering its category.
-    this.remember = true;
   }
 
   protected async moreCategories(): Promise<void> {
@@ -515,42 +625,53 @@ export class PayPage implements OnInit {
     });
     await modal.present();
     const { role, data } = await modal.onWillDismiss<string | null>();
-    if (role === 'select' && data) this.categoryId.set(data);
+    if (role === 'select' && data) this.pickCategory(data);
   }
 
-  protected async pay(): Promise<void> {
+  // ---- Pay ----
+
+  protected async pay(packageName: string): Promise<void> {
     const q = this.qr();
-    if (!q || !this.canPay()) return;
+    if (!q || this.amount() <= 0 || !this.categoryId() || !this.accountId) {
+      this.error.set(!this.categoryId() ? 'Pick a category first.' : 'Enter the amount first.');
+      return;
+    }
     this.error.set(null);
-    writeLocal(APP_KEY, this.app());
+    this.app.set(packageName);
+    writeLocal(APP_KEY, packageName);
     writeLocal(ACCOUNT_KEY, this.accountId);
     this.step.set('paying');
+    const name = this.shopName();
     // From now on the bank's SMS for this payment is expected: neither the
     // full-screen alert nor the in-app listener should ask about it.
-    this.sms.recordPaidHere(this.amount(), q.pa, this.note.trim() || (placeholderName(q.pn) ? '' : q.pn));
+    this.sms.recordPaidHere(this.amount(), q.pa, name);
     let outcome: UpiOutcome = 'unknown';
     try {
-      const res = await this.appLock.hold(() => SmsReader.upiPay({
-        uri: buildPayUri(q, this.amount(), this.note),
-        packageName: this.app() || null,
-        amount: this.amount(),
-        vpa: q.pa,
-        name: q.pn,
-      }));
+      const res = await this.appLock.hold(() =>
+        SmsReader.upiPay({
+          uri: buildPayUri(q, this.amount(), name),
+          packageName,
+          amount: this.amount(),
+          vpa: q.pa,
+          name: q.pn,
+        }),
+      );
       const parsed = parseUpiResponse(res?.response);
       outcome = parsed.status;
       this.ref.set(parsed.ref);
       this.sms.setPaidRef(this.amount(), parsed.ref);
     } catch (e) {
       this.sms.forgetPaidHere(this.amount());
-      this.step.set('details');
-      this.error.set(String((e as Error)?.message ?? e).includes('no-upi-app')
-        ? 'That UPI app is no longer installed. Pick another.'
-        : "Couldn't open the UPI app.");
+      this.step.set('app');
+      this.error.set(
+        String((e as Error)?.message ?? e).includes('no-upi-app')
+          ? 'That UPI app is no longer installed. Pick another.'
+          : "Couldn't open the UPI app.",
+      );
       return;
     }
     if (outcome === 'success' || outcome === 'submitted') {
-      await this.save('app');
+      await this.save();
     } else if (outcome === 'failure') {
       await this.notPaid(true);
     } else {
@@ -558,30 +679,29 @@ export class PayPage implements OnInit {
     }
   }
 
-  protected async save(_by: 'app' | 'confirmed'): Promise<void> {
+  protected async save(): Promise<void> {
     const q = this.qr();
     if (!q) return;
     this.busy.set(true);
     try {
-      const name = this.note.trim();
+      const name = this.shopName().trim();
       const created = await this.expensesStore.add({
         date: localToday(),
         amount: this.amount(),
         categoryId: this.categoryId(),
         accountId: this.accountId,
-        note: name || (placeholderName(q.pn) ? q.pa : q.pn),
+        note: name || q.pa,
         excluded: false,
         type: 'expense',
         ...(this.location() ? { location: this.location() } : {}),
       });
       // No name yet: the payee name in the bank's SMS (e.g. "To APOLLO DENTAL") fills it in later.
       this.sms.setPaidExpense(this.amount(), created.id, !name);
-      // The name you typed for this UPI id is used next time you scan it.
+      // The name chosen for this UPI id is used next time you scan it.
       if (name && name !== q.pn) savePayeeName(q.pa, name);
       if (this.remember) {
         this.sms.rememberPayeeCategory(q.pa, this.categoryId());
         if (name) this.sms.rememberPayeeCategory(name, this.categoryId());
-        if (!placeholderName(q.pn) && q.pn !== name) this.sms.rememberPayeeCategory(q.pn, this.categoryId());
         // "You paid here before": a later payment at this spot (even by card) gets the shop and category.
         const loc = this.location();
         if (loc && name) void this.sms.rememberPlaceAt(loc, name, this.categoryId());
@@ -598,14 +718,14 @@ export class PayPage implements OnInit {
   protected async notPaid(failed = false): Promise<void> {
     this.sms.forgetPaidHere(this.amount());
     await SmsReader.upiForget({ amount: this.amount() }).catch(() => undefined);
-    this.step.set(failed ? 'failed' : 'details');
+    this.step.set(failed ? 'failed' : 'app');
   }
 
-  protected reset(): void {
+  protected reset(rescan = true): void {
     this.qr.set(null);
     this.location.set(null);
     this.step.set('scan');
-    void this.scan();
+    if (rescan) void this.scan();
   }
 }
 
