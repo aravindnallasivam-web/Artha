@@ -25,7 +25,6 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
-import { spokenAmount } from '../../core/voice/spoken-number';
 import { suggestCategories } from './category-hints';
 import {
   UpiOutcome,
@@ -116,8 +115,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
                        [style.width.ch]="amountWidth()" [value]="amountText"
                        (input)="onAmountInput($event)" (keydown.enter)="amountDone($event)" />
               </label>
-              <div class="center"><artha-mic label="Amount" (heard)="onSpokenAmount($event)" (failed)="error.set($event)"></artha-mic></div>
-              <p class="hint center">Type the amount (or tap 🎤 and say it), then press Next.</p>
+              <p class="hint center">Type the amount, then press Next on the keyboard.</p>
               @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
               <div class="bar">
                 <button type="button" class="btn btn--primary btn--wide" (click)="next()" [disabled]="amount() <= 0">Next</button>
@@ -668,19 +666,6 @@ export class PayPage implements OnInit {
   private skippable(_s: Step): boolean {
     // Every step is shown: a known shop is preselected on "Which shop?" (one tap to confirm).
     return false;
-  }
-
-  /** "two hundred and fifty" / "250 rupees" → 250. */
-  protected onSpokenAmount(text: string): void {
-    const v = spokenAmount(text);
-    if (v === null || v <= 0) {
-      this.error.set(`Didn't catch an amount in “${text}”. Try again or type it.`);
-      return;
-    }
-    this.error.set(null);
-    const s = String(Math.round(v * 100) / 100);
-    this.amountSig.set(s);
-    if (this.amountBox) this.amountBox.nativeElement.value = s;
   }
 
   /** Keep only a valid amount: digits, one decimal point, two paise digits, up to ₹99,99,999. */
