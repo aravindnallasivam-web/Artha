@@ -1,8 +1,9 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
+import { Keyboard } from '@capacitor/keyboard';
 import {
   IonButton,
   IonButtons,
@@ -40,7 +41,6 @@ const FLOW: Step[] = ['amount', 'shop', 'category', 'app'];
 
 const APP_KEY = 'artha.pay.app';
 const ACCOUNT_KEY = 'artha.pay.account';
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
 /**
  * Scan & Pay as a short guided flow: scan the shop's UPI QR, then one
@@ -105,12 +105,14 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
             <!-- 1 · Amount -->
             @case ('amount') {
               <h2 class="q">How much?</h2>
-              <div class="amount num" [class.amount--empty]="!amountText">₹{{ amountText || '0' }}</div>
-              <div class="keypad">
-                @for (k of keys; track k) {
-                  <button type="button" class="key" (click)="press(k)" [attr.aria-label]="k === '⌫' ? 'Delete' : k">{{ k }}</button>
-                }
-              </div>
+              <label class="amount num">
+                <span class="cur">₹</span>
+                <input #amountBox class="amount-input" type="text" inputmode="decimal" enterkeyhint="next"
+                       autocomplete="off" placeholder="0" aria-label="Amount"
+                       [style.width.ch]="amountWidth()" [value]="amountText"
+                       (input)="onAmountInput($event)" (keydown.enter)="amountDone($event)" />
+              </label>
+              <p class="hint center">Type the amount, then press Next on the keyboard.</p>
               <div class="bar">
                 <button type="button" class="btn btn--primary btn--wide" (click)="next()" [disabled]="amount() <= 0">Next</button>
               </div>
@@ -284,15 +286,15 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
     .big-ic--ok { background: color-mix(in srgb, var(--artha-positive) 15%, transparent); color: var(--artha-positive); }
     .big-ic--bad { background: var(--artha-negative-tint); color: var(--artha-negative); }
 
-    /* Amount keypad */
-    .amount { text-align: center; font-size: 52px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text); margin: 4px 0 14px; }
-    .amount--empty { color: var(--artha-border-strong); }
-    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-    .key {
-      height: 58px; border: 0; border-radius: 16px; background: var(--artha-surface-2); color: var(--artha-text);
-      font: inherit; font-size: 24px; font-weight: 700; cursor: pointer;
+    /* Amount: the phone's own number keyboard */
+    .amount { display: flex; align-items: baseline; justify-content: center; gap: 2px; margin: 8px 0 4px; }
+    .cur { font-size: 36px; font-weight: 700; color: var(--artha-text-muted); }
+    .amount-input {
+      max-width: 70vw; border: 0; outline: 0; background: transparent; padding: 0; text-align: center;
+      font: inherit; font-size: 56px; font-weight: 800; letter-spacing: -0.03em; color: var(--artha-text);
+      caret-color: var(--artha-accent);
     }
-    .key:active { background: var(--artha-accent-tint); }
+    .amount-input::placeholder { color: var(--artha-border-strong); }
 
     /* Lists */
     .row {
@@ -374,7 +376,7 @@ export class PayPage implements OnInit {
   private readonly appLock = inject(AppLockService);
 
   protected readonly native = Capacitor.getPlatform() === 'android';
-  protected readonly keys = KEYS;
+  @ViewChild('amountBox') private amountBox?: ElementRef<HTMLInputElement>;
   protected readonly step = signal<Step>('scan');
   protected readonly qr = signal<UpiQr | null>(null);
   protected readonly categoryId = signal<string>('');
@@ -465,6 +467,13 @@ export class PayPage implements OnInit {
   protected go(step: Step): void {
     this.error.set(null);
     this.step.set(step);
+    // The amount step opens the phone's number keyboard straight away.
+    if (step === 'amount') {
+      setTimeout(() => {
+        this.amountBox?.nativeElement.focus();
+        void Keyboard.show().catch(() => undefined);
+      }, 300);
+    }
   }
 
   /** The next step this payment needs (shop / category are skipped when already known). */
@@ -494,16 +503,32 @@ export class PayPage implements OnInit {
     return false;
   }
 
-  protected press(k: string): void {
-    let v = this.amountSig();
-    if (k === '⌫') v = v.slice(0, -1);
-    else if (k === '.') v = v.includes('.') ? v : (v || '0') + '.';
-    else {
-      if (v.includes('.') && v.split('.')[1].length >= 2) return; // paise: two digits
-      if (v.replace('.', '').length >= 7) return;
-      v = v === '0' ? k : v + k;
-    }
+  /** Keep only a valid amount: digits, one decimal point, two paise digits, up to ₹99,99,999. */
+  protected onAmountInput(event: Event): void {
+    const box = event.target as HTMLInputElement;
+    let v = box.value.replace(/[^0-9.]/g, '');
+    const dot = v.indexOf('.');
+    if (dot >= 0) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+    const [whole, frac] = v.split('.');
+    v = whole.replace(/^0+(?=\d)/, '').slice(0, 7) + (frac !== undefined ? '.' + frac : '');
+    if (v !== box.value) box.value = v;
     this.amountSig.set(v);
+  }
+
+  /** Next / Enter on the keyboard: on to the next step. */
+  protected amountDone(event: Event): void {
+    event.preventDefault();
+    if (this.amount() > 0) {
+      this.amountBox?.nativeElement.blur();
+      this.next();
+    }
+  }
+
+  /** The box grows with the number, so "₹" sits right next to it. */
+  protected amountWidth(): number {
+    // ch = the width of one digit in the box's own (large) font.
+    const v = this.amountSig() || '0';
+    return Math.max(1.2, v.replace('.', '').length + (v.includes('.') ? 0.5 : 0) + 0.15);
   }
 
   protected pickShop(name: string): void {
