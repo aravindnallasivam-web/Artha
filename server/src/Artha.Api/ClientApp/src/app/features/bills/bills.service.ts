@@ -135,7 +135,10 @@ export class BillsService {
   private async openRouteIfAny(): Promise<void> {
     try {
       const { route } = await SmsReader.consumeOpenRoute();
-      if (route) await this.router.navigateByUrl(route);
+      if (!route) return;
+      // Scan & Pay (widget / shortcut): a fresh scan every time, even when it's already open.
+      const url = route === '/pay' ? `/pay?scan=${Date.now()}` : route;
+      await this.router.navigateByUrl(url);
     } catch {
       // Older build.
     }

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the Artha icon → "Scan & Pay" (can also be dragged to the home screen). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan_pay"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan_pay"
+        android:shortcutShortLabel="@string/widget_scan_pay"
+        android:shortcutLongLabel="@string/widget_scan_pay_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.artha.app"
+            android:targetClass="com.artha.app.MainActivity">
+            <extra android:name="artha_open_route" android:value="/pay" />
+        </intent>
+    </shortcut>
+</shortcuts>

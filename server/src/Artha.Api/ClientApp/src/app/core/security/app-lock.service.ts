@@ -168,6 +168,16 @@ export class AppLockService {
     });
   }
 
+  /** Resolves once the app is unlocked (at once when it isn't locked). */
+  async whenUnlocked(timeoutMs = 120_000): Promise<boolean> {
+    const start = Date.now();
+    while (this._locked()) {
+      if (Date.now() - start > timeoutMs) return false;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return true;
+  }
+
   /** One fingerprint / face / screen-lock check, e.g. to open the card vault. */
   async verify(title: string, subtitle = 'Verify it\'s you'): Promise<boolean> {
     if (!this.isSupported()) return false;

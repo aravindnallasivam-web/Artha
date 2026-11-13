@@ -2,7 +2,7 @@ import { MicButtonComponent } from '../../shared/mic-button.component';
 import { CurrencyPipe } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
 import { Keyboard } from '@capacitor/keyboard';
 import {
@@ -471,6 +471,8 @@ export class PayPage implements OnInit {
   private readonly accountsStore = inject(AccountsStore);
   private readonly modalCtrl = inject(ModalController);
   private readonly appLock = inject(AppLockService);
+  private readonly route = inject(ActivatedRoute);
+  private scanParam: string | null = null;
 
   protected readonly native = Capacitor.getPlatform() === 'android';
   @ViewChild('amountBox') private amountBox?: ElementRef<HTMLInputElement>;
@@ -614,7 +616,17 @@ export class PayPage implements OnInit {
       })
       .catch(() => undefined);
     // Straight into the camera.
+    this.scanParam = this.route.snapshot.queryParamMap.get('scan');
     void this.scan();
+    // Opened again from the widget / shortcut while already here: scan again
+    // (unless a payment is in progress).
+    this.route.queryParamMap.subscribe((q) => {
+      const v = q.get('scan');
+      if (v && v !== this.scanParam) {
+        this.scanParam = v;
+        if (this.step() !== 'paying' && this.step() !== 'confirm') this.reset(true);
+      }
+    });
   }
 
   protected amount(): number {
@@ -766,6 +778,8 @@ export class PayPage implements OnInit {
     this.error.set(null);
     this.busy.set(true);
     try {
+      // Opened from the widget with App lock on: unlock first, then the camera.
+      if (!(await this.appLock.whenUnlocked())) return;
       const r = await this.appLock.hold(() => SmsReader.scanUpiQr());
       if (!r || r.cancelled || !r.qr) return;
       const q = parseUpiQr(r.qr);

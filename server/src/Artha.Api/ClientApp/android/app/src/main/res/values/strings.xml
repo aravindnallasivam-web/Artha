@@ -13,4 +13,7 @@
     <string name="prompt_review">Open Artha to review</string>
     <string name="prompt_added">Added · syncs on next open</string>
     <string name="prompt_dismissed">Dismissed</string>
+    <string name="widget_scan_pay">Scan &amp; Pay</string>
+    <string name="widget_scan_pay_long">Scan a UPI QR and pay</string>
+    <string name="widget_scan_pay_desc">Opens Artha straight into the UPI QR camera</string>
 </resources>
