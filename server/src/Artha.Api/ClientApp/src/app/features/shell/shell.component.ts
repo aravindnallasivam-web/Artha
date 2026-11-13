@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
@@ -66,6 +66,9 @@ const TABS: NavItem[] = [
   { path: '/investments', label: 'Investments', icon: 'trending-up-outline', iconActive: 'trending-up' },
   { path: '/accounts', label: 'Accounts', icon: 'card-outline', iconActive: 'card' },
 ];
+
+/** Routes shown without the mobile tab bar. */
+const FULL_SCREEN_ROUTES = ['/pay'];
 
 @Component({
   selector: 'artha-shell',
@@ -149,6 +152,7 @@ const TABS: NavItem[] = [
       <!-- Mobile-only floating tab bar with a centre Add button. "More"
            (planned, loans, categories, settings) lives behind the avatar on
            Home. Hidden once the side pane is visible (>=768px). -->
+      @if (!fullScreen()) {
       <nav class="m-tabs" aria-label="Primary">
         @for (t of tabs; track t.path; let i = $index) {
           @if (i === 2) {
@@ -172,6 +176,7 @@ const TABS: NavItem[] = [
           </a>
         }
       </nav>
+      }
 
       <artha-sync-indicator></artha-sync-indicator>
     </ion-app>
@@ -382,6 +387,9 @@ export class ShellComponent {
     ),
     { initialValue: this.router.url.split(/[?#]/)[0] },
   );
+
+  /** Screens that use the whole screen (Scan & Pay): no tab bar; they have their own Home button. */
+  protected readonly fullScreen = computed(() => FULL_SCREEN_ROUTES.includes(this.currentPath()));
 
   protected onAlso(t: NavItem): boolean {
     const path = this.currentPath();

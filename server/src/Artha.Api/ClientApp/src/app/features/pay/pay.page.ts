@@ -64,6 +64,11 @@ const ACCOUNT_KEY = 'artha.pay.account';
           <ion-button (click)="back()" aria-label="Back"><ion-icon name="arrow-back" slot="icon-only"></ion-icon></ion-button>
         </ion-buttons>
         <ion-title>Scan &amp; Pay</ion-title>
+        <ion-buttons slot="end">
+          <ion-button (click)="router.navigate(['/dashboard'])" aria-label="Home">
+            <ion-icon name="home-outline" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -490,10 +495,11 @@ const ACCOUNT_KEY = 'artha.pay.account';
 
     /* The main button stays on screen, above the floating tab bar. */
     .bar { position: sticky; bottom: 0; z-index: 5; margin: 16px -16px 0; padding: 12px 16px 16px; background: var(--artha-surface); }
+    /* No tab bar on Scan & Pay: only the phone's own gesture bar to clear. */
     @media (max-width: 767.98px) {
       :host ion-content { --padding-bottom: 0px; }
-      .wrap { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
-      .bar { padding-bottom: calc(96px + env(safe-area-inset-bottom)); margin-bottom: calc(-96px - env(safe-area-inset-bottom)); }
+      .wrap { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+      .bar { padding-bottom: calc(16px + env(safe-area-inset-bottom)); margin-bottom: calc(-16px - env(safe-area-inset-bottom)); }
     }
   `],
 })
