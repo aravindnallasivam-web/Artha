@@ -1,3 +1,4 @@
+import { MicButtonComponent } from '../../shared/mic-button.component';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -37,6 +38,7 @@ const QUICK_CATEGORY_COUNT = 7;
   selector: 'artha-expense-edit',
   standalone: true,
   imports: [
+    MicButtonComponent,
     ReactiveFormsModule,
     AmountInputDirective,
     IonBackButton,
@@ -102,10 +104,13 @@ const QUICK_CATEGORY_COUNT = 7;
                   aria-label="Amount"
                 />
               </div>
-              <label class="note-pill">
-                <span class="sr-only">Note</span>
-                <input type="text" formControlName="note" placeholder="Add a note" />
-              </label>
+              <div class="note-row">
+                <label class="note-pill">
+                  <span class="sr-only">Note</span>
+                  <input type="text" formControlName="note" placeholder="Add a note" />
+                </label>
+                <artha-mic label="Note" (heard)="onSpokenNote($event)"></artha-mic>
+              </div>
             </div>
 
             <!-- Category -->
@@ -262,6 +267,8 @@ const QUICK_CATEGORY_COUNT = 7;
       font-variant-numeric: tabular-nums; caret-color: var(--artha-accent);
     }
     .amount-input::placeholder { color: var(--artha-border-strong); }
+    .note-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; }
+    .note-row .note-pill { margin-top: 0; }
     .note-pill {
       display: inline-flex; align-items: center; margin-top: 10px;
       padding: 9px 16px; border-radius: 999px; background: var(--artha-surface-2);
@@ -762,6 +769,13 @@ export class ExpenseEditPage implements OnInit {
     } catch {
       return code;
     }
+  }
+
+  /** Voice note: replaces an empty note, otherwise adds to it. */
+  protected onSpokenNote(text: string): void {
+    const cur = this.form.controls.note.value.trim();
+    this.form.patchValue({ note: cur ? `${cur} ${text}` : text });
+    this.form.controls.note.markAsDirty();
   }
 
   protected selectAll(event: Event): void {

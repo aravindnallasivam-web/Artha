@@ -639,6 +639,50 @@ public class SmsReaderPlugin extends Plugin {
         }, "artha-sms-location").start();
     }
 
+    // ---- Voice typing: Android's own speech recognizer ----
+
+    /**
+     * Show the phone's "Speak now" box and return what was said:
+     * { text, alternatives[] } or { cancelled: true }. Free, uses the phone's
+     * speech service (offline when the language pack is downloaded); no
+     * microphone permission is needed by Artha itself.
+     */
+    @PluginMethod
+    public void listen(PluginCall call) {
+        Intent intent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        String lang = call.getString("language", "en-IN");
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, lang);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, call.getString("prompt", "Speak now"));
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        if (intent.resolveActivity(getContext().getPackageManager()) == null) {
+            call.reject("voice-unavailable");
+            return;
+        }
+        startActivityForResult(call, intent, "listenResult");
+    }
+
+    @ActivityCallback
+    private void listenResult(PluginCall call, androidx.activity.result.ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        Intent data = result.getData();
+        java.util.ArrayList<String> heard = data != null
+            ? data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS) : null;
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || heard == null || heard.isEmpty()) {
+            ret.put("cancelled", true);
+        } else {
+            ret.put("text", heard.get(0));
+            JSArray alts = new JSArray();
+            for (String h : heard) alts.put(h);
+            ret.put("alternatives", alts);
+        }
+        call.resolve(ret);
+    }
+
     // ---- Scan & Pay (UPI) ----
 
     /** Scan a UPI QR code; resolves { qr: "upi://pay?..." } or { cancelled: true }. */

@@ -24,6 +24,7 @@ import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
 import { SmsReader } from '../../core/native/sms-reader';
 import { AppLockService, LOCK_AFTER_OPTIONS, LockAfter } from '../../core/security/app-lock.service';
+import { VOICE_LANGUAGES, VoiceService } from '../../core/voice/voice.service';
 import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { environment } from '../../../environments/environment';
@@ -161,6 +162,33 @@ import { SettingsStore } from './settings.store';
                 </ion-select>
               </ion-item>
             }
+          </ion-list>
+        }
+
+        @if (voice.isSupported()) {
+          <p class="section-title">Voice typing</p>
+          <ion-list inset="true" class="card">
+            <ion-item lines="none">
+              <span class="icon-chip chip-accent" slot="start">
+                <ion-icon name="mic"></ion-icon>
+              </span>
+              <ion-select
+                label="Language for 🎤"
+                interface="popover"
+                [value]="voice.language()"
+                (ionChange)="voice.setLanguage($any($event).detail.value)"
+              >
+                @for (l of voiceLanguages; track l.code) {
+                  <ion-select-option [value]="l.code">{{ l.label }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <p>Uses your phone's own speech recognition — free, and it works offline once the language is
+                  downloaded (Android settings → Google → Voice → Offline speech recognition).</p>
+              </ion-label>
+            </ion-item>
           </ion-list>
         }
 
@@ -610,6 +638,8 @@ export class SettingsPage implements OnInit {
   protected readonly session = inject(SessionService);
   protected readonly sms = inject(SmsCaptureService);
   protected readonly appLock = inject(AppLockService);
+  protected readonly voice = inject(VoiceService);
+  protected readonly voiceLanguages = VOICE_LANGUAGES;
   protected readonly lockAfterOptions = LOCK_AFTER_OPTIONS;
 
   protected onLockAfter(event: Event): void {

@@ -178,6 +178,8 @@ export interface SmsReaderPlugin {
   captureSmsLocation(options: { address: string; body: string }): Promise<{
     location: { lat: number; lng: number; accuracy?: number | null; at?: number } | null;
   }>;
+  /** Voice typing: the phone's "Speak now" box. */
+  listen(options: { prompt?: string; language?: string }): Promise<{ text?: string; alternatives?: string[]; cancelled?: boolean }>;
   /** Scan & Pay: read a UPI QR with the camera. */
   scanUpiQr(): Promise<{ qr?: string | null; cancelled?: boolean }>;
   /** Installed apps that can pay a upi:// link. */

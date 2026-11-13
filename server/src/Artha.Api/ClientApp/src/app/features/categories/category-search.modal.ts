@@ -1,3 +1,4 @@
+import { MicButtonComponent } from '../../shared/mic-button.component';
 import { Component, Input, computed, inject, signal } from '@angular/core';
 import {
   IonButton,
@@ -25,6 +26,7 @@ import { CategoryOption } from './categories.store';
   selector: 'artha-category-search',
   standalone: true,
   imports: [
+    MicButtonComponent,
     IonButton,
     IonButtons,
     IonContent,
@@ -46,11 +48,15 @@ import { CategoryOption } from './categories.store';
         </ion-buttons>
       </ion-toolbar>
       <ion-toolbar>
-        <ion-searchbar
-          placeholder="Search categories"
-          [debounce]="0"
-          (ionInput)="onSearch($event)"
-        ></ion-searchbar>
+        <div class="search-row">
+          <ion-searchbar
+            placeholder="Search categories"
+            [debounce]="0"
+            [value]="query()"
+            (ionInput)="onSearch($event)"
+          ></ion-searchbar>
+          <artha-mic label="Category" (heard)="query.set($event)"></artha-mic>
+        </div>
       </ion-toolbar>
     </ion-header>
 
@@ -85,6 +91,8 @@ import { CategoryOption } from './categories.store';
     </ion-content>
   `,
   styles: [`
+    .search-row { display: flex; align-items: center; gap: 4px; padding-right: 10px; }
+    .search-row ion-searchbar { flex: 1; }
     ion-label.child { padding-inline-start: 20px; font-weight: 400; }
     .empty { padding: 24px 16px; text-align: center; color: var(--artha-text-subtle, #888); }
     .create { --color: var(--artha-accent, #2f6df6); font-weight: 600; }

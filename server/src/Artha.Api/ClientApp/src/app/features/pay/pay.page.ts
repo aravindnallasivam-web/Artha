@@ -1,3 +1,4 @@
+import { MicButtonComponent } from '../../shared/mic-button.component';
 import { CurrencyPipe } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -24,6 +25,7 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
+import { spokenAmount } from '../../core/voice/spoken-number';
 import { suggestCategories } from './category-hints';
 import {
   UpiOutcome,
@@ -53,7 +55,8 @@ const ACCOUNT_KEY = 'artha.pay.account';
 @Component({
   selector: 'artha-pay',
   standalone: true,
-  imports: [CurrencyPipe, FormsModule, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar],
+  imports: [
+    MicButtonComponent, CurrencyPipe, FormsModule, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar],
   template: `
     <ion-header class="ion-no-border">
       <ion-toolbar>
@@ -113,7 +116,9 @@ const ACCOUNT_KEY = 'artha.pay.account';
                        [style.width.ch]="amountWidth()" [value]="amountText"
                        (input)="onAmountInput($event)" (keydown.enter)="amountDone($event)" />
               </label>
-              <p class="hint center">Type the amount, then press Next on the keyboard.</p>
+              <div class="center"><artha-mic label="Amount" (heard)="onSpokenAmount($event)" (failed)="error.set($event)"></artha-mic></div>
+              <p class="hint center">Type the amount (or tap 🎤 and say it), then press Next.</p>
+              @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
               <div class="bar">
                 <button type="button" class="btn btn--primary btn--wide" (click)="next()" [disabled]="amount() <= 0">Next</button>
               </div>
@@ -129,6 +134,8 @@ const ACCOUNT_KEY = 'artha.pay.account';
                        (keyup.enter)="typedName.trim() && pickShop(typedName.trim())" />
                 @if (typedName.trim()) {
                   <button type="button" class="btn btn--primary" (click)="pickShop(typedName.trim())">Use</button>
+                } @else {
+                  <artha-mic label="Shop name" (heard)="onSearch($event)" (failed)="searchError.set($event)"></artha-mic>
                 }
               </div>
 
@@ -180,9 +187,12 @@ const ACCOUNT_KEY = 'artha.pay.account';
             <!-- 3 · Category -->
             @case ('category') {
               <h2 class="q">What for?</h2>
-              <input class="field field--search" type="search" enterkeyhint="search" autocomplete="off"
-                     placeholder="Search categories" aria-label="Search categories"
-                     [ngModel]="catQuery()" (ngModelChange)="catQuery.set($event)" />
+              <div class="type-row">
+                <input class="field field--search" type="search" enterkeyhint="search" autocomplete="off"
+                       placeholder="Search categories" aria-label="Search categories"
+                       [ngModel]="catQuery()" (ngModelChange)="catQuery.set($event)" />
+                <artha-mic label="Category" (heard)="catQuery.set($event)"></artha-mic>
+              </div>
 
               @if (catQuery().trim()) {
                 @for (c of catMatches(); track c.id) {
@@ -383,7 +393,7 @@ const ACCOUNT_KEY = 'artha.pay.account';
     }
 
     /* Categories */
-    .field--search { width: 100%; margin-bottom: 4px; }
+    .field--search { width: 100%; }
     .label { margin: 14px 2px 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--artha-text-subtle); }
     .dot { width: 12px; height: 12px; border-radius: 999px; flex-shrink: 0; background: var(--artha-accent); }
     .sugg { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -658,6 +668,19 @@ export class PayPage implements OnInit {
   private skippable(_s: Step): boolean {
     // Every step is shown: a known shop is preselected on "Which shop?" (one tap to confirm).
     return false;
+  }
+
+  /** "two hundred and fifty" / "250 rupees" → 250. */
+  protected onSpokenAmount(text: string): void {
+    const v = spokenAmount(text);
+    if (v === null || v <= 0) {
+      this.error.set(`Didn't catch an amount in “${text}”. Try again or type it.`);
+      return;
+    }
+    this.error.set(null);
+    const s = String(Math.round(v * 100) / 100);
+    this.amountSig.set(s);
+    if (this.amountBox) this.amountBox.nativeElement.value = s;
   }
 
   /** Keep only a valid amount: digits, one decimal point, two paise digits, up to ₹99,99,999. */

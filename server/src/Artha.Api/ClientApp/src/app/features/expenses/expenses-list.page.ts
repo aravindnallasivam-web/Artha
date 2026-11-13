@@ -1,3 +1,4 @@
+import { MicButtonComponent } from '../../shared/mic-button.component';
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -36,6 +37,7 @@ const TODAY_ISO = toIsoDate(new Date());
   selector: 'artha-expenses-list',
   standalone: true,
   imports: [
+    MicButtonComponent,
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
@@ -93,6 +95,7 @@ const TODAY_ISO = toIsoDate(new Date());
               [value]="search()"
               (input)="onSearch($event)"
             />
+            <artha-mic label="Search" (heard)="search.set($event)"></artha-mic>
           </label>
         }
 
