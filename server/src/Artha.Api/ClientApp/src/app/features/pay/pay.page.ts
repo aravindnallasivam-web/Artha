@@ -42,6 +42,7 @@ type Step = 'scan' | 'amount' | 'shop' | 'category' | 'app' | 'paying' | 'confir
 const FLOW: Step[] = ['amount', 'shop', 'category', 'app'];
 
 const APP_KEY = 'artha.pay.app';
+const GPAY = 'com.google.android.apps.nbu.paisa.user';
 const ACCOUNT_KEY = 'artha.pay.account';
 
 /**
@@ -257,6 +258,10 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 </select>
               </p>
               @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
+              @if (isPerson()) {
+                <p class="note-card">This is a <b>personal</b> UPI ID. Google Pay blocks these when another app starts
+                  the payment — use PhonePe, Paytm or BHIM, or open your UPI app and pay there yourself.</p>
+              }
               @if (apps().length === 0) {
                 <p class="hint center">No UPI app found. Install Google Pay, PhonePe, Paytm or BHIM.</p>
               }
@@ -264,9 +269,19 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 <button type="button" class="row row--app" [class.row--sel]="first && a.packageName === app()" (click)="pay(a.packageName)">
                   <span class="app-ic" aria-hidden="true">{{ initial(a.label) }}</span>
                   <span class="row-main">{{ a.label }}</span>
-                  @if (a.packageName === app()) { <span class="row-sub">Last used</span> }
+                  @if (isPerson() && a.packageName === GPAY) { <span class="row-sub">May be blocked</span> }
+                  @else if (a.packageName === app()) { <span class="row-sub">Last used</span> }
                   <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
                 </button>
+              }
+              @if (apps().length) {
+                <div class="label">Or pay inside your UPI app</div>
+                <div class="self-apps">
+                  @for (a of selfPayApps(); track a.packageName) {
+                    <button type="button" class="sub" (click)="payMyself(a.packageName)">Open {{ a.label }}</button>
+                  }
+                </div>
+                <p class="hint">Scan the QR there and pay; when you come back, Artha saves it with this category.</p>
               }
             }
 
@@ -277,8 +292,13 @@ const ACCOUNT_KEY = 'artha.pay.account';
             @case ('confirm') {
               <section class="center-block">
                 <span class="big-ic"><ion-icon name="help-circle-outline" aria-hidden="true"></ion-icon></span>
-                <h2>Did the payment go through?</h2>
-                <p>Your UPI app didn't say. Check it, then tell Artha.</p>
+                @if (manualPay()) {
+                  <h2>Did you pay {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}?</h2>
+                  <p>To {{ shopName() || qr()?.pa }} — tap Yes and Artha saves it as {{ categoryName() }}.</p>
+                } @else {
+                  <h2>Did the payment go through?</h2>
+                  <p>Your UPI app didn't say. Check it, then tell Artha.</p>
+                }
                 @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
                 <button type="button" class="btn btn--primary btn--wide" (click)="save()" [disabled]="busy()">
                   Yes, paid {{ amount() | currency: 'INR' : 'symbol' : '1.0-2' }}
@@ -304,8 +324,17 @@ const ACCOUNT_KEY = 'artha.pay.account';
               <section class="center-block">
                 <span class="big-ic big-ic--bad"><ion-icon name="close-circle-outline" aria-hidden="true"></ion-icon></span>
                 <h2>Payment didn't go through</h2>
-                <p>Nothing was saved.</p>
-                <button type="button" class="btn btn--primary btn--wide" (click)="go('app')">Try again</button>
+                @if (isPerson()) {
+                  <p>Your UPI app reported it as failed, so nothing was saved. Google Pay often refuses personal UPI IDs
+                    from other apps (it says “bank limit”). Try another app, or pay inside Google Pay yourself.</p>
+                  @if (hasGpay()) {
+                    <button type="button" class="btn btn--primary btn--wide" (click)="payMyself(GPAY)">Open Google Pay and pay there</button>
+                  }
+                  <button type="button" class="btn btn--wide" (click)="go('app')">Try another app</button>
+                } @else {
+                  <p>Nothing was saved.</p>
+                  <button type="button" class="btn btn--primary btn--wide" (click)="go('app')">Try again</button>
+                }
                 <button type="button" class="btn btn--wide" (click)="reset()">Scan another QR</button>
               </section>
             }
@@ -438,6 +467,11 @@ const ACCOUNT_KEY = 'artha.pay.account';
     .remember { display: flex; align-items: center; gap: 8px; margin: 14px 2px 0; font-size: 13px; color: var(--artha-text-muted); }
     .remember input { width: 18px; height: 18px; flex-shrink: 0; }
 
+    .note-card {
+      margin: 0 0 8px; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.45;
+      background: color-mix(in srgb, var(--artha-warning, #f59e0b) 14%, var(--artha-surface)); color: var(--artha-text);
+    }
+    .self-apps { display: flex; flex-wrap: wrap; gap: 8px; }
     .summary { text-align: center; margin: -4px 0 8px; font-size: 14px; color: var(--artha-text-muted); }
     .inline-select {
       border: 0; border-bottom: 1px dashed var(--artha-border-strong); background: transparent;
@@ -520,9 +554,24 @@ export class PayPage implements OnInit {
   /** The steps this payment goes through (a fixed amount skips the keypad). */
   protected readonly flow = computed<Step[]>(() => FLOW.filter((s) => !(s === 'amount' && this.qr()?.am != null)));
   protected readonly inFlow = computed(() => FLOW.includes(this.step()));
+  protected readonly GPAY = GPAY;
+  /** A person's UPI id (no merchant code): Google Pay refuses these from other apps. */
+  protected readonly isPerson = computed(() => !!this.qr() && !this.qr()!.mc);
+  protected readonly hasGpay = computed(() => this.apps().some((a) => a.packageName === GPAY));
+  /** Paying inside the UPI app itself (opened from here); the result is confirmed on return. */
+  protected readonly manualPay = signal(false);
   protected readonly orderedApps = computed(() => {
     const last = this.app();
-    return [...this.apps()].sort((a, b) => Number(b.packageName === last) - Number(a.packageName === last));
+    const person = this.isPerson();
+    // Last used first; for a person, Google Pay goes last (it blocks these).
+    const rank = (pkg: string) => (person && pkg === GPAY ? 2 : pkg === last ? 0 : 1);
+    return [...this.apps()].sort((a, b) => rank(a.packageName) - rank(b.packageName));
+  });
+  /** For "pay inside your UPI app": the last used / Google Pay first. */
+  protected readonly selfPayApps = computed(() => {
+    const last = this.app();
+    const rank = (pkg: string) => (pkg === last ? 0 : pkg === GPAY ? 1 : 2);
+    return [...this.apps()].sort((a, b) => rank(a.packageName) - rank(b.packageName)).slice(0, 3);
   });
   /** Every active category with its "Group › Sub" label and colour. */
   private readonly allCats = computed(() => {
@@ -888,7 +937,38 @@ export class PayPage implements OnInit {
 
   // ---- Pay ----
 
+  /**
+   * Open the UPI app itself to scan and pay there (e.g. Google Pay, which
+   * refuses personal UPI ids started from other apps); on return, ask
+   * whether it was paid and save it with the details chosen here.
+   */
+  protected async payMyself(packageName: string): Promise<void> {
+    const q = this.qr();
+    if (!q || this.amount() <= 0 || !this.categoryId() || !this.accountId) {
+      this.step.set('app');
+      this.error.set(!this.categoryId() ? 'Pick a category first.' : 'Enter the amount first.');
+      return;
+    }
+    this.error.set(null);
+    writeLocal(ACCOUNT_KEY, this.accountId);
+    this.manualPay.set(true);
+    // Its bank SMS is expected: no alert for it.
+    this.sms.recordPaidHere(this.amount(), q.pa, this.shopName());
+    this.step.set('paying');
+    try {
+      await this.appLock.hold(() => SmsReader.openApp({ packageName }));
+    } catch {
+      this.sms.forgetPaidHere(this.amount());
+      this.manualPay.set(false);
+      this.step.set('app');
+      this.error.set("Couldn't open that app.");
+      return;
+    }
+    this.step.set('confirm');
+  }
+
   protected async pay(packageName: string): Promise<void> {
+    this.manualPay.set(false);
     const q = this.qr();
     if (!q || this.amount() <= 0 || !this.categoryId() || !this.accountId) {
       this.error.set(!this.categoryId() ? 'Pick a category first.' : 'Enter the amount first.');

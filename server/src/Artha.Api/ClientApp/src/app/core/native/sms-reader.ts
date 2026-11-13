@@ -189,6 +189,8 @@ export interface SmsReaderPlugin {
     resultCode: number;
     response: string | null;
   }>;
+  /** Open a UPI app's home screen (pay there yourself); resolves when the user is back. */
+  openApp(options: { packageName: string }): Promise<void>;
   /** A Scan & Pay payment didn't happen: stop skipping the next debit SMS of this amount. */
   upiForget(options: { amount: number }): Promise<void>;
   /** The UPI reference for a Scan & Pay payment, so its bank SMS matches exactly. */

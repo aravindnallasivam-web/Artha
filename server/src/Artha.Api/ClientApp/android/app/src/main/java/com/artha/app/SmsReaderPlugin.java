@@ -766,6 +766,27 @@ public class SmsReaderPlugin extends Plugin {
         startActivityForResult(call, pkg != null && !pkg.isEmpty() ? pay : Intent.createChooser(pay, "Pay with"), "upiPayResult");
     }
 
+    /**
+     * Open a UPI app normally (its home screen), to pay there yourself - Google
+     * Pay refuses payments to personal UPI ids started from other apps.
+     * Resolves when the user comes back.
+     */
+    @PluginMethod
+    public void openApp(PluginCall call) {
+        String pkg = call.getString("packageName");
+        Intent launch = pkg != null ? getContext().getPackageManager().getLaunchIntentForPackage(pkg) : null;
+        if (launch == null) {
+            call.reject("no-app");
+            return;
+        }
+        startActivityForResult(call, launch, "openAppResult");
+    }
+
+    @ActivityCallback
+    private void openAppResult(PluginCall call, androidx.activity.result.ActivityResult result) {
+        if (call != null) call.resolve();
+    }
+
     /** The payment didn't go through: let the next debit SMS of this amount prompt as usual. */
     @PluginMethod
     public void upiForget(PluginCall call) {
