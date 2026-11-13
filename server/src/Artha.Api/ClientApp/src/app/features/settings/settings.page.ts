@@ -22,6 +22,7 @@ import {
 } from '@ionic/angular/standalone';
 import { GoogleAuthService } from '../../core/auth/google-auth.service';
 import { SessionService } from '../../core/auth/session.service';
+import { SmsReader } from '../../core/native/sms-reader';
 import { AppLockService, LOCK_AFTER_OPTIONS, LockAfter } from '../../core/security/app-lock.service';
 import { ThemeService, ThemePreference } from '../../core/theme/theme.service';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
@@ -286,6 +287,11 @@ import { SettingsStore } from './settings.store';
                       [value]="sms.nearbyGoogleKey()"
                       (change)="onNearbyKey($event)"
                     />
+                    @if (signing(); as sig) {
+                      <p class="key-hint">To restrict the key to Artha in Google Cloud (Android apps): package
+                        <b class="mono">{{ sig.packageName }}</b>, SHA-1 <b class="mono">{{ sig.sha1 }}</b>.
+                        Enable "Places API (New)" for the key.</p>
+                    }
                   </ion-label>
                 </ion-item>
               }
@@ -569,6 +575,7 @@ import { SettingsStore } from './settings.store';
 
     /* Nearby shops: optional Google key */
     .key-hint { margin: 0 0 8px; }
+    .mono { font-family: ui-monospace, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
     .warn-line { color: var(--artha-negative) !important; font-weight: 600; }
     .key-input {
       box-sizing: border-box; width: 100%; height: 44px; padding: 0 12px; border-radius: 12px;
@@ -689,7 +696,14 @@ export class SettingsPage implements OnInit {
     return letters.toUpperCase() || '?';
   }
 
+  protected readonly signing = signal<{ packageName: string; sha1: string } | null>(null);
+
   ngOnInit(): void {
+    if (this.sms.isSupported()) {
+      void SmsReader.appSigningInfo()
+        .then((r) => r?.sha1 && this.signing.set({ packageName: r.packageName, sha1: r.sha1 }))
+        .catch(() => undefined);
+    }
     void this.sms.locationPermission().then((p) => this.locationPerm.set(p));
     void this.store.load();
     this.smsEnabled.set(this.sms.isEnabled());

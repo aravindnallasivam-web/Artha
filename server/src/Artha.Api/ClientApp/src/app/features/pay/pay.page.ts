@@ -120,6 +120,28 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 <div class="section">Note</div>
                 <input class="select" type="text" [(ngModel)]="note" [placeholder]="noQrName() ? 'Shop name' : q.pn"
                        aria-label="Note" />
+                @if (shops() === null) {
+                  <button type="button" class="near-btn" (click)="findShops()" [disabled]="shopsBusy() || !location()">
+                    @if (shopsBusy()) {
+                      <ion-spinner name="dots" aria-label="Finding shops"></ion-spinner>
+                    } @else {
+                      <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>
+                      {{ location() ? 'Pick from nearby shops' : locating() ? 'Getting location…' : 'Nearby shops need your location' }}
+                    }
+                  </button>
+                } @else if (shops()!.length === 0) {
+                  <p class="hint">{{ shopsError() || 'No shops found nearby. Type the name in Note.' }}</p>
+                  @if (shopsError()) { <button type="button" class="near-btn" (click)="findShops()">Try again</button> }
+                } @else {
+                  <p class="hint">Tap the shop you're paying — it becomes the note.</p>
+                  <div class="chips near">
+                    @for (s of shops(); track s.name) {
+                      <button type="button" class="chip" [class.sel]="note === s.name" (click)="pickShop(s.name)">
+                        {{ s.name }}<span class="dist">{{ s.distanceM }} m</span>
+                      </button>
+                    }
+                  </div>
+                }
 
                 <div class="section">Pay with</div>
                 @if (apps().length === 0) {
@@ -243,6 +265,15 @@ const ACCOUNT_KEY = 'artha.pay.account';
     .hint { margin: 6px 2px 0; font-size: 12.5px; color: var(--artha-text-muted); }
     .center { text-align: center; }
     .payee + .hint { margin-top: 8px; }
+    .near-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+      height: 42px; margin-top: 8px; border-radius: 999px; border: 1px dashed var(--artha-border);
+      background: transparent; color: var(--artha-accent); cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 700;
+    }
+    .near-btn[disabled] { color: var(--artha-text-muted); cursor: default; }
+    .near-btn ion-spinner { width: 22px; height: 22px; }
+    .near { margin-top: 8px; }
+    .dist { margin-left: 6px; font-size: 11.5px; font-weight: 500; opacity: 0.7; }
     .loc { display: flex; align-items: center; gap: 6px; margin: 16px 2px 0; font-size: 12.5px; color: var(--artha-text-muted); }
     .err { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--artha-negative); }
     .btn {
@@ -290,6 +321,10 @@ export class PayPage implements OnInit {
   protected readonly location = signal<ExpenseLocation | null>(null);
   protected readonly locating = signal(false);
   protected readonly busy = signal(false);
+  /** Nearby shops for the note (Google Places with your key, else OpenStreetMap); null = not looked up. */
+  protected readonly shops = signal<{ name: string; distanceM: number }[] | null>(null);
+  protected readonly shopsBusy = signal(false);
+  protected readonly shopsError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly ref = signal<string | null>(null);
 
@@ -396,6 +431,8 @@ export class PayPage implements OnInit {
 
   private start(q: UpiQr): void {
     this.qr.set(q);
+    this.shops.set(null);
+    this.shopsError.set(null);
     this.amountText = q.am != null ? String(q.am) : '';
     // A name typed before for this UPI id wins; a placeholder ("Default") is never used.
     const saved = payeeNames()[q.pa.toLowerCase()] ?? null;
@@ -437,8 +474,32 @@ export class PayPage implements OnInit {
             }
           }
         }
+        // Still no name (the QR says "Default"): show the shops around you right away.
+        if (l && !this.note.trim() && this.qr() === q) void this.findShops();
       })
       .finally(() => this.locating.set(false));
+  }
+
+  protected async findShops(): Promise<void> {
+    const l = this.location();
+    if (!l) return;
+    this.shopsBusy.set(true);
+    this.shopsError.set(null);
+    try {
+      this.shops.set(await this.sms.findNearbyPlaces(l.lat, l.lng));
+    } catch {
+      this.shopsError.set("Couldn't reach the shop search. Check the connection (or the Google key in Settings).");
+      this.shops.set([]);
+    } finally {
+      this.shopsBusy.set(false);
+    }
+  }
+
+  protected pickShop(name: string): void {
+    this.note = name;
+    this.savedName.set(name);
+    // A shop: worth remembering its category.
+    this.remember = true;
   }
 
   protected async moreCategories(): Promise<void> {

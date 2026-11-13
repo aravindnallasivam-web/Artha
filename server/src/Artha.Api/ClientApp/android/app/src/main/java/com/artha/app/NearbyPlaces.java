@@ -232,11 +232,12 @@ final class NearbyPlaces {
         List<Place> out = new ArrayList<>();
         if (loc == null) return out;
         String googleKey = config(ctx).optString("googleKey", "").trim();
-        out = googleKey.isEmpty() ? overpass(loc, RADIUS_M) : google(loc, googleKey, RADIUS_M);
+        out = googleKey.isEmpty() ? overpass(loc, RADIUS_M) : google(ctx, loc, googleKey, RADIUS_M);
         // Little mapped right here (common for small shops): look a bit wider.
         if (out.size() < 3) {
             try {
-                List<Place> wide = googleKey.isEmpty() ? overpass(loc, WIDE_RADIUS_M) : google(loc, googleKey, WIDE_RADIUS_M);
+                List<Place> wide = googleKey.isEmpty()
+                    ? overpass(loc, WIDE_RADIUS_M) : google(ctx, loc, googleKey, WIDE_RADIUS_M);
                 if (wide.size() > out.size()) out = wide;
             } catch (Exception ignored) {
                 // Keep what the close look found.
@@ -309,6 +310,37 @@ final class NearbyPlaces {
         return best != null && System.currentTimeMillis() - best.getTime() < 600_000 ? best : null;
     }
 
+    /**
+     * SHA-1 of the certificate this app is signed with: what Google Cloud's
+     * "Android apps" key restriction asks for. `colons` for display (AB:CD:…).
+     */
+    @SuppressWarnings("deprecation")
+    static String signingSha1(Context ctx, boolean colons) {
+        try {
+            android.content.pm.PackageManager pm = ctx.getPackageManager();
+            android.content.pm.Signature[] sigs;
+            if (Build.VERSION.SDK_INT >= 28) {
+                android.content.pm.PackageInfo pi = pm.getPackageInfo(ctx.getPackageName(),
+                    android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
+                sigs = pi.signingInfo.getApkContentsSigners();
+            } else {
+                android.content.pm.PackageInfo pi = pm.getPackageInfo(ctx.getPackageName(),
+                    android.content.pm.PackageManager.GET_SIGNATURES);
+                sigs = pi.signatures;
+            }
+            if (sigs == null || sigs.length == 0) return null;
+            byte[] d = java.security.MessageDigest.getInstance("SHA-1").digest(sigs[0].toByteArray());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) {
+                if (colons && sb.length() > 0) sb.append(':');
+                sb.append(String.format(Locale.ROOT, "%02X", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // ---- OpenStreetMap (Overpass) ----
 
     private static List<Place> overpass(Location loc, int radius) throws Exception {
@@ -368,10 +400,10 @@ final class NearbyPlaces {
 
     // ---- Google Places (New), when the user saved a key ----
 
-    private static List<Place> google(Location loc, String key, int radius) throws Exception {
+    private static List<Place> google(Context ctx, Location loc, String key, int radius) throws Exception {
         JSONObject center = new JSONObject().put("latitude", loc.getLatitude()).put("longitude", loc.getLongitude());
         JSONObject reqBody = new JSONObject()
-            .put("maxResultCount", 12)
+            .put("maxResultCount", 20)
             .put("rankPreference", "DISTANCE")
             .put("locationRestriction", new JSONObject().put("circle",
                 new JSONObject().put("center", center).put("radius", radius)));
@@ -383,6 +415,10 @@ final class NearbyPlaces {
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("X-Goog-Api-Key", key);
         conn.setRequestProperty("X-Goog-FieldMask", "places.displayName,places.primaryType,places.location");
+        // Lets the key be restricted to this app in Google Cloud (Android apps restriction).
+        conn.setRequestProperty("X-Android-Package", ctx.getPackageName());
+        String cert = signingSha1(ctx, false);
+        if (cert != null) conn.setRequestProperty("X-Android-Cert", cert);
         JSONObject res = send(conn, reqBody.toString().getBytes(StandardCharsets.UTF_8));
         List<Place> out = new ArrayList<>();
         JSONArray places = res != null ? res.optJSONArray("places") : null;

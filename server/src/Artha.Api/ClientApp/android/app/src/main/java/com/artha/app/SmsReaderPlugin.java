@@ -893,6 +893,15 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Package name + signing SHA-1, to restrict a Google API key to this app. */
+    @PluginMethod
+    public void appSigningInfo(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("packageName", getContext().getPackageName());
+        ret.put("sha1", NearbyPlaces.signingSha1(getContext(), true));
+        call.resolve(ret);
+    }
+
     /** The shop remembered at this spot (paid here before): { name, categoryId } or { name: null }. */
     @PluginMethod
     public void recallPlace(PluginCall call) {
