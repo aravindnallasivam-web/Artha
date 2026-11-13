@@ -121,37 +121,59 @@ const ACCOUNT_KEY = 'artha.pay.account';
             <!-- 2 · Shop -->
             @case ('shop') {
               <h2 class="q">Which shop?</h2>
-              @if (knownName(); as k) {
-                <button type="button" class="row row--sel" (click)="pickShop(k)">
-                  <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
-                  <span class="row-main">{{ k }}</span><span class="row-sub">{{ knownWhy() }}</span>
-                </button>
-                <p class="hint">Tap it to continue, or pick another shop below.</p>
-              }
-              @if (shops() === null) {
-                <p class="hint center">
-                  <ion-spinner name="dots"></ion-spinner>
-                  {{ locating() ? 'Getting your location…' : location() ? 'Finding shops near you…' : '' }}
-                </p>
+              <div class="type-row">
+                <input class="field" type="search" enterkeyhint="done" autocomplete="off"
+                       placeholder="Search or type the shop's name" aria-label="Shop name"
+                       [ngModel]="typedName" (ngModelChange)="onSearch($event)"
+                       (keyup.enter)="typedName.trim() && pickShop(typedName.trim())" />
+                @if (typedName.trim()) {
+                  <button type="button" class="btn btn--primary" (click)="pickShop(typedName.trim())">Use</button>
+                }
+              </div>
+
+              @if (typedName.trim().length >= 2) {
+                <!-- Suggestions for what's typed -->
+                @if (searching()) {
+                  <p class="hint center"><ion-spinner name="dots"></ion-spinner> Searching…</p>
+                }
+                @for (r of results(); track r.name + r.area) {
+                  <button type="button" class="row" (click)="pickShop(r.name)">
+                    <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+                    <span class="row-main">{{ r.name }}@if (r.area) {<span class="row-area">{{ r.area }}</span>}</span>
+                    @if (r.distanceM >= 0) { <span class="row-sub">{{ distance(r.distanceM) }}</span> }
+                  </button>
+                }
+                @if (!searching() && results().length === 0) {
+                  <p class="hint center">{{ searchError() || 'No match — tap Use to keep “' + typedName.trim() + '”.' }}</p>
+                }
               } @else {
-                @for (s of shops(); track s.name) {
-                  @if (s.name !== knownName()) {
-                    <button type="button" class="row" (click)="pickShop(s.name)">
-                      <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>
-                      <span class="row-main">{{ s.name }}</span><span class="row-sub">{{ s.distanceM }} m</span>
-                    </button>
+                @if (knownName(); as k) {
+                  <button type="button" class="row row--sel" (click)="pickShop(k)">
+                    <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+                    <span class="row-main">{{ k }}</span><span class="row-sub">{{ knownWhy() }}</span>
+                  </button>
+                  <p class="hint">Tap it to continue, or pick another shop below.</p>
+                }
+                @if (shops() === null) {
+                  <p class="hint center">
+                    <ion-spinner name="dots"></ion-spinner>
+                    {{ locating() ? 'Getting your location…' : location() ? 'Finding shops near you…' : '' }}
+                  </p>
+                } @else {
+                  @for (s of shops(); track s.name) {
+                    @if (s.name !== knownName()) {
+                      <button type="button" class="row" (click)="pickShop(s.name)">
+                        <ion-icon name="storefront-outline" aria-hidden="true"></ion-icon>
+                        <span class="row-main">{{ s.name }}</span><span class="row-sub">{{ s.distanceM }} m</span>
+                      </button>
+                    }
+                  }
+                  @if (shops()!.length === 0) {
+                    <p class="hint center">{{ shopsError() || (location() ? 'No shops found nearby — search above.' : 'No location — type the name above.') }}</p>
                   }
                 }
-                @if (shops()!.length === 0) {
-                  <p class="hint center">{{ shopsError() || (location() ? 'No shops found nearby.' : 'No location — type the name below.') }}</p>
-                }
+                <button type="button" class="link" (click)="next()">Skip</button>
               }
-              <div class="type-row">
-                <input class="field" type="text" [(ngModel)]="typedName" placeholder="Or type the shop's name"
-                       aria-label="Shop name" (keyup.enter)="typedName.trim() && pickShop(typedName.trim())" />
-                <button type="button" class="btn btn--primary" (click)="pickShop(typedName.trim())" [disabled]="!typedName.trim()">OK</button>
-              </div>
-              <button type="button" class="link" (click)="next()">Skip</button>
             }
 
             <!-- 3 · Category -->
@@ -306,13 +328,14 @@ const ACCOUNT_KEY = 'artha.pay.account';
     .row ion-icon { font-size: 20px; color: var(--artha-accent); flex-shrink: 0; }
     .row-main { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
     .row-sub { font-size: 12.5px; color: var(--artha-text-muted); flex-shrink: 0; }
+    .row-area { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--artha-text-muted); }
     .row--sel { border: 2px solid var(--artha-accent); background: var(--artha-accent-tint); }
     .row--app ion-icon { color: var(--artha-text-subtle); }
     .app-ic {
       width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0;
       background: var(--artha-surface-2); color: var(--artha-text); font-weight: 800;
     }
-    .type-row { display: flex; gap: 8px; margin-top: 14px; }
+    .type-row { display: flex; gap: 8px; margin: 4px 0 6px; }
     .field {
       flex: 1; min-width: 0; height: 48px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--artha-border);
       background: var(--artha-surface); color: var(--artha-text); font: inherit; font-size: 15px;
@@ -397,6 +420,12 @@ export class PayPage implements OnInit {
   protected readonly knownName = signal<string | null>(null);
   protected readonly knownWhy = signal<string>('');
   private readonly amountSig = signal<string>('');
+  /** Suggestions for the shop name being typed. */
+  protected readonly results = signal<{ name: string; area: string; distanceM: number }[]>([]);
+  protected readonly searching = signal(false);
+  protected readonly searchError = signal<string | null>(null);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private searchSeq = 0;
 
   protected typedName = '';
   protected accountId = '';
@@ -531,7 +560,50 @@ export class PayPage implements OnInit {
     return Math.max(1.2, v.replace('.', '').length + (v.includes('.') ? 0.5 : 0) + 0.15);
   }
 
+  /**
+   * Typing a shop name: Google Places suggestions near you (with your key in
+   * Settings), else matches among the nearby shops. Waits for a pause in typing.
+   */
+  protected onSearch(text: string): void {
+    this.typedName = text;
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    const q = text.trim();
+    this.searchError.set(null);
+    if (q.length < 2) {
+      this.results.set([]);
+      this.searching.set(false);
+      return;
+    }
+    this.searching.set(true);
+    const seq = ++this.searchSeq;
+    this.searchTimer = setTimeout(async () => {
+      const l = this.location();
+      const local = (this.shops() ?? [])
+        .filter((s) => s.name.toLowerCase().includes(q.toLowerCase()))
+        .map((s) => ({ name: s.name, area: '', distanceM: s.distanceM }));
+      try {
+        const res = await SmsReader.searchPlaces({ query: q, lat: l?.lat ?? null, lng: l?.lng ?? null });
+        if (seq !== this.searchSeq) return;
+        const google = (res?.places ?? []).map((p) => ({ name: p.name, area: p.area ?? '', distanceM: p.distanceM ?? -1 }));
+        // Nearby matches first, then Google's (without repeating a name).
+        const seen = new Set(local.map((x) => x.name.toLowerCase()));
+        this.results.set([...local, ...google.filter((g) => !seen.has(g.name.toLowerCase()))].slice(0, 10));
+      } catch {
+        if (seq !== this.searchSeq) return;
+        this.results.set(local);
+        if (!local.length) this.searchError.set("Couldn't reach Google — tap Use to keep what you typed.");
+      } finally {
+        if (seq === this.searchSeq) this.searching.set(false);
+      }
+    }, 350);
+  }
+
+  protected distance(m: number): string {
+    return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+  }
+
   protected pickShop(name: string): void {
+    this.results.set([]);
     if (!name) return;
     this.shopName.set(name);
     this.typedName = '';

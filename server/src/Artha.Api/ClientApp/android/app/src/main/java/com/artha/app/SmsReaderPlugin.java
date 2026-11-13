@@ -893,6 +893,46 @@ public class SmsReaderPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Shop names matching `query` near lat/lng (Google Places Autocomplete with
+     * the saved key): { google: bool, places: [{ name, area, distanceM }] }.
+     */
+    @PluginMethod
+    public void searchPlaces(PluginCall call) {
+        final String query = call.getString("query", "");
+        final Double lat = call.getDouble("lat");
+        final Double lng = call.getDouble("lng");
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(() -> {
+            JSObject ret = new JSObject();
+            boolean google = NearbyPlaces.hasGoogleKey(ctx);
+            ret.put("google", google);
+            com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
+            if (google) {
+                android.location.Location loc = null;
+                if (lat != null && lng != null) {
+                    loc = new android.location.Location("artha");
+                    loc.setLatitude(lat);
+                    loc.setLongitude(lng);
+                }
+                try {
+                    for (NearbyPlaces.Suggestion s : NearbyPlaces.autocomplete(ctx, query, loc)) {
+                        JSObject o = new JSObject();
+                        o.put("name", s.name);
+                        o.put("area", s.area);
+                        o.put("distanceM", s.distanceM);
+                        arr.put(o);
+                    }
+                } catch (Exception e) {
+                    call.reject("search-failed");
+                    return;
+                }
+            }
+            ret.put("places", arr);
+            call.resolve(ret);
+        }, "artha-place-search").start();
+    }
+
     /** Package name + signing SHA-1, to restrict a Google API key to this app. */
     @PluginMethod
     public void appSigningInfo(PluginCall call) {

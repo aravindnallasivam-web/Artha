@@ -205,6 +205,11 @@ export interface SmsReaderPlugin {
   }>;
   /** Remember that at this spot the user paid `name`, so the alert fills it in next time. */
   rememberPlace(options: { lat: number; lng: number; name: string; categoryId?: string | null }): Promise<void>;
+  /** Shop names matching what's typed, near lat/lng (Google Places Autocomplete with the saved key). */
+  searchPlaces(options: { query: string; lat: number | null; lng: number | null }): Promise<{
+    google: boolean;
+    places: { name: string; area: string; distanceM: number }[];
+  }>;
   /** Package name + signing SHA-1 (to restrict a Google API key to this app). */
   appSigningInfo(): Promise<{ packageName: string; sha1: string | null }>;
   /** The shop remembered at this spot ("you paid here before"). */

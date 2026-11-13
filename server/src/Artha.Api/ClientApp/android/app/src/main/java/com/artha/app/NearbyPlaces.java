@@ -341,6 +341,71 @@ final class NearbyPlaces {
         }
     }
 
+    // ---- Google Places Autocomplete: shop names as you type ----
+
+    private static final String AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
+
+    static final class Suggestion {
+        final String name;
+        final String area;
+        final int distanceM;
+
+        Suggestion(String name, String area, int distanceM) {
+            this.name = name;
+            this.area = area;
+            this.distanceM = distanceM;
+        }
+    }
+
+    static boolean hasGoogleKey(Context ctx) {
+        return !config(ctx).optString("googleKey", "").trim().isEmpty();
+    }
+
+    /**
+     * Places matching what's typed, near `loc` first (Google Places Autocomplete
+     * with the saved key). Empty without a key; throws when Google can't be reached.
+     */
+    static List<Suggestion> autocomplete(Context ctx, String text, Location loc) throws Exception {
+        List<Suggestion> out = new ArrayList<>();
+        String key = config(ctx).optString("googleKey", "").trim();
+        if (key.isEmpty() || text == null || text.trim().length() < 2) return out;
+        JSONObject body = new JSONObject()
+            .put("input", text.trim())
+            .put("includedRegionCodes", new JSONArray().put("in"));
+        if (loc != null) {
+            JSONObject center = new JSONObject().put("latitude", loc.getLatitude()).put("longitude", loc.getLongitude());
+            body.put("locationBias", new JSONObject().put("circle",
+                new JSONObject().put("center", center).put("radius", 2000.0)));
+            body.put("origin", center);
+        }
+        HttpURLConnection conn = (HttpURLConnection) new URL(AUTOCOMPLETE_URL).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(8000);
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("X-Goog-Api-Key", key);
+        conn.setRequestProperty("X-Android-Package", ctx.getPackageName());
+        String cert = signingSha1(ctx, false);
+        if (cert != null) conn.setRequestProperty("X-Android-Cert", cert);
+        JSONObject res = send(conn, body.toString().getBytes(StandardCharsets.UTF_8));
+        JSONArray list = res != null ? res.optJSONArray("suggestions") : null;
+        if (list == null) return out;
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject pp = list.optJSONObject(i) != null ? list.optJSONObject(i).optJSONObject("placePrediction") : null;
+            if (pp == null) continue;
+            JSONObject sf = pp.optJSONObject("structuredFormat");
+            String name = sf != null && sf.optJSONObject("mainText") != null
+                ? sf.optJSONObject("mainText").optString("text", "") : "";
+            String area = sf != null && sf.optJSONObject("secondaryText") != null
+                ? sf.optJSONObject("secondaryText").optString("text", "") : "";
+            if (name.isEmpty() && pp.optJSONObject("text") != null) name = pp.optJSONObject("text").optString("text", "");
+            if (name.trim().isEmpty()) continue;
+            out.add(new Suggestion(name.trim(), area.trim(), pp.optInt("distanceMeters", -1)));
+        }
+        return out;
+    }
+
     // ---- OpenStreetMap (Overpass) ----
 
     private static List<Place> overpass(Location loc, int radius) throws Exception {
