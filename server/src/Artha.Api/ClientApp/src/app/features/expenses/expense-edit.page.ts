@@ -30,6 +30,7 @@ import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { CategoriesStore } from '../categories/categories.store';
 import { CategoryEditModal } from '../categories/category-edit.modal';
 import { CategorySearchModal } from '../categories/category-search.modal';
+import { normalizeTag } from './expenses.drive';
 import { ExpensesStore } from './expenses.store';
 
 const QUICK_CATEGORY_COUNT = 7;
@@ -212,6 +213,34 @@ const QUICK_CATEGORY_COUNT = 7;
               </section>
             }
 
+            <!-- What it was for + tags -->
+            <div class="section-label">What's it for?</div>
+            <div class="desc-row">
+              <textarea class="desc" rows="2" formControlName="description" maxlength="500"
+                        placeholder="e.g. Amma's birthday cake, Goa trip fuel…"></textarea>
+              <artha-mic label="What it's for" (heard)="onSpokenDescription($event)"></artha-mic>
+            </div>
+
+            <div class="section-label">Tags</div>
+            <div class="tags">
+              @for (t of tags(); track t) {
+                <button type="button" class="tag tag--on" (click)="removeTag(t)" [attr.aria-label]="'Remove tag ' + t">
+                  #{{ t }} <span aria-hidden="true">×</span>
+                </button>
+              }
+              <input class="tag-input" type="text" [value]="tagDraft()" (input)="tagDraft.set($any($event.target).value)"
+                     (keydown.enter)="addTagFromDraft($event)" (keydown.comma)="addTagFromDraft($event)"
+                     (blur)="addTagFromDraft()" enterkeyhint="done" autocomplete="off"
+                     [placeholder]="tags().length ? 'Add tag' : 'Add a tag (birthday, family…)'" aria-label="Add tag" />
+            </div>
+            @if (tagSuggestions().length) {
+              <div class="tags tags--suggest">
+                @for (t of tagSuggestions(); track t) {
+                  <button type="button" class="tag" (click)="addTag(t)">+ #{{ t }}</button>
+                }
+              </div>
+            }
+
             <!-- More options -->
             <details class="more">
               <summary>More options</summary>
@@ -378,6 +407,28 @@ const QUICK_CATEGORY_COUNT = 7;
       font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--artha-text-subtle);
     }
 
+    /* What it's for + tags */
+    .desc-row { display: flex; align-items: flex-start; gap: 8px; }
+    .desc {
+      flex: 1; min-width: 0; resize: vertical; padding: 12px 14px; border-radius: 14px;
+      border: 1px solid var(--artha-border); background: var(--artha-surface); color: var(--artha-text);
+      font: inherit; font-size: 14.5px; line-height: 1.4;
+    }
+    .desc:focus { outline: 2px solid var(--artha-accent); outline-offset: 1px; }
+    .tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .tags--suggest { margin-top: 8px; }
+    .tag {
+      height: 34px; padding: 0 12px; border-radius: 999px; border: 1px dashed var(--artha-border-strong);
+      background: transparent; color: var(--artha-text-muted); cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600;
+    }
+    .tag--on { border: 0; background: var(--artha-accent-tint); color: var(--artha-accent); }
+    .tag--on span { margin-left: 4px; font-size: 15px; }
+    .tag-input {
+      flex: 1; min-width: 140px; height: 34px; padding: 0 4px; border: 0; outline: 0; background: transparent;
+      color: var(--artha-text); font: inherit; font-size: 14px;
+    }
+
     /* More options */
     .more { margin-top: 18px; border-radius: 16px; background: var(--artha-surface-2); }
     .more summary {
@@ -501,6 +552,7 @@ export class ExpenseEditPage implements OnInit {
     categoryId: ['', Validators.required],
     accountId: [DEFAULT_ACCOUNT_ID, Validators.required],
     note: [''],
+    description: [''],
     excluded: [false],
     type: ['expense' as TransactionType, Validators.required],
   });
@@ -673,10 +725,12 @@ export class ExpenseEditPage implements OnInit {
             categoryId: expense.categoryId,
             accountId: expense.accountId || DEFAULT_ACCOUNT_ID,
             note: expense.note ?? '',
+            description: expense.description ?? '',
             excluded: expense.excluded ?? false,
             type: expense.type ?? 'expense',
           });
           this.location.set(expense.location ?? null);
+          this.tags.set([...(expense.tags ?? [])]);
         }
       } else {
         // A new expense saves where you are now (Settings → "Save location with expenses").
@@ -726,6 +780,8 @@ export class ExpenseEditPage implements OnInit {
       categoryId: raw.categoryId,
       accountId: raw.accountId,
       note: raw.note?.trim() || null,
+      description: raw.description?.trim() || null,
+      tags: this.tags(),
       excluded: raw.excluded,
       type: raw.type,
       // Omitted keeps the saved location; null clears it.
@@ -769,6 +825,53 @@ export class ExpenseEditPage implements OnInit {
     } catch {
       return code;
     }
+  }
+
+  // ---- Tags ----
+
+  protected readonly tags = signal<string[]>([]);
+  protected readonly tagDraft = signal('');
+
+  /** Tags you've used before (most used first), minus the ones already on; filtered by what's typed. */
+  protected readonly tagSuggestions = computed(() => {
+    const counts = new Map<string, number>();
+    for (const e of this.expensesStore.items()) {
+      for (const t of e.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const on = new Set(this.tags());
+    const q = normalizeTag(this.tagDraft());
+    return [...counts.entries()]
+      .filter(([t]) => !on.has(t) && (!q || t.includes(q)))
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+      .map(([t]) => t);
+  });
+
+  protected addTag(raw: string): void {
+    const t = normalizeTag(raw);
+    if (t && !this.tags().includes(t) && this.tags().length < 12) this.tags.set([...this.tags(), t]);
+    this.tagDraft.set('');
+    this.form.markAsDirty();
+  }
+
+  /** Enter / comma / leaving the box adds what's typed (several at once: "trip, family"). */
+  protected addTagFromDraft(event?: Event): void {
+    event?.preventDefault();
+    const parts = this.tagDraft().split(/[,\n]/);
+    for (const p of parts) if (p.trim()) this.addTag(p);
+    this.tagDraft.set('');
+  }
+
+  protected removeTag(t: string): void {
+    this.tags.set(this.tags().filter((x) => x !== t));
+    this.form.markAsDirty();
+  }
+
+  /** Voice: added after what's already written. */
+  protected onSpokenDescription(text: string): void {
+    const cur = this.form.controls.description.value.trim();
+    this.form.patchValue({ description: cur ? `${cur} ${text}` : text });
+    this.form.controls.description.markAsDirty();
   }
 
   /** Voice note: replaces an empty note, otherwise adds to it. */

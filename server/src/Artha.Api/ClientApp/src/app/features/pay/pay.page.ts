@@ -25,6 +25,7 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
+import { normalizeTag } from '../expenses/expenses.drive';
 import { suggestCategories } from './category-hints';
 import {
   UpiOutcome,
@@ -263,6 +264,36 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 </select>
               </p>
               @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
+              <!-- Optional: what it's for + tags -->
+              @if (!showExtra()) {
+                <button type="button" class="link link--left" (click)="showExtra.set(true)">
+                  + Add what it's for / tags{{ extraSummary() ? ' · ' + extraSummary() : '' }}
+                </button>
+              } @else {
+                <div class="extra">
+                  <div class="type-row">
+                    <input class="field" type="text" maxlength="500" [ngModel]="description()"
+                           (ngModelChange)="description.set($event)" placeholder="What's it for? e.g. Amma's birthday"
+                           aria-label="What it's for" />
+                    <artha-mic label="What it's for" (heard)="description.set(description() ? description() + ' ' + $event : $event)"></artha-mic>
+                  </div>
+                  <div class="tagline">
+                    @for (t of tags(); track t) {
+                      <button type="button" class="sub sel" (click)="toggleTag(t)">#{{ t }} ×</button>
+                    }
+                    <input class="tag-input" type="text" [ngModel]="tagDraft()" (ngModelChange)="tagDraft.set($event)"
+                           (keydown.enter)="addTagDraft($event)" (keydown.comma)="addTagDraft($event)" (blur)="addTagDraft()"
+                           placeholder="Add tag" aria-label="Add tag" autocomplete="off" />
+                  </div>
+                  @if (tagSuggestions().length) {
+                    <div class="tagline">
+                      @for (t of tagSuggestions(); track t) {
+                        <button type="button" class="sub" (click)="toggleTag(t)">+ #{{ t }}</button>
+                      }
+                    </div>
+                  }
+                </div>
+              }
               @if (isPerson()) {
                 <p class="note-card">This is a <b>personal</b> UPI ID. Google Pay blocks these when another app starts
                   the payment — use PhonePe, Paytm or BHIM, or open your UPI app and pay there yourself.</p>
@@ -472,6 +503,10 @@ const ACCOUNT_KEY = 'artha.pay.account';
     .remember { display: flex; align-items: center; gap: 8px; margin: 14px 2px 0; font-size: 13px; color: var(--artha-text-muted); }
     .remember input { width: 18px; height: 18px; flex-shrink: 0; }
 
+    .link--left { margin: 0 0 10px; padding: 6px 2px; color: var(--artha-accent); }
+    .extra { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 12px; border-radius: 16px; background: var(--artha-surface-2); }
+    .tagline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .tag-input { flex: 1; min-width: 110px; height: 36px; border: 0; outline: 0; background: transparent; color: var(--artha-text); font: inherit; font-size: 14px; }
     .note-card {
       margin: 0 0 8px; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.45;
       background: color-mix(in srgb, var(--artha-warning, #f59e0b) 14%, var(--artha-surface)); color: var(--artha-text);
@@ -561,6 +596,41 @@ export class PayPage implements OnInit {
   protected readonly flow = computed<Step[]>(() => FLOW.filter((s) => !(s === 'amount' && this.qr()?.am != null)));
   protected readonly inFlow = computed(() => FLOW.includes(this.step()));
   protected readonly GPAY = GPAY;
+  // Optional "what it's for" + tags, saved with the expense.
+  protected readonly showExtra = signal(false);
+  protected readonly description = signal('');
+  protected readonly tags = signal<string[]>([]);
+  protected readonly tagDraft = signal('');
+  protected readonly extraSummary = computed(() =>
+    [this.description().trim(), ...this.tags().map((t) => '#' + t)].filter(Boolean).join(' '),
+  );
+  protected readonly tagSuggestions = computed(() => {
+    const counts = new Map<string, number>();
+    for (const e of this.expensesStore.items()) for (const t of e.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+    const on = new Set(this.tags());
+    const q = normalizeTag(this.tagDraft());
+    return [...counts.entries()]
+      .filter(([t]) => !on.has(t) && (!q || t.includes(q)))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([t]) => t);
+  });
+
+  protected toggleTag(raw: string): void {
+    const t = normalizeTag(raw);
+    if (!t) return;
+    this.tags.set(this.tags().includes(t) ? this.tags().filter((x) => x !== t) : [...this.tags(), t].slice(0, 12));
+    this.tagDraft.set('');
+  }
+
+  protected addTagDraft(event?: Event): void {
+    event?.preventDefault();
+    for (const p of this.tagDraft().split(',')) {
+      const t = normalizeTag(p);
+      if (t && !this.tags().includes(t)) this.tags.set([...this.tags(), t].slice(0, 12));
+    }
+    this.tagDraft.set('');
+  }
   /** A person's UPI id (no merchant code): Google Pay refuses these from other apps. */
   protected readonly isPerson = computed(() => !!this.qr() && !this.qr()!.mc);
   protected readonly hasGpay = computed(() => this.apps().some((a) => a.packageName === GPAY));
@@ -874,6 +944,10 @@ export class PayPage implements OnInit {
       (own ? this.sms.payeeCategory(own) : null);
     this.categoryId.set(learned ?? '');
     this.learnedCat.set(learned ?? null);
+    this.showExtra.set(false);
+    this.description.set('');
+    this.tags.set([]);
+    this.tagDraft.set('');
     this.shopKind.set('');
     this.catQuery.set('');
     this.openGroup.set(null);
@@ -1037,6 +1111,8 @@ export class PayPage implements OnInit {
         note: name || q.pa,
         excluded: false,
         type: 'expense',
+        ...(this.description().trim() ? { description: this.description().trim() } : {}),
+        ...(this.tags().length ? { tags: this.tags() } : {}),
         ...(this.location() ? { location: this.location() } : {}),
       });
       // No name yet: the payee name in the bank's SMS (e.g. "To APOLLO DENTAL") fills it in later.

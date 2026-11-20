@@ -230,6 +230,14 @@ const TODAY_ISO = toIsoDate(new Date());
                             <p class="row-meta">
                               {{ categoryPath(expense.categoryId) }} · {{ accountName(expense.accountId) }}@if (expense.excluded) { · not counted }
                             </p>
+                            @if (expense.description || expense.tags?.length) {
+                              <p class="row-extra">
+                                @if (expense.description) { <span class="row-desc">{{ expense.description }}</span> }
+                                @for (t of expense.tags ?? []; track t) {
+                                  <button type="button" class="row-tag" (click)="filterTag($event, t)">#{{ t }}</button>
+                                }
+                              </p>
+                            }
                           </div>
                           <span class="row-amount num" [class.income]="expense.type === 'income'">
                             {{ expense.type === 'income' ? '+' : '−' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-2' }}
@@ -296,6 +304,14 @@ const TODAY_ISO = toIsoDate(new Date());
                           <p class="row-meta">
                             @if (expense.note) { {{ categoryName(expense.categoryId) }} · }{{ accountName(expense.accountId) }}
                           </p>
+                          @if (expense.description || expense.tags?.length) {
+                            <p class="row-extra">
+                              @if (expense.description) { <span class="row-desc">{{ expense.description }}</span> }
+                              @for (t of expense.tags ?? []; track t) {
+                                <button type="button" class="row-tag" (click)="filterTag($event, t)">#{{ t }}</button>
+                              }
+                            </p>
+                          }
                         </div>
                         <span class="row-amount num" [class.income]="expense.type === 'income'">
                           {{ expense.type === 'income' ? '+' : '' }}{{ expense.amount | currency: expense.currency : 'symbol' : '1.0-2' }}
@@ -345,6 +361,12 @@ const TODAY_ISO = toIsoDate(new Date());
     </ion-content>
   `,
   styles: [`
+    .row-extra { margin: 3px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; }
+    .row-desc { color: var(--artha-text-muted); font-style: italic; overflow-wrap: anywhere; }
+    .row-tag {
+      padding: 1px 8px; border: 0; border-radius: 999px; cursor: pointer;
+      background: var(--artha-accent-tint); color: var(--artha-accent); font: inherit; font-size: 11.5px; font-weight: 700;
+    }
     :host { display: contents; }
     .page-content { --background: var(--artha-bg); }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -747,7 +769,9 @@ export class ExpensesListPage implements OnInit {
     if (cat && e.categoryId !== cat && this.categoriesStore.byId()[e.categoryId]?.parentId !== cat) return false;
     if (acc && e.accountId !== acc) return false;
     if (q) {
-      const hay = `${e.note ?? ''} ${this.categoryPath(e.categoryId)} ${this.accountName(e.accountId)}`.toLowerCase();
+      // "#birthday" = exactly that tag; otherwise search the note, what it's for, tags, category and account.
+      if (q.startsWith('#') && q.length > 1) return (e.tags ?? []).includes(q.slice(1));
+      const hay = `${e.note ?? ''} ${e.description ?? ''} ${(e.tags ?? []).map((t) => '#' + t).join(' ')} ${this.categoryPath(e.categoryId)} ${this.accountName(e.accountId)}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1078,7 +1102,15 @@ export class ExpensesListPage implements OnInit {
     this.filterAccountId.set((event.target as HTMLSelectElement).value || null);
   }
 
-  protected onSearch(event: Event): void {
+  /** Tap a tag on an expense: show every expense with that tag. */
+  protected filterTag(event: Event, tag: string): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.showSearch.set(true);
+    this.search.set('#' + tag);
+  }
+
+    protected onSearch(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
   }
 

@@ -103,6 +103,8 @@ export class ExpensesDriveService {
       excluded: request.excluded,
       type: request.type === 'income' ? 'income' : 'expense',
       ...(request.location ? { location: cleanLocation(request.location) } : {}),
+      ...(cleanText(request.description) ? { description: cleanText(request.description)! } : {}),
+      ...(cleanTags(request.tags).length ? { tags: cleanTags(request.tags) } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -143,6 +145,16 @@ export class ExpensesDriveService {
       } else {
         delete updated.location;
       }
+    }
+    if (request.description !== undefined) {
+      const d = cleanText(request.description);
+      if (d) updated.description = d;
+      else delete updated.description;
+    }
+    if (request.tags !== undefined) {
+      const t = cleanTags(request.tags);
+      if (t.length) updated.tags = t;
+      else delete updated.tags;
     }
 
     if (ymCompare(oldMonth, newMonth) === 0) {
@@ -257,6 +269,32 @@ function currentYearMonth(): YearMonth {
 function parseYearMonth(raw: string): YearMonth | null {
   const m = /^(\d{4})-(\d{2})/.exec(raw);
   return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+}
+
+function cleanText(v: string | null | undefined): string | null {
+  const t = (v ?? '').trim().slice(0, 500);
+  return t || null;
+}
+
+/** Tags as stored: lower-case, spaces → "-", no "#", unique, at most 12. */
+export function cleanTags(tags: string[] | null | undefined): string[] {
+  const out: string[] = [];
+  for (const raw of tags ?? []) {
+    const t = normalizeTag(raw);
+    if (t && !out.includes(t)) out.push(t);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+export function normalizeTag(raw: string): string {
+  return (raw ?? '')
+    .toLowerCase()
+    .replace(/^#+/, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\p{L}\p{N}_-]/gu, '')
+    .slice(0, 30);
 }
 
 /** Keep only the location fields we store, rounded to ~1 m. */

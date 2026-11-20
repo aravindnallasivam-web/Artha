@@ -24,6 +24,10 @@ export interface Expense {
   type: TransactionType;
   /** Optional; only SMS expenses captured with location on have it. */
   location?: ExpenseLocation | null;
+  /** What it was for, in your words ("Amma's birthday cake"). The note holds the shop / payee. */
+  description?: string | null;
+  /** Your labels ("birthday", "family", "goa-trip"): lower-case, no spaces. */
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -39,6 +43,10 @@ export interface ExpenseCreateRequest {
   type?: TransactionType;
   /** Omitted = keep the current one on update; null = clear it. */
   location?: ExpenseLocation | null;
+  /** Omitted = keep on update; null / '' = clear. */
+  description?: string | null;
+  /** Omitted = keep on update; [] = clear. */
+  tags?: string[];
 }
 
 export interface ExpenseUpdateRequest extends ExpenseCreateRequest {}
