@@ -5,6 +5,7 @@ import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone'
 import { SessionService } from '../../core/auth/session.service';
 import { cardOwed, daysUntil, dueLabel, nextDueDate } from '../../core/models/card-cycle';
 import { BillsService } from '../bills/bills.service';
+import { ActiveTagService } from '../../core/tags/active-tag.service';
 import { AccountsStore } from '../accounts/accounts.store';
 import { InvestmentsStore } from '../investments/investments.store';
 import { CategoriesStore } from '../categories/categories.store';
@@ -184,6 +185,15 @@ interface CategorySlice {
                 {{ bill.name }} bill due {{ bill.when }}
                 @if (bill.owed > 0) { · <span class="num">{{ bill.owed | currency: bill.currency : 'symbol' : '1.0-0' }}</span> owed }
               </span>
+              <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
+            </a>
+          }
+
+          <!-- Trip mode: new expenses are being tagged -->
+          @if (activeTag.active(); as a) {
+            <a class="pending" routerLink="/tags">
+              <span class="pending-badge"><ion-icon name="pricetag" aria-hidden="true"></ion-icon></span>
+              <span class="pending-text">Auto-tagging new expenses <b>#{{ a.tag }}</b> · tap to see or stop</span>
               <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
             </a>
           }
@@ -499,6 +509,7 @@ export class DashboardComponent implements OnInit {
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly sms = inject(SmsCaptureService);
   protected readonly bills = inject(BillsService);
+  protected readonly activeTag = inject(ActiveTagService);
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
   private readonly accountsStore = inject(AccountsStore);

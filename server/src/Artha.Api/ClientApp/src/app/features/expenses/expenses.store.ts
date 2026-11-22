@@ -4,11 +4,13 @@ import {
   ExpenseCreateRequest,
   ExpenseUpdateRequest,
 } from '../../core/models/expense.model';
+import { ActiveTagService } from '../../core/tags/active-tag.service';
 import { ExpensesApi } from './expenses.api';
 
 @Injectable({ providedIn: 'root' })
 export class ExpensesStore {
   private readonly api = inject(ExpensesApi);
+  private readonly activeTag = inject(ActiveTagService);
 
   private readonly _items = signal<Expense[]>([]);
   private readonly _currency = signal<string>('USD');
@@ -74,6 +76,11 @@ export class ExpensesStore {
   }
 
   async add(request: ExpenseCreateRequest): Promise<Expense> {
+    // Trip mode: a new expense that didn't choose its tags (SMS, auto-add…) gets the active tag.
+    const active = this.activeTag.active();
+    if (active && request.tags === undefined && request.type !== 'income') {
+      request = { ...request, tags: [active.tag] };
+    }
     const created = await this.api.create(request);
     this._items.update((items) => sortByDate([created, ...items]));
     return created;

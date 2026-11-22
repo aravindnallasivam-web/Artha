@@ -30,6 +30,7 @@ import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { CategoriesStore } from '../categories/categories.store';
 import { CategoryEditModal } from '../categories/category-edit.modal';
 import { CategorySearchModal } from '../categories/category-search.modal';
+import { ActiveTagService } from '../../core/tags/active-tag.service';
 import { normalizeTag } from './expenses.drive';
 import { ExpensesStore } from './expenses.store';
 
@@ -213,14 +214,7 @@ const QUICK_CATEGORY_COUNT = 7;
               </section>
             }
 
-            <!-- What it was for + tags -->
-            <div class="section-label">What's it for?</div>
-            <div class="desc-row">
-              <textarea class="desc" rows="2" formControlName="description" maxlength="500"
-                        placeholder="e.g. Amma's birthday cake, Goa trip fuel…"></textarea>
-              <artha-mic label="What it's for" (heard)="onSpokenDescription($event)"></artha-mic>
-            </div>
-
+            <!-- Tags: group expenses (a trip, an event, a project…) -->
             <div class="section-label">Tags</div>
             <div class="tags">
               @for (t of tags(); track t) {
@@ -231,7 +225,7 @@ const QUICK_CATEGORY_COUNT = 7;
               <input class="tag-input" type="text" [value]="tagDraft()" (input)="tagDraft.set($any($event.target).value)"
                      (keydown.enter)="addTagFromDraft($event)" (keydown.comma)="addTagFromDraft($event)"
                      (blur)="addTagFromDraft()" enterkeyhint="done" autocomplete="off"
-                     [placeholder]="tags().length ? 'Add tag' : 'Add a tag (birthday, family…)'" aria-label="Add tag" />
+                     [placeholder]="tags().length ? 'Add tag' : 'Add a tag to group it (goa-trip, birthday…)'" aria-label="Add tag" />
             </div>
             @if (tagSuggestions().length) {
               <div class="tags tags--suggest">
@@ -484,6 +478,7 @@ export class ExpenseEditPage implements OnInit {
   private readonly actionSheetCtrl = inject(ActionSheetController);
   protected readonly ai = inject(AiProviderService);
   private readonly sms = inject(SmsCaptureService);
+  private readonly activeTag = inject(ActiveTagService);
 
   /** Where the phone was when the SMS came in (expenses from SMS only). */
   protected readonly location = signal<ExpenseLocation | null>(null);
@@ -552,7 +547,6 @@ export class ExpenseEditPage implements OnInit {
     categoryId: ['', Validators.required],
     accountId: [DEFAULT_ACCOUNT_ID, Validators.required],
     note: [''],
-    description: [''],
     excluded: [false],
     type: ['expense' as TransactionType, Validators.required],
   });
@@ -725,7 +719,6 @@ export class ExpenseEditPage implements OnInit {
             categoryId: expense.categoryId,
             accountId: expense.accountId || DEFAULT_ACCOUNT_ID,
             note: expense.note ?? '',
-            description: expense.description ?? '',
             excluded: expense.excluded ?? false,
             type: expense.type ?? 'expense',
           });
@@ -738,6 +731,9 @@ export class ExpenseEditPage implements OnInit {
           if (l && !this.locationRemoved && !this.location()) this.location.set(l);
           return l;
         });
+        // Trip mode: start with the active tag (tap × to leave it off this one).
+        const active = this.activeTag.active();
+        if (active) this.tags.set([active.tag]);
         const firstCat = this.categories()[0];
         if (firstCat) {
           this.form.patchValue({ categoryId: firstCat.id });
@@ -780,7 +776,6 @@ export class ExpenseEditPage implements OnInit {
       categoryId: raw.categoryId,
       accountId: raw.accountId,
       note: raw.note?.trim() || null,
-      description: raw.description?.trim() || null,
       tags: this.tags(),
       excluded: raw.excluded,
       type: raw.type,
@@ -865,13 +860,6 @@ export class ExpenseEditPage implements OnInit {
   protected removeTag(t: string): void {
     this.tags.set(this.tags().filter((x) => x !== t));
     this.form.markAsDirty();
-  }
-
-  /** Voice: added after what's already written. */
-  protected onSpokenDescription(text: string): void {
-    const cur = this.form.controls.description.value.trim();
-    this.form.patchValue({ description: cur ? `${cur} ${text}` : text });
-    this.form.controls.description.markAsDirty();
   }
 
   /** Voice note: replaces an empty note, otherwise adds to it. */

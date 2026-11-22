@@ -139,6 +139,10 @@ export const routes: Routes = [
           import('./features/settings/settings.page').then((m) => m.SettingsPage),
       },
       {
+        path: 'tags',
+        loadComponent: () => import('./features/tags/tags.page').then((m) => m.TagsPage),
+      },
+      {
         path: 'pay',
         loadComponent: () => import('./features/pay/pay.page').then((m) => m.PayPage),
       },

@@ -25,6 +25,7 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
+import { ActiveTagService } from '../../core/tags/active-tag.service';
 import { normalizeTag } from '../expenses/expenses.drive';
 import { suggestCategories } from './category-hints';
 import {
@@ -264,19 +265,13 @@ const ACCOUNT_KEY = 'artha.pay.account';
                 </select>
               </p>
               @if (error()) { <p class="err" role="alert">{{ error() }}</p> }
-              <!-- Optional: what it's for + tags -->
+              <!-- Optional tags (group it: a trip, an event…) -->
               @if (!showExtra()) {
                 <button type="button" class="link link--left" (click)="showExtra.set(true)">
-                  + Add what it's for / tags{{ extraSummary() ? ' · ' + extraSummary() : '' }}
+                  + Add tags{{ extraSummary() ? ' · ' + extraSummary() : '' }}
                 </button>
               } @else {
                 <div class="extra">
-                  <div class="type-row">
-                    <input class="field" type="text" maxlength="500" [ngModel]="description()"
-                           (ngModelChange)="description.set($event)" placeholder="What's it for? e.g. Amma's birthday"
-                           aria-label="What it's for" />
-                    <artha-mic label="What it's for" (heard)="description.set(description() ? description() + ' ' + $event : $event)"></artha-mic>
-                  </div>
                   <div class="tagline">
                     @for (t of tags(); track t) {
                       <button type="button" class="sub sel" (click)="toggleTag(t)">#{{ t }} ×</button>
@@ -546,6 +541,7 @@ export class PayPage implements OnInit {
   private readonly accountsStore = inject(AccountsStore);
   private readonly modalCtrl = inject(ModalController);
   private readonly appLock = inject(AppLockService);
+  private readonly activeTag = inject(ActiveTagService);
   private readonly route = inject(ActivatedRoute);
   private scanParam: string | null = null;
 
@@ -598,11 +594,10 @@ export class PayPage implements OnInit {
   protected readonly GPAY = GPAY;
   // Optional "what it's for" + tags, saved with the expense.
   protected readonly showExtra = signal(false);
-  protected readonly description = signal('');
   protected readonly tags = signal<string[]>([]);
   protected readonly tagDraft = signal('');
   protected readonly extraSummary = computed(() =>
-    [this.description().trim(), ...this.tags().map((t) => '#' + t)].filter(Boolean).join(' '),
+    this.tags().map((t) => '#' + t).join(' '),
   );
   protected readonly tagSuggestions = computed(() => {
     const counts = new Map<string, number>();
@@ -945,8 +940,9 @@ export class PayPage implements OnInit {
     this.categoryId.set(learned ?? '');
     this.learnedCat.set(learned ?? null);
     this.showExtra.set(false);
-    this.description.set('');
-    this.tags.set([]);
+    // Trip mode: start with the active tag.
+    const active = this.activeTag.active();
+    this.tags.set(active ? [active.tag] : []);
     this.tagDraft.set('');
     this.shopKind.set('');
     this.catQuery.set('');
@@ -1111,8 +1107,7 @@ export class PayPage implements OnInit {
         note: name || q.pa,
         excluded: false,
         type: 'expense',
-        ...(this.description().trim() ? { description: this.description().trim() } : {}),
-        ...(this.tags().length ? { tags: this.tags() } : {}),
+        tags: this.tags(),
         ...(this.location() ? { location: this.location() } : {}),
       });
       // No name yet: the payee name in the bank's SMS (e.g. "To APOLLO DENTAL") fills it in later.
