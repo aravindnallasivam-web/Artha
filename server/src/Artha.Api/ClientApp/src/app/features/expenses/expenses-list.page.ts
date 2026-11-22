@@ -1,7 +1,9 @@
+import { EventsStore } from '../events/events.store';
+import { AppEvent } from '../../core/models/event.model';
 import { MicButtonComponent } from '../../shared/mic-button.component';
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AlertController, IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { ConflictNotifierService } from '../../core/feedback/conflict-notifier.service';
 import { Expense } from '../../core/models/expense.model';
@@ -37,6 +39,7 @@ const TODAY_ISO = toIsoDate(new Date());
   selector: 'artha-expenses-list',
   standalone: true,
   imports: [
+    RouterLink,
     MicButtonComponent,
     CurrencyPipe,
     DatePipe,
@@ -230,9 +233,12 @@ const TODAY_ISO = toIsoDate(new Date());
                             <p class="row-meta">
                               {{ categoryPath(expense.categoryId) }} · {{ accountName(expense.accountId) }}@if (expense.excluded) { · not counted }
                             </p>
-                            @if (expense.description || expense.tags?.length) {
+                            @if (expense.description || expense.tags?.length || eventOf(expense)) {
                               <p class="row-extra">
                                 @if (expense.description) { <span class="row-desc">{{ expense.description }}</span> }
+                                @if (eventOf(expense); as ev) {
+                                  <a class="row-event" [routerLink]="['/events', ev.id]" (click)="$event.stopPropagation()">{{ ev.emoji || '📅' }} {{ ev.name }}</a>
+                                }
                                 @for (t of expense.tags ?? []; track t) {
                                   <button type="button" class="row-tag" (click)="filterTag($event, t)">#{{ t }}</button>
                                 }
@@ -304,9 +310,12 @@ const TODAY_ISO = toIsoDate(new Date());
                           <p class="row-meta">
                             @if (expense.note) { {{ categoryName(expense.categoryId) }} · }{{ accountName(expense.accountId) }}
                           </p>
-                          @if (expense.description || expense.tags?.length) {
+                          @if (expense.description || expense.tags?.length || eventOf(expense)) {
                             <p class="row-extra">
                               @if (expense.description) { <span class="row-desc">{{ expense.description }}</span> }
+                              @if (eventOf(expense); as ev) {
+                                <a class="row-event" [routerLink]="['/events', ev.id]" (click)="$event.stopPropagation()">{{ ev.emoji || '📅' }} {{ ev.name }}</a>
+                              }
                               @for (t of expense.tags ?? []; track t) {
                                 <button type="button" class="row-tag" (click)="filterTag($event, t)">#{{ t }}</button>
                               }
@@ -361,6 +370,10 @@ const TODAY_ISO = toIsoDate(new Date());
     </ion-content>
   `,
   styles: [`
+    .row-event {
+      padding: 1px 8px; border-radius: 999px; text-decoration: none; font-size: 11.5px; font-weight: 700;
+      background: color-mix(in srgb, var(--artha-warning, #f59e0b) 18%, transparent); color: var(--artha-text);
+    }
     .row-extra { margin: 3px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; }
     .row-desc { color: var(--artha-text-muted); font-style: italic; overflow-wrap: anywhere; }
     .row-tag {
@@ -944,6 +957,7 @@ export class ExpensesListPage implements OnInit {
   }
 
   ngOnInit(): void {
+    void this.eventsStore.ensureLoaded();
     // Deep-link support, e.g. from the Reports "by category" drill-down:
     // /expenses?category=<id>&year=YYYY&month=M
     const qp = this.route.snapshot.queryParamMap;
@@ -1102,7 +1116,14 @@ export class ExpensesListPage implements OnInit {
     this.filterAccountId.set((event.target as HTMLSelectElement).value || null);
   }
 
-  /** Tap a tag on an expense: show every expense with that tag. */
+  private readonly eventsStore = inject(EventsStore);
+
+  protected eventOf(e: Expense): AppEvent | null {
+    const ev = e.eventId ? this.eventsStore.byId()[e.eventId] : undefined;
+    return ev && !ev.archived ? ev : null;
+  }
+
+    /** Tap a tag on an expense: show every expense with that tag. */
   protected filterTag(event: Event, tag: string): void {
     event.stopPropagation();
     event.preventDefault();

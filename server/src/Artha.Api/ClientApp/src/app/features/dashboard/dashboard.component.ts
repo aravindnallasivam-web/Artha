@@ -4,8 +4,11 @@ import { RouterLink } from '@angular/router';
 import { IonContent, IonIcon, IonSkeletonText } from '@ionic/angular/standalone';
 import { SessionService } from '../../core/auth/session.service';
 import { cardOwed, daysUntil, dueLabel, nextDueDate } from '../../core/models/card-cycle';
+import { Expense } from '../../core/models/expense.model';
 import { BillsService } from '../bills/bills.service';
-import { ActiveTagService } from '../../core/tags/active-tag.service';
+import { EventsStore, localToday } from '../events/events.store';
+import { eventStats } from '../events/event-stats';
+import { ExpensesApi } from '../expenses/expenses.api';
 import { AccountsStore } from '../accounts/accounts.store';
 import { InvestmentsStore } from '../investments/investments.store';
 import { CategoriesStore } from '../categories/categories.store';
@@ -189,11 +192,19 @@ interface CategorySlice {
             </a>
           }
 
-          <!-- Trip mode: new expenses are being tagged -->
-          @if (activeTag.active(); as a) {
-            <a class="pending" routerLink="/tags">
-              <span class="pending-badge"><ion-icon name="pricetag" aria-hidden="true"></ion-icon></span>
-              <span class="pending-text">Auto-tagging new expenses <b>#{{ a.tag }}</b> · tap to see or stop</span>
+          <!-- Events happening now -->
+          @for (r of eventCards(); track r.e.id) {
+            <a class="ev-card" [routerLink]="['/events', r.e.id]">
+              <span class="ev-emoji" aria-hidden="true">{{ r.e.emoji || '📅' }}</span>
+              <span class="ev-text">
+                <b>{{ r.e.name }}</b>
+                <span>Day {{ r.s.daysSoFar }} of {{ r.s.days }} · {{ r.s.spent | currency: 'INR' : 'symbol' : '1.0-0' }}@if (r.e.budget) { of {{ r.e.budget | currency: 'INR' : 'symbol' : '1.0-0' }} }</span>
+                @if (r.e.budget) {
+                  <span class="ev-bar" [class.ev-bar--near]="(r.s.used ?? 0) > 0.85" [class.ev-bar--over]="(r.s.used ?? 0) > 1">
+                    <span [style.width.%]="(r.s.used ?? 0) > 1 ? 100 : (r.s.used ?? 0) * 100"></span>
+                  </span>
+                }
+              </span>
               <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
             </a>
           }
@@ -410,6 +421,20 @@ interface CategorySlice {
     :host-context(.ion-palette-dark) .ic-blue { color: #7dd3fc; }
 
     /* Pending SMS */
+    .ev-card {
+      display: flex; align-items: center; gap: 12px; margin: 0 0 10px; padding: 12px 14px; border-radius: 18px;
+      text-decoration: none; color: var(--artha-text); background: var(--artha-surface);
+      border: 1px solid color-mix(in srgb, var(--artha-accent) 45%, transparent);
+    }
+    .ev-emoji { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; background: var(--artha-accent-tint); flex-shrink: 0; }
+    .ev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .ev-text b { font-size: 14.5px; }
+    .ev-text > span { font-size: 12.5px; color: var(--artha-text-muted); }
+    .ev-bar { display: block; height: 6px; border-radius: 999px; background: var(--artha-surface-2); overflow: hidden; }
+    .ev-bar span { display: block; height: 100%; border-radius: inherit; background: var(--artha-positive); }
+    .ev-bar--near span { background: var(--artha-warning, #f59e0b); }
+    .ev-bar--over span { background: var(--artha-negative); }
+    .ev-card ion-icon { color: var(--artha-text-subtle); }
     .pending {
       display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
       padding: 12px 14px; border-radius: 18px; cursor: pointer; font: inherit;
@@ -509,7 +534,27 @@ export class DashboardComponent implements OnInit {
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly sms = inject(SmsCaptureService);
   protected readonly bills = inject(BillsService);
-  protected readonly activeTag = inject(ActiveTagService);
+  private readonly eventsStore = inject(EventsStore);
+  private readonly expensesApi = inject(ExpensesApi);
+  /** Spend per ongoing event, over its whole dates (not just this month). */
+  private readonly eventSpend = signal<Record<string, Expense[]>>({});
+  protected readonly eventCards = computed(() => {
+    const today = localToday();
+    return this.eventsStore.ongoing().map((e) => ({ e, s: eventStats(e, this.eventSpend()[e.id] ?? [], today) }));
+  });
+
+  private async loadEvents(): Promise<void> {
+    await this.eventsStore.ensureLoaded(true);
+    const out: Record<string, Expense[]> = {};
+    for (const e of this.eventsStore.ongoing()) {
+      try {
+        out[e.id] = (await this.expensesApi.list(e.start, e.end)).items;
+      } catch {
+        out[e.id] = [];
+      }
+    }
+    this.eventSpend.set(out);
+  }
   private readonly session = inject(SessionService);
   private readonly reportsApi = inject(ReportsApi);
   private readonly accountsStore = inject(AccountsStore);
@@ -636,6 +681,7 @@ export class DashboardComponent implements OnInit {
   );
 
   ngOnInit(): void {
+    void this.loadEvents();
     const now = new Date();
     const yyyyMm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     void this.expensesStore.load(yyyyMm, yyyyMm);

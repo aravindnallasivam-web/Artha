@@ -28,6 +28,8 @@ export interface Expense {
   description?: string | null;
   /** Your labels ("birthday", "family", "goa-trip"): lower-case, no spaces. */
   tags?: string[];
+  /** The event (trip, celebration…) this expense belongs to. */
+  eventId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,6 +49,8 @@ export interface ExpenseCreateRequest {
   description?: string | null;
   /** Omitted = keep on update; [] = clear. */
   tags?: string[];
+  /** Omitted = on create, the event covering the date (if any); on update, keep. null = none. */
+  eventId?: string | null;
 }
 
 export interface ExpenseUpdateRequest extends ExpenseCreateRequest {}

@@ -30,7 +30,7 @@ import { AmountInputDirective } from '../../shared/amount-input.directive';
 import { CategoriesStore } from '../categories/categories.store';
 import { CategoryEditModal } from '../categories/category-edit.modal';
 import { CategorySearchModal } from '../categories/category-search.modal';
-import { ActiveTagService } from '../../core/tags/active-tag.service';
+import { EventsStore } from '../events/events.store';
 import { normalizeTag } from './expenses.drive';
 import { ExpensesStore } from './expenses.store';
 
@@ -215,6 +215,21 @@ const QUICK_CATEGORY_COUNT = 7;
             }
 
             <!-- Tags: group expenses (a trip, an event, a project…) -->
+            @if (eventOptions().length) {
+              <div class="section-label">Event</div>
+              <div class="tags">
+                <button type="button" class="tag" [class.tag--on]="!shownEvent()" (click)="pickEvent(null)">None</button>
+                @for (e of eventOptions(); track e.id) {
+                  <button type="button" class="tag" [class.tag--on]="shownEvent()?.id === e.id" (click)="pickEvent(e.id)">
+                    {{ e.emoji || '📅' }} {{ e.name }}
+                  </button>
+                }
+              </div>
+              @if (eventChoice() === undefined && shownEvent() && mode() === 'create') {
+                <p class="cat-path">Joins {{ shownEvent()!.name }} because of its date.</p>
+              }
+            }
+
             <div class="section-label">Tags</div>
             <div class="tags">
               @for (t of tags(); track t) {
@@ -478,7 +493,6 @@ export class ExpenseEditPage implements OnInit {
   private readonly actionSheetCtrl = inject(ActionSheetController);
   protected readonly ai = inject(AiProviderService);
   private readonly sms = inject(SmsCaptureService);
-  private readonly activeTag = inject(ActiveTagService);
 
   /** Where the phone was when the SMS came in (expenses from SMS only). */
   protected readonly location = signal<ExpenseLocation | null>(null);
@@ -703,6 +717,11 @@ export class ExpenseEditPage implements OnInit {
       if (this.accountsStore.items().length === 0) loads.push(this.accountsStore.load());
       await Promise.all(loads);
 
+      void this.eventsStore.ensureLoaded();
+      // "+ Add expense" from an event page.
+      const fromEvent = this.route.snapshot.queryParamMap.get('event');
+      if (fromEvent) this.eventChoice.set(fromEvent);
+      this.form.controls.date.valueChanges.subscribe((v) => this.dateSig.set(this.toDateOnly(v)));
       const id = this.route.snapshot.paramMap.get('id');
       if (id) {
         this.mode.set('edit');
@@ -722,6 +741,8 @@ export class ExpenseEditPage implements OnInit {
             excluded: expense.excluded ?? false,
             type: expense.type ?? 'expense',
           });
+          this.savedEventId.set(expense.eventId ?? null);
+          this.dateSig.set(expense.date);
           this.location.set(expense.location ?? null);
           this.tags.set([...(expense.tags ?? [])]);
         }
@@ -731,9 +752,6 @@ export class ExpenseEditPage implements OnInit {
           if (l && !this.locationRemoved && !this.location()) this.location.set(l);
           return l;
         });
-        // Trip mode: start with the active tag (tap × to leave it off this one).
-        const active = this.activeTag.active();
-        if (active) this.tags.set([active.tag]);
         const firstCat = this.categories()[0];
         if (firstCat) {
           this.form.patchValue({ categoryId: firstCat.id });
@@ -777,6 +795,8 @@ export class ExpenseEditPage implements OnInit {
       accountId: raw.accountId,
       note: raw.note?.trim() || null,
       tags: this.tags(),
+      // Not touched: a new one follows its date, an edited one keeps its event.
+      ...(this.eventChoice() !== undefined ? { eventId: this.eventChoice() } : {}),
       excluded: raw.excluded,
       type: raw.type,
       // Omitted keeps the saved location; null clears it.
@@ -820,6 +840,37 @@ export class ExpenseEditPage implements OnInit {
     } catch {
       return code;
     }
+  }
+
+  // ---- Event ----
+
+  private readonly eventsStore = inject(EventsStore);
+  /** undefined = follow the date (new) / keep as saved (edit); null = none; id = chosen. */
+  protected readonly eventChoice = signal<string | null | undefined>(undefined);
+  private readonly savedEventId = signal<string | null>(null);
+  private readonly dateSig = signal(this.today());
+
+  /** The event shown as selected. */
+  protected readonly shownEvent = computed(() => {
+    const byId = this.eventsStore.byId();
+    const c = this.eventChoice();
+    if (c === null) return null;
+    if (c) return byId[c] ?? null;
+    if (this.mode() === 'edit') return this.savedEventId() ? byId[this.savedEventId()!] ?? null : null;
+    return this.eventsStore.eventFor(this.dateSig());
+  });
+
+  /** Events to offer: ones covering the date first, then ongoing / upcoming, then recent ones. */
+  protected readonly eventOptions = computed(() => {
+    const date = this.dateSig();
+    const list = this.eventsStore.active();
+    const rank = (e: { start: string; end: string }) => (date >= e.start && date <= e.end ? 0 : e.end >= date ? 1 : 2);
+    return [...list].sort((a, b) => rank(a) - rank(b) || b.start.localeCompare(a.start)).slice(0, 5);
+  });
+
+  protected pickEvent(id: string | null): void {
+    this.eventChoice.set(id);
+    this.form.markAsDirty();
   }
 
   // ---- Tags ----

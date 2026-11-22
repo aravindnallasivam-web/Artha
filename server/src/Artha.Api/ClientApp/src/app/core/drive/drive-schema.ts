@@ -1,3 +1,4 @@
+import { AppEvent } from '../models/event.model';
 // Drive data contracts + sharding helpers.
 //
 // Faithful TypeScript port of the server's Artha.Core.Drive types. Artha's
@@ -24,6 +25,8 @@ export const DRIVE_FILES = {
   plannedExpenses: 'planned-expenses.json',
   loans: 'loans.json',
   investments: 'investments.json',
+  /** Events (trips, celebrations…) that group expenses by date. */
+  events: 'events.json',
   /** Encrypted card vault (ciphertext only; see vault-crypto.ts). */
   cardVault: 'card-vault.json',
 } as const;
@@ -63,6 +66,10 @@ export interface PlannedExpenseList extends SchemaVersioned {
 
 export interface LoanList extends SchemaVersioned {
   items: Loan[];
+}
+
+export interface EventList extends SchemaVersioned {
+  items: AppEvent[];
 }
 
 export interface SettingsDocument extends SchemaVersioned {

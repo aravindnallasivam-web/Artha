@@ -4,13 +4,13 @@ import {
   ExpenseCreateRequest,
   ExpenseUpdateRequest,
 } from '../../core/models/expense.model';
-import { ActiveTagService } from '../../core/tags/active-tag.service';
+import { EventsStore } from '../events/events.store';
 import { ExpensesApi } from './expenses.api';
 
 @Injectable({ providedIn: 'root' })
 export class ExpensesStore {
   private readonly api = inject(ExpensesApi);
-  private readonly activeTag = inject(ActiveTagService);
+  private readonly events = inject(EventsStore);
 
   private readonly _items = signal<Expense[]>([]);
   private readonly _currency = signal<string>('USD');
@@ -76,10 +76,12 @@ export class ExpensesStore {
   }
 
   async add(request: ExpenseCreateRequest): Promise<Expense> {
-    // Trip mode: a new expense that didn't choose its tags (SMS, auto-add…) gets the active tag.
-    const active = this.activeTag.active();
-    if (active && request.tags === undefined && request.type !== 'income') {
-      request = { ...request, tags: [active.tag] };
+    // Events: a new expense that didn't choose one (SMS, auto-add, Scan & Pay…) joins the
+    // event whose dates cover it.
+    if (request.eventId === undefined && request.type !== 'income') {
+      await this.events.ensureLoaded();
+      const ev = this.events.eventFor(request.date);
+      if (ev) request = { ...request, eventId: ev.id };
     }
     const created = await this.api.create(request);
     this._items.update((items) => sortByDate([created, ...items]));

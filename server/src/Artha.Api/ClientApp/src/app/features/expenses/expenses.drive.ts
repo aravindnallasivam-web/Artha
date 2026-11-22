@@ -67,6 +67,22 @@ export class ExpensesDriveService {
     return { items: sorted, currency };
   }
 
+  /** Every expense, all months (served from the local copy of the Drive data). */
+  async listAll(): Promise<ExpenseListResponse> {
+    await this.bootstrap.ensureInitialized();
+    const manifest = await this.readManifest();
+    const items: Expense[] = [];
+    for (const { shardName } of shardsNewestFirst(manifest)) {
+      const shard = await this.repo.read<ExpenseShard>(shardName);
+      if (shard) items.push(...shard.document.items);
+    }
+    const currency = await this.readCurrency();
+    const sorted = items
+      .map(normalizeExpense)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    return { items: sorted, currency };
+  }
+
   async create(request: ExpenseCreateRequest): Promise<Expense> {
     if (request.amount <= 0) {
       throw badRequest('Amount must be greater than zero.');
@@ -105,6 +121,7 @@ export class ExpensesDriveService {
       ...(request.location ? { location: cleanLocation(request.location) } : {}),
       ...(cleanText(request.description) ? { description: cleanText(request.description)! } : {}),
       ...(cleanTags(request.tags).length ? { tags: cleanTags(request.tags) } : {}),
+      ...(request.eventId ? { eventId: request.eventId } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -150,6 +167,10 @@ export class ExpensesDriveService {
       const d = cleanText(request.description);
       if (d) updated.description = d;
       else delete updated.description;
+    }
+    if (request.eventId !== undefined) {
+      if (request.eventId) updated.eventId = request.eventId;
+      else delete updated.eventId;
     }
     if (request.tags !== undefined) {
       const t = cleanTags(request.tags);

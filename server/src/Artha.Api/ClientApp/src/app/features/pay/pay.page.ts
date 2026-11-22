@@ -25,7 +25,6 @@ import { CategoriesStore } from '../categories/categories.store';
 import { CategorySearchModal } from '../categories/category-search.modal';
 import { ExpensesStore } from '../expenses/expenses.store';
 import { SmsCaptureService } from '../sms/sms-capture.service';
-import { ActiveTagService } from '../../core/tags/active-tag.service';
 import { normalizeTag } from '../expenses/expenses.drive';
 import { suggestCategories } from './category-hints';
 import {
@@ -541,7 +540,6 @@ export class PayPage implements OnInit {
   private readonly accountsStore = inject(AccountsStore);
   private readonly modalCtrl = inject(ModalController);
   private readonly appLock = inject(AppLockService);
-  private readonly activeTag = inject(ActiveTagService);
   private readonly route = inject(ActivatedRoute);
   private scanParam: string | null = null;
 
@@ -940,9 +938,7 @@ export class PayPage implements OnInit {
     this.categoryId.set(learned ?? '');
     this.learnedCat.set(learned ?? null);
     this.showExtra.set(false);
-    // Trip mode: start with the active tag.
-    const active = this.activeTag.active();
-    this.tags.set(active ? [active.tag] : []);
+    this.tags.set([]);
     this.tagDraft.set('');
     this.shopKind.set('');
     this.catQuery.set('');
@@ -1107,7 +1103,7 @@ export class PayPage implements OnInit {
         note: name || q.pa,
         excluded: false,
         type: 'expense',
-        tags: this.tags(),
+        ...(this.tags().length ? { tags: this.tags() } : {}),
         ...(this.location() ? { location: this.location() } : {}),
       });
       // No name yet: the payee name in the bank's SMS (e.g. "To APOLLO DENTAL") fills it in later.

@@ -18,6 +18,11 @@ export class ExpensesApi {
     return this.drive.list(from, to);
   }
 
+  /** Every expense across all months. */
+  listAll(): Promise<ExpenseListResponse> {
+    return this.drive.listAll();
+  }
+
   create(request: ExpenseCreateRequest): Promise<Expense> {
     return this.drive.create(request);
   }

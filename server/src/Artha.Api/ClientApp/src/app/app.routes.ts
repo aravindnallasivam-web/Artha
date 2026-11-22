@@ -139,6 +139,22 @@ export const routes: Routes = [
           import('./features/settings/settings.page').then((m) => m.SettingsPage),
       },
       {
+        path: 'events',
+        loadComponent: () => import('./features/events/events.page').then((m) => m.EventsPage),
+      },
+      {
+        path: 'events/new',
+        loadComponent: () => import('./features/events/event-edit.page').then((m) => m.EventEditPage),
+      },
+      {
+        path: 'events/:id/edit',
+        loadComponent: () => import('./features/events/event-edit.page').then((m) => m.EventEditPage),
+      },
+      {
+        path: 'events/:id',
+        loadComponent: () => import('./features/events/event-detail.page').then((m) => m.EventDetailPage),
+      },
+      {
         path: 'tags',
         loadComponent: () => import('./features/tags/tags.page').then((m) => m.TagsPage),
       },

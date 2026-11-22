@@ -19,7 +19,8 @@ interface MoreLink {
 
 const LINKS: MoreLink[] = [
   { path: '/planned-expenses', label: 'Planned', icon: 'calendar-outline', hint: 'Fixed monthly bills' },
-  { path: '/tags', label: 'Tags', icon: 'pricetags-outline', hint: 'Trips & events, auto-tagging' },
+  { path: '/events', label: 'Events', icon: 'airplane-outline', hint: 'Trips & celebrations: budget, split' },
+  { path: '/tags', label: 'Tags', icon: 'pricetags-outline', hint: 'Totals per tag' },
   { path: '/vault', label: 'Card vault', icon: 'shield-checkmark-outline', hint: 'Card numbers, encrypted' },
   { path: '/bills', label: 'Bills', icon: 'receipt-outline', hint: 'Card & bill due dates from SMS' },
   { path: '/loans', label: 'Loans', icon: 'cash-outline', hint: 'EMIs, interest & payoff' },

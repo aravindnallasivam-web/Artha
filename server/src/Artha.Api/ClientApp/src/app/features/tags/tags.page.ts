@@ -1,7 +1,7 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   IonBackButton,
   IonButtons,
@@ -15,10 +15,8 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 import { Expense } from '../../core/models/expense.model';
-import { ActiveTagService } from '../../core/tags/active-tag.service';
 import { CategoriesStore } from '../categories/categories.store';
 import { ExpensesApi } from '../expenses/expenses.api';
-import { normalizeTag } from '../expenses/expenses.drive';
 
 interface TagGroup {
   tag: string;
@@ -41,6 +39,7 @@ interface TagGroup {
   imports: [
     CurrencyPipe,
     FormsModule,
+    RouterLink,
     IonBackButton,
     IonButtons,
     IonContent,
@@ -63,39 +62,8 @@ interface TagGroup {
     <ion-content>
       <ion-refresher slot="fixed" (ionRefresh)="onPull($event)"><ion-refresher-content></ion-refresher-content></ion-refresher>
       <div class="wrap">
-        <!-- Trip mode -->
-        <section class="auto" [class.auto--on]="activeTag.active()">
-          @if (activeTag.active(); as a) {
-            <div class="auto-head">
-              <span class="auto-ic"><ion-icon name="pricetag" aria-hidden="true"></ion-icon></span>
-              <div class="auto-text">
-                <b>Auto-tagging #{{ a.tag }}</b>
-                <span>Every new expense gets it, since {{ dateLabel(a.since.slice(0, 10)) }}. Turn it off when the trip ends.</span>
-              </div>
-            </div>
-            <button type="button" class="btn btn--wide" (click)="activeTag.stop()">Stop auto-tagging</button>
-          } @else {
-            <div class="auto-head">
-              <span class="auto-ic"><ion-icon name="airplane-outline" aria-hidden="true"></ion-icon></span>
-              <div class="auto-text">
-                <b>Going on a trip or event?</b>
-                <span>Pick a tag and every new expense — SMS, Scan &amp; Pay or added by hand — gets it until you stop.</span>
-              </div>
-            </div>
-            <div class="start-row">
-              <input class="field" type="text" placeholder="e.g. goa-trip" aria-label="Tag to add automatically"
-                     [ngModel]="draft()" (ngModelChange)="draft.set($event)" (keydown.enter)="start(draft())" />
-              <button type="button" class="btn btn--primary" (click)="start(draft())" [disabled]="!normalize(draft())">Start</button>
-            </div>
-            @if (groups().length) {
-              <div class="chips">
-                @for (g of groups().slice(0, 6); track g.tag) {
-                  <button type="button" class="chip" (click)="start(g.tag)">#{{ g.tag }}</button>
-                }
-              </div>
-            }
-          }
-        </section>
+        <p class="lead">Tags label expenses across categories. For trips and celebrations with dates and a budget,
+          use <a routerLink="/events">Events</a>.</p>
 
         @if (loading()) {
           <div class="state"><ion-spinner></ion-spinner></div>
@@ -147,6 +115,8 @@ interface TagGroup {
     .wrap { max-width: 640px; margin: 0 auto; padding: 4px 16px 24px; }
     .num { font-variant-numeric: tabular-nums; }
     .state { display: flex; justify-content: center; padding: 40px; }
+    .lead { margin: 4px 4px 0; font-size: 13px; color: var(--artha-text-muted); line-height: 1.45; }
+    .lead a { color: var(--artha-accent); font-weight: 700; }
     .empty { margin: 28px 8px; text-align: center; color: var(--artha-text-muted); font-size: 14px; line-height: 1.5; }
 
     .auto { padding: 14px; border-radius: 20px; background: var(--artha-surface-2); display: flex; flex-direction: column; gap: 12px; }
@@ -202,15 +172,12 @@ interface TagGroup {
 })
 export class TagsPage implements OnInit {
   protected readonly router = inject(Router);
-  protected readonly activeTag = inject(ActiveTagService);
   private readonly api = inject(ExpensesApi);
   private readonly categoriesStore = inject(CategoriesStore);
 
   protected readonly loading = signal(true);
   private readonly all = signal<Expense[]>([]);
   protected readonly open = signal<string | null>(null);
-  protected readonly draft = signal('');
-  protected readonly normalize = normalizeTag;
 
   /** Every tag with its spend, newest activity first. */
   protected readonly groups = computed<TagGroup[]>(() => {
@@ -243,7 +210,7 @@ export class TagsPage implements OnInit {
     this.loading.set(true);
     try {
       // Tags span months: read them all (served from the local copy of your Drive data).
-      this.all.set((await this.api.list()).items);
+      this.all.set((await this.api.listAll()).items);
     } catch {
       this.all.set([]);
     } finally {
@@ -254,13 +221,6 @@ export class TagsPage implements OnInit {
   protected async onPull(event: Event): Promise<void> {
     await this.load();
     (event.target as HTMLIonRefresherElement).complete();
-  }
-
-  protected start(raw: string): void {
-    const t = normalizeTag(raw);
-    if (!t) return;
-    this.activeTag.start(t);
-    this.draft.set('');
   }
 
   protected toggle(tag: string): void {
